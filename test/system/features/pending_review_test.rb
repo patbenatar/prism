@@ -89,6 +89,11 @@ class PendingReviewTest < ApplicationSystemTestCase
     within "[data-testid=file-switcher-menu]" do
       click_on "appendix.md", match: :first
     end
+    # `rendered-file` is on both pages, so waiting for it can match the old one
+    # while Turbo is still swapping, and the block found next goes stale. Wait
+    # for something only the new file has.
+    assert_current_path repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: OTHER_PATH)
+    assert_selector "[data-testid=file-switcher] summary", text: "appendix.md"
     assert_selector "[data-testid=rendered-file]"
 
     other_block = find("[data-testid=md-block][data-commentable=true]", match: :first)
