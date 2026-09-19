@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Development container entrypoint for Prism.
+# Waits for Postgres, prepares the database, then runs the given command.
+set -e
+
+# Clear a stale server PID left by an unclean shutdown.
+rm -f tmp/pids/server.pid
+
+# Wait for Postgres to accept connections before touching the database.
+if [ -n "$DB_HOST" ]; then
+  echo "⏳ Waiting for Postgres at ${DB_HOST}:${DB_PORT:-5432}..."
+  until pg_isready -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "${DB_USERNAME:-postgres}" >/dev/null 2>&1; do
+    sleep 1
+  done
+  echo "✅ Postgres is up."
+fi
+
+# Create the database and load schema/run migrations if needed (idempotent).
+bin/rails db:prepare
+
+exec "$@"

@@ -1,0 +1,19 @@
+<%#
+  Flash messages. Rendered by the layout — don't render it yourself.
+
+  `notice` confirms something happened, `alert` says what went wrong and what to
+  do about it. Both stay in the flow rather than floating over the page, so
+  nothing shifts under the pointer.
+%>
+<% if notice.present? || alert.present? %>
+  <div class="shell pt-4" data-testid="flash">
+    <div class="space-y-2">
+      <% if notice.present? %>
+        <p role="status" class="flash-notice"><%= notice %></p>
+      <% end %>
+      <% if alert.present? %>
+        <p role="alert" class="flash-alert"><%= alert %></p>
+      <% end %>
+    </div>
+  </div>
+<% end %>

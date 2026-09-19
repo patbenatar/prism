@@ -1,0 +1,39 @@
+<%#
+  One comment inside a thread. Builds on the shared `shared/comment_card`
+  (the styling reference — see DESIGN.md §8) and wires Edit / Delete / react
+  into its `actions:` slot rather than restyling it.
+
+  Locals:
+    comment:   (required) Github::Types::ReviewComment
+    thread_id: (required) the owning thread's GraphQL node id — carried by
+               the delete form and the reaction picker so the response knows
+               which thread container to refresh.
+%>
+<% comment = local_assigns.fetch(:comment) %>
+<% thread_id = local_assigns.fetch(:thread_id) %>
+
+<div id="comment_<%= comment.node_id %>" data-controller="comment-actions" data-testid="comment-container">
+  <% actions = capture do %>
+    <%= render "review_comments/reaction_picker", comment: comment, thread_id: thread_id %>
+
+    <% if comment.viewer_can_update %>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="comment-actions#edit" data-testid="comment-edit">Edit</button>
+    <% end %>
+
+    <% if comment.viewer_can_delete %>
+      <%= button_to "Delete",
+                     repo_pull_comment_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: comment.node_id),
+                     method: :delete, params: { thread_id: thread_id },
+                     form: { data: { turbo: true, turbo_confirm: "Delete this comment?" } },
+                     class: "btn btn-danger btn-sm", data: { testid: "comment-delete" } %>
+    <% end %>
+  <% end %>
+
+  <div data-comment-actions-target="viewPane">
+    <%= render "shared/comment_card", comment: comment, actions: actions %>
+  </div>
+
+  <div data-comment-actions-target="editPane" hidden>
+    <%= render "review_comments/edit_form", comment: comment, thread_id: thread_id %>
+  </div>
+</div>

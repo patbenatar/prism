@@ -1,0 +1,36 @@
+<%#
+  Why part or all of this file can't take a line comment. DESIGN §1: Prism
+  explains its own limits rather than hiding them, so this is a sentence above
+  the document, not a disabled button below it.
+
+  Locals: kind (:missing_content, :too_large, :no_patch, :file_removed), page
+%>
+<div class="banner mb-4" role="status" data-testid="uncommentable-notice"
+     data-kind="<%= kind %>">
+  <svg viewBox="0 0 20 20" fill="currentColor" class="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true">
+    <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.25 6a.75.75 0 0 1 1.5 0v4.5a.75.75 0 0 1-1.5 0V6Zm.75 7a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" clip-rule="evenodd" />
+  </svg>
+
+  <p>
+    <% case kind %>
+    <% when :no_patch %>
+      GitHub didn't provide a diff for this file, so there are no lines to anchor
+      to and nothing here can take a line comment. Every block still offers a
+      comment — Prism posts it against the file instead, quoting the block.
+    <% when :file_removed %>
+      This pull request deletes this file. You're reading the version being
+      removed, so every block is marked removed and comments anchor to the
+      base side.
+    <% when :missing_content %>
+      GitHub didn't return readable text for this file at
+      <span class="mono-tag"><%= page.pull_request.head_sha.to_s.first(7) %></span>.
+    <% when :too_large %>
+      This file is over
+      <%= number_to_human_size(Review::Page::MAX_SOURCE_BYTES) %>, which is more
+      Markdown than Prism renders in a single request.
+    <% end %>
+    <%= link_to "View it on GitHub", page.github_blob_url,
+                class: "font-medium text-brand hover:text-brand-deep",
+                target: "_blank", rel: "noopener" %>.
+  </p>
+</div>

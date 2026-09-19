@@ -1,0 +1,49 @@
+<%#
+  An empty list is an invitation, not an apology. Write the body as the next
+  step, and label the action with the verb it performs.
+
+  Locals:
+    title:     (required)
+    body:      (optional) one or two lines
+    icon:      :prism (default) · :repo · :pull · :file · :search
+    cta_label: (optional) shows a button when paired with cta_to
+    cta_to:    (optional)
+%>
+<% title     = local_assigns.fetch(:title) %>
+<% body      = local_assigns.fetch(:body, nil) %>
+<% icon      = local_assigns.fetch(:icon, :prism).to_sym %>
+<% cta_label = local_assigns.fetch(:cta_label, nil) %>
+<% cta_to    = local_assigns.fetch(:cta_to, nil) %>
+
+<div class="empty-state" data-testid="empty-state">
+  <span class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-soft text-brand">
+    <% case icon %>
+    <% when :repo %>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="h-6 w-6" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v14H6.5A2.5 2.5 0 0 0 4 19.5V5.5ZM4 19.5A2.5 2.5 0 0 0 6.5 22H19v-5" />
+      </svg>
+    <% when :pull %>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="h-6 w-6" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 9v9m0-9a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm0 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm12-4a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 0V9a3 3 0 0 0-3-3h-3m0 0 2.5-2.5M12 6l2.5 2.5" />
+      </svg>
+    <% when :file %>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="h-6 w-6" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5ZM9 13h6M9 17h4" />
+      </svg>
+    <% when :search %>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="h-6 w-6" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" />
+      </svg>
+    <% else %>
+      <%= render "shared/prism_mark", size: 26 %>
+    <% end %>
+  </span>
+
+  <h2 class="empty-title"><%= title %></h2>
+  <% if body.present? %>
+    <p class="empty-body"><%= body %></p>
+  <% end %>
+  <% if cta_label.present? && cta_to.present? %>
+    <%= link_to cta_label, cta_to, class: "btn-primary mt-5" %>
+  <% end %>
+</div>

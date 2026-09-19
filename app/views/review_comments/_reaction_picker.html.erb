@@ -1,0 +1,33 @@
+<%#
+  The interactive half of a comment's reactions. `_comment_card` (shared)
+  already prints a read-only summary of counts; these are the clickable
+  controls that add or remove the viewer's own reaction, so "the reaction
+  pills toggle based on viewer_has_reacted" (PLAN.md) holds even though the
+  shared card's own pills carry no behavior.
+
+  Locals: comment: (required), thread_id:
+%>
+<% comment = local_assigns.fetch(:comment) %>
+<% groups = comment.reaction_groups.index_by(&:content) %>
+<% owner = params[:owner]; repo = params[:repo]; number = params[:number] %>
+
+<details class="relative inline-block" data-testid="reaction-picker">
+  <summary class="reaction-pill cursor-pointer list-none" aria-label="Add a reaction">
+    <span aria-hidden="true">🙂+</span>
+  </summary>
+  <div class="absolute z-20 mt-1 flex flex-wrap gap-1 rounded-lg border border-line bg-surface p-1.5 shadow-lg shadow-ink/5">
+    <% Github::Client::REACTIONS.each_key do |content| %>
+      <% group = groups[content] %>
+      <% on = group&.viewer_has_reacted? %>
+      <%= button_to (on ? repo_pull_comment_reaction_path(owner: owner, repo: repo, number: number, id: comment.node_id, reaction_id: content) : repo_pull_comment_reactions_path(owner: owner, repo: repo, number: number, id: comment.node_id)),
+                     method: (on ? :delete : :post),
+                     params: { content: content, thread_id: thread_id },
+                     class: "reaction-pill #{'reaction-pill--on' if on}",
+                     form: { data: { turbo: true } },
+                     data: { testid: "reaction-#{content}" } do %>
+        <span aria-hidden="true"><%= reaction_emoji(content) %></span>
+        <span class="sr-only"><%= content %></span>
+      <% end %>
+    <% end %>
+  </div>
+</details>

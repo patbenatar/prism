@@ -1,0 +1,86 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "id": "PR_kwDOABCD12MAAAABc9Vk",
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "T_1"
+          },
+          "nodes": [
+            {
+              "id": "PRRT_paged_thread",
+              "path": "docs/guide.md",
+              "line": 3,
+              "originalLine": 3,
+              "startLine": null,
+              "originalStartLine": null,
+              "diffSide": "RIGHT",
+              "startDiffSide": null,
+              "subjectType": "LINE",
+              "isResolved": false,
+              "isOutdated": false,
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "resolvedBy": null,
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": true,
+                  "endCursor": "COMMENTS_1"
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_page_001",
+                    "databaseId": 910001,
+                    "body": "Comment 1 in a long argument.",
+                    "bodyHTML": "<p>Comment 1 in a long argument.</p>",
+                    "state": "SUBMITTED",
+                    "createdAt": "2026-09-18T09:00:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r910001",
+                    "diffHunk": "@@ -1,3 +1,5 @@\n # Guide\n\n+New paragraph.",
+                    "outdated": false,
+                    "viewerCanUpdate": false,
+                    "viewerCanDelete": false,
+                    "viewerCanReact": true,
+                    "author": {
+                      "login": "octocat",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+                      "url": "https://github.com/octocat"
+                    },
+                    "replyTo": null,
+                    "reactionGroups": []
+                  },
+                  {
+                    "id": "PRRC_page_002",
+                    "databaseId": 910002,
+                    "body": "Comment 2 in a long argument.",
+                    "bodyHTML": "<p>Comment 2 in a long argument.</p>",
+                    "state": "SUBMITTED",
+                    "createdAt": "2026-09-18T09:00:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r910002",
+                    "diffHunk": "@@ -1,3 +1,5 @@\n # Guide\n\n+New paragraph.",
+                    "outdated": false,
+                    "viewerCanUpdate": false,
+                    "viewerCanDelete": false,
+                    "viewerCanReact": true,
+                    "author": {
+                      "login": "octocat",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+                      "url": "https://github.com/octocat"
+                    },
+                    "replyTo": {
+                      "id": "PRRC_page_001"
+                    },
+                    "reactionGroups": []
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

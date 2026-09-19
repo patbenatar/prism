@@ -1,0 +1,64 @@
+<%#
+  One GitHub review comment, rendered the way Prism renders every comment.
+
+  Workstream D/E: this is the design-system reference for comment styling.
+  Stack several inside a `.thread` wrapper (add `.thread--pending`,
+  `--resolved` or `--outdated` as the thread's state requires) and append your
+  own `.reply-box` at the foot. The actions row here is deliberately empty of
+  behavior — wire Edit / Delete / Resolve / react into `actions:` rather than
+  restyling the card.
+
+  Locals:
+    comment: (required) Github::Types::ReviewComment
+    actions: (optional) safe HTML appended to the actions row
+%>
+<% comment = local_assigns.fetch(:comment) %>
+<% actions = local_assigns.fetch(:actions, nil) %>
+
+<article class="comment-card" data-testid="comment" data-comment-id="<%= comment.id %>">
+  <div class="comment-head">
+    <% if comment.author %>
+      <%= image_tag comment.author.avatar_url, alt: "", class: "avatar h-6 w-6", loading: "lazy" %>
+      <%= link_to comment.author.login, comment.author.html_url,
+                  class: "comment-author hover:text-brand", target: "_blank", rel: "noopener" %>
+    <% else %>
+      <span class="comment-author">Ghost</span>
+    <% end %>
+
+    <%= relative_time(comment.created_at) %>
+
+    <% if comment.pending? %>
+      <span class="pill-pending">Pending</span>
+    <% end %>
+    <% if comment.outdated %>
+      <span class="pill-modified">Outdated</span>
+    <% end %>
+
+    <span class="flex-1"></span>
+
+    <% if comment.url.present? %>
+      <%= link_to "On GitHub", comment.url, class: "text-xs text-ink-faint hover:text-brand",
+                  target: "_blank", rel: "noopener" %>
+    <% end %>
+  </div>
+
+  <div class="comment-body md-prose md-prose-compact">
+    <%# body_html is GitHub's GraphQL bodyHTML. GitHub sanitizes it, but we do
+        not rely on that: github_html runs it through Markdown::Sanitizer. %>
+    <%= comment.body_html.present? ? github_html(comment.body_html) : simple_format(comment.body) %>
+  </div>
+
+  <% reactions = Array(comment.reaction_groups).select(&:any?) %>
+  <% if reactions.any? || actions.present? %>
+    <div class="comment-actions">
+      <% reactions.each do |group| %>
+        <span class="reaction-pill <%= "reaction-pill--on" if group.viewer_has_reacted? %>">
+          <span aria-hidden="true"><%= reaction_emoji(group.content) %></span>
+          <span class="tnum"><%= group.count %></span>
+          <span class="sr-only"><%= count_of(group.count, "#{group.content} reaction") %></span>
+        </span>
+      <% end %>
+      <%= actions %>
+    </div>
+  <% end %>
+</article>

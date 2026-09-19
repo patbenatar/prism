@@ -1,0 +1,43 @@
+<%#
+  One top-level block of the document: its change bar, its "+", its rendered
+  HTML (with child markers woven in), the threads already on it, and the empty
+  slot workstream E opens the composer into.
+
+  Locals: annotated (Review::AnnotatedBlock), pull_request, page
+%>
+<% block = annotated.block %>
+<% removed_file = page.result.removed_file? %>
+<% change = removed_file ? "removed" : annotated.change.to_s %>
+
+<%# Content this pull request deleted, shown where it used to be. %>
+<% if annotated.removed_before? %>
+  <%= render "removed_strip", blocks: annotated.removed_before, page: page,
+                              pull_request: pull_request %>
+<% end %>
+
+<div class="md-block <%= "md-block--#{change}" unless change == "unchanged" %>"
+     id="block_<%= block.id %>"
+     data-block-id="<%= block.id %>"
+     data-change="<%= change %>"
+     data-commentable="<%= annotated.commentable? %>"
+     data-start-line="<%= block.start_line %>"
+     data-end-line="<%= block.end_line %>"
+     data-block-type="<%= block.type %>"
+     data-testid="md-block">
+  <div class="md-gutter">
+    <span class="md-gutter-bar" aria-hidden="true"></span>
+    <%= gutter_button(annotated) %>
+  </div>
+
+  <div class="md-body md-prose">
+    <%= block_body(annotated, pull_request: pull_request) %>
+
+    <div id="threads_<%= block.id %>" class="md-threads">
+      <% annotated.threads.each do |thread| %>
+        <%= render "thread", thread: thread, pull_request: pull_request, block_id: block.id %>
+      <% end %>
+    </div>
+
+    <div id="composer_<%= block.id %>" class="md-composer"></div>
+  </div>
+</div>

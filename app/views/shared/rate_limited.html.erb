@@ -1,0 +1,12 @@
+<% content_for :title, "Rate limited" %>
+
+<div class="shell-narrow py-20">
+  <%= render "shared/rate_limit_banner", retry_in: @retry_in, reset_at: @reset_at %>
+
+  <%= render "shared/empty_state",
+             icon: :prism,
+             title: "GitHub is rate-limiting this token",
+             body: "Prism makes every request as you, so this limit is your GitHub account's, not Prism's. Nothing is lost — reload once it resets.",
+             cta_label: "Try again",
+             cta_to: request.fullpath %>
+</div>

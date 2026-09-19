@@ -1,0 +1,27 @@
+<%#
+  Shown when GitHub returned a rate-limit error. The page still rendered — this
+  says what happened and when it will work again, rather than replacing the
+  screen with an error.
+
+  Locals:
+    retry_in: (optional) seconds to wait, from Github::RateLimited#retry_in
+    reset_at: (optional) Time the limit resets, used when retry_in is absent
+%>
+<% retry_in = local_assigns.fetch(:retry_in, nil) %>
+<% reset_at = local_assigns.fetch(:reset_at, nil) %>
+
+<div class="banner mb-4" role="status" data-testid="rate-limit-banner">
+  <svg viewBox="0 0 20 20" fill="currentColor" class="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true">
+    <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-12a.75.75 0 0 0-1.5 0v4c0 .27.14.52.37.65l3 1.75a.75.75 0 1 0 .76-1.3L10.75 9.6V6Z" clip-rule="evenodd" />
+  </svg>
+  <p>
+    GitHub is rate-limiting this token, so some of this page may be missing.
+    <% if retry_in.present? %>
+      Try again in <%= duration_in_words(retry_in) %>.
+    <% elsif reset_at.present? %>
+      It resets <%= relative_time_until(reset_at) %>.
+    <% else %>
+      Try again in a few minutes.
+    <% end %>
+  </p>
+</div>

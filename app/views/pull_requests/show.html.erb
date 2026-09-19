@@ -1,0 +1,220 @@
+<% content_for :title, "#{@pull_request.title} · #{@owner}/#{@name}##{@number}" %>
+
+<% content_for :breadcrumb do %>
+  <%= link_to "#{@owner}/#{@name}", repo_pulls_path(owner: @owner, repo: @name),
+              class: "truncate hover:text-brand" %>
+  <span class="text-ink-faint" aria-hidden="true">/</span>
+  <span class="truncate font-medium text-ink tnum">#<%= @number %></span>
+<% end %>
+
+<% _state_key, state_word, state_class = pull_request_state(@pull_request) %>
+<% _decision_key, decision_word, decision_class = review_decision(@reviews) %>
+
+<div class="shell pb-16">
+  <header class="pb-6 pt-6">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <span class="pill-solid <%= state_class %>" data-testid="pr-state"><%= state_word %></span>
+          <span class="<%= decision_class %>" data-testid="review-decision"><%= decision_word %></span>
+        </div>
+
+        <h1 class="mt-3 font-display text-2xl font-semibold leading-tight tracking-tight text-ink break-words">
+          <%= @pull_request.title %>
+          <span class="font-normal text-ink-faint tnum">#<%= @pull_request.number %></span>
+        </h1>
+
+        <div class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-ink-soft">
+          <% if @pull_request.author %>
+            <span class="flex items-center gap-1.5">
+              <%= image_tag @pull_request.author.avatar_url, alt: "", class: "avatar h-5 w-5", loading: "lazy" %>
+              <%= link_to @pull_request.author.login, @pull_request.author.html_url,
+                          class: "font-medium text-ink hover:text-brand", target: "_blank", rel: "noopener" %>
+            </span>
+          <% end %>
+          <span><%= relative_time(@pull_request.created_at, prefix: "opened") %></span>
+          <span><%= relative_time(@pull_request.updated_at, prefix: "updated") %></span>
+          <%# Written base ← head, the way GitHub writes it. The arrow is
+              decorative; the sr-only line says which way the merge goes. %>
+          <span class="flex items-center gap-1.5">
+            <span class="sr-only">
+              Merging <%= @pull_request.head_ref %> into <%= @pull_request.base_ref %>
+            </span>
+            <span class="mono-tag" aria-hidden="true"><%= @pull_request.base_ref %></span>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" class="h-4 w-4 text-ink-faint" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 10H4m0 0 4.5-4.5M4 10l4.5 4.5" />
+            </svg>
+            <span class="mono-tag" aria-hidden="true"><%= @pull_request.head_ref %></span>
+          </span>
+        </div>
+
+        <% if @pull_request.labels.present? %>
+          <div class="mt-3">
+            <%= render "shared/labels", labels: @pull_request.labels %>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-2">
+        <%= link_to "Open on GitHub", @pull_request.html_url, class: "btn-secondary",
+                    target: "_blank", rel: "noopener", data: { testid: "open-on-github" } %>
+      </div>
+    </div>
+  </header>
+
+  <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+    <div class="min-w-0 space-y-6">
+      <%# ── Description ───────────────────────────────────────────────── %>
+      <section aria-labelledby="description-heading">
+        <div class="section-head">
+          <h2 class="section-title" id="description-heading">Description</h2>
+        </div>
+        <% if @body_html.present? %>
+          <div class="md-prose md-prose-compact" data-testid="pr-body">
+            <%= github_html(@body_html) %>
+          </div>
+        <% else %>
+          <p class="text-sm text-ink-faint">No description.</p>
+        <% end %>
+      </section>
+
+      <%# ── Markdown files: what Prism is for ─────────────────────────── %>
+      <section aria-labelledby="markdown-heading">
+        <div class="section-head">
+          <h2 class="section-title" id="markdown-heading">Markdown files</h2>
+          <p class="section-note" data-testid="markdown-count">
+            <%= count_of(@markdown_files.size, "file") %> Prism can render
+          </p>
+        </div>
+
+        <% if @markdown_files.any? %>
+          <div class="panel" data-testid="markdown-files">
+            <% @markdown_files.each do |file| %>
+              <% status_word, status_class = file_status_label(file.status) %>
+              <% directory, basename = split_path(file.path) %>
+              <%= link_to repo_pull_file_path(owner: @owner, repo: @name, number: @number, path: file.path),
+                          class: "row-link", data: { testid: "markdown-file" } do %>
+                <div class="flex items-start gap-3">
+                  <span class="<%= status_class %> mt-0.5"><%= status_word %></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="font-mono text-sm text-ink break-all">
+                      <% if directory %><span class="text-ink-faint"><%= directory %></span><% end %><span class="font-medium"><%= basename %></span>
+                    </p>
+                    <% if file.renamed? %>
+                      <p class="mt-1 font-mono text-xs text-ink-faint break-all">was <%= file.previous_path %></p>
+                    <% end %>
+                    <% unless file.patch? %>
+                      <p class="mt-1 text-xs text-modified">
+                        GitHub sent no diff for this file, so nothing in it can be commented on.
+                      </p>
+                    <% end %>
+                  </div>
+                  <span class="mt-0.5 shrink-0"><%= diffstat(file.additions, file.deletions) %></span>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="panel">
+            <%= render "shared/empty_state",
+                       icon: :file,
+                       title: "No Markdown in this pull request",
+                       body: "Prism renders .md, .markdown and .mdx files. This pull request changes none, so there is nothing to read here — the other files are listed below." %>
+          </div>
+        <% end %>
+      </section>
+
+      <%# ── Everything else, linked out to GitHub ─────────────────────── %>
+      <% if @other_files.any? %>
+        <section aria-labelledby="other-heading">
+          <div class="section-head">
+            <h2 class="section-title" id="other-heading">Other files</h2>
+            <p class="section-note">Reviewed on GitHub</p>
+          </div>
+
+          <div class="panel" data-testid="other-files">
+            <% @other_files.each do |file| %>
+              <% status_word, status_class = file_status_label(file.status) %>
+              <% directory, basename = split_path(file.path) %>
+              <div class="row">
+                <span class="<%= status_class %> mt-0.5 opacity-70"><%= status_word %></span>
+                <p class="min-w-0 flex-1 font-mono text-sm text-ink-soft break-all">
+                  <% if directory %><span class="text-ink-faint"><%= directory %></span><% end %><%= basename %>
+                </p>
+                <span class="shrink-0"><%= diffstat(file.additions, file.deletions) %></span>
+                <%= link_to "View", file.blob_url, class: "shrink-0 text-xs text-ink-faint hover:text-brand",
+                            target: "_blank", rel: "noopener" %>
+              </div>
+            <% end %>
+          </div>
+        </section>
+      <% end %>
+    </div>
+
+    <%# ── Reviews ────────────────────────────────────────────────────── %>
+    <aside class="min-w-0 space-y-6">
+      <section aria-labelledby="reviews-heading">
+        <div class="section-head">
+          <h2 class="section-title" id="reviews-heading">Reviews</h2>
+        </div>
+
+        <% submitted = @reviews.reject(&:pending?) %>
+        <% if submitted.any? %>
+          <div class="panel" data-testid="reviews">
+            <% submitted.sort_by { |review| review.submitted_at.to_s }.reverse.each do |review| %>
+              <% word, pill_class = review_state_label(review.state) %>
+              <div class="row items-center">
+                <% if review.author %>
+                  <%= image_tag review.author.avatar_url, alt: "", class: "avatar h-6 w-6", loading: "lazy" %>
+                <% end %>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium text-ink"><%= review.author&.login || "Ghost" %></p>
+                  <p class="text-xs text-ink-faint"><%= relative_time(review.submitted_at) %></p>
+                </div>
+                <span class="<%= pill_class %>"><%= word %></span>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <p class="text-sm text-ink-faint" data-testid="reviews">
+            Nobody has reviewed this yet.
+          </p>
+        <% end %>
+      </section>
+
+      <% if @reviews.any?(&:pending?) %>
+        <div class="rounded-xl border border-pending/40 bg-pending-soft/50 p-4" data-testid="pending-review">
+          <p class="font-display text-sm font-semibold text-pending">You have a pending review</p>
+          <p class="mt-1 text-sm text-ink-soft">
+            Your unsubmitted comments live on GitHub. Open a Markdown file to add
+            to them or submit the review.
+          </p>
+        </div>
+      <% end %>
+
+      <section aria-labelledby="changes-heading">
+        <div class="section-head">
+          <h2 class="section-title" id="changes-heading">Changes</h2>
+        </div>
+        <dl class="space-y-2 text-sm">
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-soft">Files changed</dt>
+            <dd class="tnum font-medium text-ink"><%= @markdown_files.size + @other_files.size %></dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-soft">Markdown files</dt>
+            <dd class="tnum font-medium text-ink"><%= @markdown_files.size %></dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-soft">Lines</dt>
+            <dd><%= diffstat(@pull_request.additions, @pull_request.deletions) %></dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-soft">Head</dt>
+            <dd><span class="mono-tag"><%= @pull_request.head_sha.to_s.first(7) %></span></dd>
+          </div>
+        </dl>
+      </section>
+    </aside>
+  </div>
+</div>

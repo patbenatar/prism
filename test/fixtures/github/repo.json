@@ -1,0 +1,19 @@
+{
+  "id": 1296269,
+  "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+  "name": "docs-site",
+  "full_name": "acme/docs-site",
+  "private": true,
+  "owner": {
+    "login": "acme",
+    "id": 9001,
+    "avatar_url": "https://avatars.githubusercontent.com/u/9001?v=4",
+    "html_url": "https://github.com/acme",
+    "type": "Organization"
+  },
+  "html_url": "https://github.com/acme/docs-site",
+  "description": "Product documentation, written in Markdown.",
+  "default_branch": "main",
+  "open_issues_count": 7,
+  "pushed_at": "2026-09-18T14:02:11Z"
+}

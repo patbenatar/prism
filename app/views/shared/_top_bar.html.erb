@@ -1,0 +1,34 @@
+<%#
+  The app shell's top bar. Rendered by the layout for every signed-in screen —
+  don't render it yourself. Screens add their own context (repo, PR, file) with
+  `content_for :breadcrumb`, and an optional right-hand action with
+  `content_for :top_bar_actions`.
+
+  It is closed by the spectrum seam, the app's one piece of ornament.
+%>
+<header class="topbar" data-testid="top-bar">
+  <div class="shell">
+    <div class="topbar-inner">
+      <%= link_to repos_path, class: "flex shrink-0 items-center gap-2 rounded-lg px-1 py-1 -mx-1 hover:bg-sunk",
+                  data: { testid: "brand" } do %>
+        <%= render "shared/prism_mark", size: 22 %>
+        <span class="font-display text-base font-semibold tracking-tight text-ink">Prism</span>
+      <% end %>
+
+      <% if content_for?(:breadcrumb) %>
+        <nav class="flex min-w-0 flex-1 items-center gap-2 text-sm text-ink-soft"
+             aria-label="Breadcrumb" data-testid="breadcrumb">
+          <%= yield :breadcrumb %>
+        </nav>
+      <% else %>
+        <div class="flex-1"></div>
+      <% end %>
+
+      <div class="flex shrink-0 items-center gap-2">
+        <%= yield :top_bar_actions %>
+        <%= render "shared/account_menu" %>
+      </div>
+    </div>
+  </div>
+  <div class="topbar-seam"></div>
+</header>

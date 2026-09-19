@@ -1,0 +1,303 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "id": "PR_kwDOABCD12MAAAABc9Vk",
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "Y3Vyc29yOnYyOpHOAAAAAQ=="
+          },
+          "nodes": [
+            {
+              "id": "PRRT_kwDOABCD12MAAAAAAA1",
+              "path": "docs/guide.md",
+              "line": 3,
+              "originalLine": 3,
+              "startLine": null,
+              "originalStartLine": null,
+              "diffSide": "RIGHT",
+              "startDiffSide": null,
+              "subjectType": "LINE",
+              "isResolved": false,
+              "isOutdated": false,
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "resolvedBy": null,
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": "Y3Vyc29yOjE="
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOABCD12MAAAABc9AA",
+                    "databaseId": 900001,
+                    "body": "This paragraph repeats the heading above. Can we cut it?",
+                    "bodyHTML": "<p>This paragraph repeats the heading above. Can we cut it?</p>",
+                    "state": "SUBMITTED",
+                    "createdAt": "2026-09-17T11:00:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r900001",
+                    "diffHunk": "@@ -1,3 +1,5 @@\n # Guide\n\n+New paragraph.\n+\n Existing text.",
+                    "outdated": false,
+                    "viewerCanUpdate": false,
+                    "viewerCanDelete": false,
+                    "viewerCanReact": true,
+                    "author": {
+                      "login": "octocat",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+                      "url": "https://github.com/octocat"
+                    },
+                    "replyTo": null,
+                    "reactionGroups": [
+                      {
+                        "content": "THUMBS_UP",
+                        "viewerHasReacted": true,
+                        "reactors": {
+                          "totalCount": 2
+                        }
+                      },
+                      {
+                        "content": "THUMBS_DOWN",
+                        "viewerHasReacted": false,
+                        "reactors": {
+                          "totalCount": 0
+                        }
+                      },
+                      {
+                        "content": "HEART",
+                        "viewerHasReacted": false,
+                        "reactors": {
+                          "totalCount": 1
+                        }
+                      },
+                      {
+                        "content": "ROCKET",
+                        "viewerHasReacted": false,
+                        "reactors": {
+                          "totalCount": 0
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "PRRC_kwDOABCD12MAAAABc9AB",
+                    "databaseId": 900002,
+                    "body": "Agreed, cutting it.",
+                    "bodyHTML": "<p>Agreed, cutting it.</p>",
+                    "state": "SUBMITTED",
+                    "createdAt": "2026-09-17T12:30:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r900002",
+                    "diffHunk": "@@ -1,3 +1,5 @@\n # Guide\n\n+New paragraph.\n+\n Existing text.",
+                    "outdated": false,
+                    "viewerCanUpdate": true,
+                    "viewerCanDelete": true,
+                    "viewerCanReact": true,
+                    "author": {
+                      "login": "prism-dev",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/4242?v=4",
+                      "url": "https://github.com/prism-dev"
+                    },
+                    "replyTo": {
+                      "id": "PRRC_kwDOABCD12MAAAABc9AA"
+                    },
+                    "reactionGroups": []
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOABCD12MAAAAAAA2",
+              "path": "docs/guide.md",
+              "line": 14,
+              "originalLine": 14,
+              "startLine": null,
+              "originalStartLine": null,
+              "diffSide": "LEFT",
+              "startDiffSide": null,
+              "subjectType": "LINE",
+              "isResolved": true,
+              "isOutdated": false,
+              "viewerCanResolve": false,
+              "viewerCanUnresolve": true,
+              "viewerCanReply": true,
+              "resolvedBy": {
+                "login": "prism-dev",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/4242?v=4",
+                "url": "https://github.com/prism-dev"
+              },
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": "Y3Vyc29yOjE="
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOABCD12MAAAABc9AC",
+                    "databaseId": 900003,
+                    "body": "Why was this line removed?",
+                    "bodyHTML": "<p>Why was this line removed?</p>",
+                    "state": "SUBMITTED",
+                    "createdAt": "2026-09-17T11:05:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r900003",
+                    "diffHunk": "@@ -11,5 +13,6 @@ # Guide\n ## Section\n \n Prose here.\n-Old line.\n+New line.\n+Another.\n Tail.",
+                    "outdated": false,
+                    "viewerCanUpdate": false,
+                    "viewerCanDelete": false,
+                    "viewerCanReact": true,
+                    "author": {
+                      "login": "octocat",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+                      "url": "https://github.com/octocat"
+                    },
+                    "replyTo": null,
+                    "reactionGroups": []
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOABCD12MAAAAAAA3",
+              "path": "docs/guide.md",
+              "line": null,
+              "originalLine": 42,
+              "startLine": null,
+              "originalStartLine": null,
+              "diffSide": "RIGHT",
+              "startDiffSide": null,
+              "subjectType": "LINE",
+              "isResolved": false,
+              "isOutdated": true,
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "resolvedBy": null,
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": "Y3Vyc29yOjE="
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOABCD12MAAAABc9AD",
+                    "databaseId": 900004,
+                    "body": "This example no longer compiles.",
+                    "bodyHTML": "<p>This example no longer compiles.</p>",
+                    "state": "SUBMITTED",
+                    "createdAt": "2026-09-16T09:00:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r900004",
+                    "diffHunk": "@@ -40,4 +40,4 @@\n Some prose.\n-old example\n+new example",
+                    "outdated": true,
+                    "viewerCanUpdate": false,
+                    "viewerCanDelete": false,
+                    "viewerCanReact": true,
+                    "author": {
+                      "login": "octocat",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+                      "url": "https://github.com/octocat"
+                    },
+                    "replyTo": null,
+                    "reactionGroups": []
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOABCD12MAAAAAAA4",
+              "path": "docs/guide.md",
+              "line": null,
+              "originalLine": null,
+              "startLine": null,
+              "originalStartLine": null,
+              "diffSide": "RIGHT",
+              "startDiffSide": null,
+              "subjectType": "FILE",
+              "isResolved": false,
+              "isOutdated": false,
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "resolvedBy": null,
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": "Y3Vyc29yOjE="
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOABCD12MAAAABc9AE",
+                    "databaseId": 900005,
+                    "body": "> ## Section\n\nThis whole section sits outside the diff, so this is a file-level note.",
+                    "bodyHTML": "<blockquote><h2>Section</h2></blockquote><p>This whole section sits outside the diff, so this is a file-level note.</p>",
+                    "state": "SUBMITTED",
+                    "createdAt": "2026-09-18T08:00:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r900005",
+                    "diffHunk": "",
+                    "outdated": false,
+                    "viewerCanUpdate": true,
+                    "viewerCanDelete": true,
+                    "viewerCanReact": true,
+                    "author": {
+                      "login": "prism-dev",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/4242?v=4",
+                      "url": "https://github.com/prism-dev"
+                    },
+                    "replyTo": null,
+                    "reactionGroups": []
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOABCD12MAAAAAAA5",
+              "path": "docs/guide.md",
+              "line": 17,
+              "originalLine": 17,
+              "startLine": 16,
+              "originalStartLine": 16,
+              "diffSide": "RIGHT",
+              "startDiffSide": "RIGHT",
+              "subjectType": "LINE",
+              "isResolved": false,
+              "isOutdated": false,
+              "viewerCanResolve": true,
+              "viewerCanUnresolve": false,
+              "viewerCanReply": true,
+              "resolvedBy": null,
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": "Y3Vyc29yOjE="
+                },
+                "nodes": [
+                  {
+                    "id": "PRRC_kwDOABCD12MAAAABc9AF",
+                    "databaseId": 900006,
+                    "body": "Draft note on the new lines, not submitted yet.",
+                    "bodyHTML": "<p>Draft note on the new lines, not submitted yet.</p>",
+                    "state": "PENDING",
+                    "createdAt": "2026-09-19T09:30:00Z",
+                    "url": "https://github.com/acme/docs-site/pull/42#discussion_r900006",
+                    "diffHunk": "@@ -11,5 +13,6 @@ # Guide\n ## Section\n \n Prose here.\n-Old line.\n+New line.\n+Another.\n Tail.",
+                    "outdated": false,
+                    "viewerCanUpdate": true,
+                    "viewerCanDelete": true,
+                    "viewerCanReact": false,
+                    "author": {
+                      "login": "prism-dev",
+                      "avatarUrl": "https://avatars.githubusercontent.com/u/4242?v=4",
+                      "url": "https://github.com/prism-dev"
+                    },
+                    "replyTo": null,
+                    "reactionGroups": []
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

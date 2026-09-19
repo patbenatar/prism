@@ -1,0 +1,61 @@
+{
+  "data": {
+    "node": {
+      "id": "PRRT_paged_thread",
+      "comments": {
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "COMMENTS_2"
+        },
+        "nodes": [
+          {
+            "id": "PRRC_page_003",
+            "databaseId": 910003,
+            "body": "Comment 3 in a long argument.",
+            "bodyHTML": "<p>Comment 3 in a long argument.</p>",
+            "state": "SUBMITTED",
+            "createdAt": "2026-09-18T09:00:00Z",
+            "url": "https://github.com/acme/docs-site/pull/42#discussion_r910003",
+            "diffHunk": "@@ -1,3 +1,5 @@\n # Guide\n\n+New paragraph.",
+            "outdated": false,
+            "viewerCanUpdate": false,
+            "viewerCanDelete": false,
+            "viewerCanReact": true,
+            "author": {
+              "login": "octocat",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+              "url": "https://github.com/octocat"
+            },
+            "replyTo": {
+              "id": "PRRC_page_001"
+            },
+            "reactionGroups": []
+          },
+          {
+            "id": "PRRC_page_004",
+            "databaseId": 910004,
+            "body": "Comment 4 in a long argument.",
+            "bodyHTML": "<p>Comment 4 in a long argument.</p>",
+            "state": "SUBMITTED",
+            "createdAt": "2026-09-18T09:00:00Z",
+            "url": "https://github.com/acme/docs-site/pull/42#discussion_r910004",
+            "diffHunk": "@@ -1,3 +1,5 @@\n # Guide\n\n+New paragraph.",
+            "outdated": false,
+            "viewerCanUpdate": false,
+            "viewerCanDelete": false,
+            "viewerCanReact": true,
+            "author": {
+              "login": "octocat",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/583231?v=4",
+              "url": "https://github.com/octocat"
+            },
+            "replyTo": {
+              "id": "PRRC_page_001"
+            },
+            "reactionGroups": []
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+<%#
+  A stack of comment cards plus a reply box, per PLAN.md screen 5 and
+  DESIGN.md §8. D renders these into `threads_<block.id>` on page load; E
+  appends/replaces them by `thread_<thread.node_id>` afterward.
+
+  Locals:
+    thread:         (required) Github::Types::ReviewThread
+    pull_request:   (required) Github::Types::PullRequest
+    pending_review:  Github::Types::Review or nil
+    block_id:        the block this thread is rendered under, or nil when
+                     re-rendering standalone (reply/resolve/delete) — only
+                     `create` needs it, to also clear the composer slot.
+%>
+<% thread = local_assigns.fetch(:thread) %>
+<% pending_review = local_assigns[:pending_review] %>
+
+<% if thread.present? %>
+  <% modifier =
+       if thread.resolved?
+         "thread--resolved"
+       elsif thread.outdated?
+         "thread--outdated"
+       elsif thread.comments.any?(&:pending?)
+         "thread--pending"
+       end %>
+
+  <% body = capture do %>
+    <% thread.comments.each do |comment| %>
+      <%= render "review_comments/comment", comment: comment, thread_id: thread.node_id %>
+    <% end %>
+    <%= render "review_comments/reply_form", thread: thread, pending_review: pending_review %>
+  <% end %>
+
+  <div id="thread_<%= thread.node_id %>" class="thread <%= modifier %>" data-testid="thread"
+       data-thread-id="<%= thread.node_id %>">
+    <div class="flex items-center gap-2 border-b border-line bg-sunk/40 px-4 py-1.5 text-xs text-ink-faint">
+      <% if thread.outdated? %>
+        <span class="pill-modified">Outdated</span>
+      <% end %>
+      <% if thread.left_side? %>
+        <span class="pill-neutral">On removed content</span>
+      <% end %>
+      <% if thread.resolved? %>
+        <span class="pill-resolved" data-testid="thread-resolved-badge">
+          Resolved<% if thread.resolved_by %> by <%= thread.resolved_by.login %><% end %>
+        </span>
+      <% end %>
+
+      <span class="flex-1"></span>
+
+      <% if thread.viewer_can_resolve %>
+        <%= button_to "Resolve",
+                       repo_pull_thread_resolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
+                       method: :post, class: "btn btn-ghost btn-sm", form: { data: { turbo: true } }, data: { testid: "thread-resolve" } %>
+      <% elsif thread.viewer_can_unresolve %>
+        <%= button_to "Unresolve",
+                       repo_pull_thread_unresolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
+                       method: :post, class: "btn btn-ghost btn-sm", form: { data: { turbo: true } }, data: { testid: "thread-unresolve" } %>
+      <% end %>
+    </div>
+
+    <% if thread.resolved? %>
+      <%# Collapsed by default; native <details> so it works with JS off, and
+          collapse_controller.js only swaps the Show/Hide word. %>
+      <details data-controller="collapse" data-testid="thread-body">
+        <summary class="cursor-pointer px-4 py-1.5 text-xs text-ink-faint hover:text-ink">
+          <span data-collapse-target="label">Show</span> the resolved conversation
+        </summary>
+        <%= body %>
+      </details>
+    <% else %>
+      <div data-testid="thread-body"><%= body %></div>
+    <% end %>
+  </div>
+<% end %>

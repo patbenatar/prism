@@ -1,0 +1,13 @@
+<%#
+  D renders this once per file view:
+    render "review_comments/composer_template", pull_request:, path:, pending_review:
+
+  It wraps `_composer_form` in a <template> so composer_controller.js can
+  clone a fresh, inert copy into `composer_<block_id>` on every gutter click
+  rather than re-rendering from the server. Locals match PLAN.md "Phase 2
+  seam".
+%>
+<template id="composer_template">
+  <%= render "review_comments/composer_form", pull_request: pull_request, path: path,
+                                               pending_review: local_assigns[:pending_review] %>
+</template>

@@ -1,0 +1,22 @@
+<%#
+  GitHub labels, in the repository's own colors. `label_pill_style` computes a
+  text color that passes contrast against whatever hex the repo chose.
+
+  Locals:
+    labels: array of Github::Types::Label
+    limit:  show at most this many, then "+N more" (default: all)
+%>
+<% labels = Array(local_assigns.fetch(:labels, [])) %>
+<% limit  = local_assigns.fetch(:limit, nil) %>
+<% shown  = limit ? labels.first(limit) : labels %>
+
+<% if shown.any? %>
+  <span class="flex flex-wrap items-center gap-1.5" data-testid="labels">
+    <% shown.each do |label| %>
+      <span class="label-pill" style="<%= label_pill_style(label.color) %>"><%= label.name %></span>
+    <% end %>
+    <% if limit && labels.size > limit %>
+      <span class="pill-neutral">+<%= labels.size - limit %> more</span>
+    <% end %>
+  </span>
+<% end %>

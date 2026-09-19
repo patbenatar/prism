@@ -1,0 +1,52 @@
+<%#
+  Content this pull request deleted, collapsed into a strip where it used to
+  sit. Expanding it renders the old blocks from the base file, struck through.
+
+  It carries no "+": the lines no longer exist on the head side, so GitHub has
+  nothing on the RIGHT to anchor a comment to. Threads already left on those
+  deleted lines do render here, because this is where they belong.
+
+  A native <details>, so it opens without JavaScript; the `collapse` controller
+  only swaps the word Show for Hide.
+
+  Locals: blocks ([Markdown::Block] from the base file), page, pull_request
+%>
+<div class="md-row" data-testid="removed-strip">
+  <div class="md-gutter">
+    <span class="md-gutter-bar bg-removed" aria-hidden="true"></span>
+  </div>
+
+  <div class="md-body">
+    <details class="md-removed-strip" data-controller="collapse">
+      <summary class="md-removed-summary">
+        <svg viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+          <path fill-rule="evenodd" d="M7.22 14.78a.75.75 0 0 1 0-1.06L10.94 10 7.22 6.28a.75.75 0 0 1 1.06-1.06l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0Z" clip-rule="evenodd" />
+        </svg>
+        <span><%= count_of(blocks.size, "block") %> removed</span>
+        <span aria-hidden="true">·</span>
+        <span data-collapse-target="label">Show</span>
+      </summary>
+
+      <div class="md-removed-body">
+        <% blocks.each do |block| %>
+          <div class="md-prose" data-block-id="<%= block.id %>"
+               data-removed-lines="<%= block.start_line %>–<%= block.end_line %>">
+            <%= block.html %>
+          </div>
+
+          <% page.removed_strip_threads(block).each do |thread| %>
+            <%= render "thread", thread: thread, pull_request: pull_request, block_id: block.id %>
+          <% end %>
+        <% end %>
+
+        <p class="mt-2 text-xs text-ink-faint">
+          Deleted content can't take a new comment here — GitHub anchors to lines
+          that still exist. <%= link_to "Comment on it in the source diff",
+                                        page.source_diff_url,
+                                        class: "text-brand hover:text-brand-deep",
+                                        target: "_blank", rel: "noopener" %>.
+        </p>
+      </div>
+    </details>
+  </div>
+</div>

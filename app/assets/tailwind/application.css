@@ -1,0 +1,951 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRISM — design tokens & component classes
+   ---------------------------------------------------------------------------
+   A prism splits one beam into a spectrum. Prism splits a pull request into
+   something readable: the document as it will actually be read, with the
+   changes showing as colored bands down the left edge.
+
+   That gives the whole system one logic. The review palette is not a set of
+   arbitrary status colors — it is a spectrum, ordered violet → blue → green →
+   amber → red, and each band has one job:
+
+     violet  brand      Prism itself: links, primary actions, focus, merged
+     blue    pending    your unsubmitted review — light not yet emitted
+     green   added      content this PR adds
+     amber   modified   content this PR changes
+     red     removed    content this PR deletes
+     grey    resolved   a settled thread; the light has gone out
+
+   Feature agents: use these tokens and the component classes below. If
+   something is missing, add it here and document it in DESIGN.md rather than
+   reaching for raw slate or violet utilities, so every screen stays in key.
+
+   Tokens live in `@theme`, so Tailwind generates matching utilities:
+     bg-canvas, bg-surface, text-ink, text-ink-soft, border-line,
+     bg-brand, text-added, bg-removed-soft, font-display, font-prose, …
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── Type ───────────────────────────────────────────────────────────────
+     Three faces, three jobs. Space Grotesk carries the interface: a grotesk
+     with squared-off curves and wide apertures, technical without being cold.
+     Source Serif 4 is the reading face — the rendered Markdown is the point of
+     this app, so the prose gets a serif designed for screen reading. JetBrains
+     Mono is for code, paths, and SHAs, where character disambiguation matters
+     more than personality. */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-prose: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── Surfaces & ink ─────────────────────────────────────────────────────
+     Cool paper under north light, with a faint violet cast so the canvas
+     belongs to the same family as the brand. White is reserved for raised
+     surfaces, which keeps panels legible without a shadow. */
+  --color-canvas: #f2f3f8;        /* the page */
+  --color-surface: #ffffff;       /* panels, rows, the top bar */
+  --color-sunk: #eceef5;          /* wells: code blocks, inset strips, inputs */
+  --color-ink: #16182b;           /* primary text — 15.8:1 on canvas */
+  --color-ink-soft: #565c78;      /* secondary text, metadata — 5.9:1 */
+  --color-ink-faint: #6e7490;     /* tertiary: timestamps, counts — 4.2:1 */
+  --color-line: #dee1ec;          /* hairline rules and borders */
+  --color-line-strong: #c3c8db;   /* a rule that has to carry weight */
+
+  /* ── The spectrum ───────────────────────────────────────────────────────
+     Every value is AA on both canvas and its own -soft fill; see DESIGN.md §2
+     for the measured ratios. */
+  --color-brand: #4b33ce;         /* refracted violet — 7.1:1 on canvas */
+  --color-brand-deep: #37209f;    /* hover / pressed */
+  --color-brand-soft: #ece9fd;    /* tinted fill: pills, active rows */
+
+  --color-pending: #1f66c9;       /* a pending (unsubmitted) review */
+  --color-pending-soft: #e1edfb;
+
+  --color-added: #15795d;         /* added lines, blocks, files */
+  --color-added-soft: #dcf1e9;
+
+  --color-modified: #8f5e0e;      /* changed blocks, draft state */
+  --color-modified-soft: #faedd6;
+
+  --color-removed: #b02d3c;       /* deleted content, closed PRs, destructive */
+  --color-removed-soft: #fbe3e6;
+
+  --color-resolved: #565c78;      /* a resolved thread goes quiet (= ink-soft) */
+  --color-resolved-soft: #eceef5;
+
+  /* ── Measure ────────────────────────────────────────────────────────────
+     Prose is capped at a reading measure; tables and code may run wider,
+     because wrapping a table is worse than a long line. */
+  --measure-prose: 72ch;
+  --measure-read: 60rem;          /* the reading column incl. its gutter */
+  --measure-app: 76rem;           /* browsing screens (repo / PR lists) */
+  --gutter-width: 2.5rem;         /* the review gutter: change bar + "+" */
+
+  /* The top bar's full height: its 3.5rem row plus the 2px spectrum seam.
+     Anything that sticks beneath it offsets by this, never by 3.5rem, or it
+     covers the seam. */
+  --topbar-height: calc(3.5rem + 2px);
+}
+
+/* ── Composable bases ─────────────────────────────────────────────────────
+   Tailwind 4 only lets `@apply` reference real utilities, so the four classes
+   other component classes build on are registered with `@utility`. Use them
+   directly too: `.btn` alone is an unstyled-but-correctly-sized button. */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2
+         font-display text-sm font-medium transition
+         disabled:cursor-not-allowed disabled:opacity-55;
+}
+
+@utility pill {
+  @apply inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5
+         font-display text-xs font-medium leading-5 whitespace-nowrap;
+}
+
+@utility field-input {
+  @apply w-full min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink
+         placeholder:text-ink-faint/80
+         focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25;
+}
+
+@utility flash {
+  @apply flex items-start gap-2.5 rounded-lg border px-4 py-2.5 text-sm;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    font-family: var(--font-display);
+    font-feature-settings: "ss01", "ss02";
+    @apply bg-canvas text-ink antialiased;
+  }
+
+  /* One focus treatment everywhere, so a keyboard user sees the same ring on a
+     button, a row, a gutter "+" and a link. Never strip it. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand/45 ring-offset-2 ring-offset-canvas;
+  }
+
+  /* Numbers that sit in columns — counts, line numbers, additions/deletions. */
+  .tnum {
+    font-feature-settings: "tnum";
+  }
+}
+
+@layer components {
+  /* ═══ Shell & layout ═════════════════════════════════════════════════════
+     Three widths, and a screen picks exactly one. Never add your own
+     max-width or centering wrapper around a page — use one of these. */
+
+  /* Browsing screens: repository list, pull request list, PR overview. */
+  .shell {
+    @apply mx-auto w-full max-w-[var(--measure-app)] px-6;
+  }
+
+  /* Focused single-purpose screens: sign in, a friendly 404. */
+  .shell-narrow {
+    @apply mx-auto w-full max-w-[34rem] px-6;
+  }
+
+  /* The review screen's column. Plain block flow, NOT a grid.
+     ---------------------------------------------------------------------
+     The gutter grid belongs to each ROW, not to the page: `.md-block` for a
+     block of the document, `.md-row` for page furniture that still wants to
+     line up with it. Both declare the same template, so every change bar sits
+     in the same channel all the way down, and a row is free to be as tall as
+     its own content.
+
+     This was briefly a two-column grid. It cannot be: a `.md-block` is itself
+     a grid, so as a child of a grid it occupies one cell and consecutive
+     blocks lay out side by side. Anything spanning the full width is just a
+     child of `.reading-shell`; anything needing the gutter uses `.md-row`. */
+  .reading-shell {
+    @apply mx-auto w-full max-w-[var(--measure-read)] px-4 md:px-6;
+  }
+
+  /* Page furniture aligned to the gutter — a removed strip, an "Outdated"
+     heading, the file-level comments. Put an empty div in the first cell. */
+  .md-row {
+    @apply grid;
+    grid-template-columns: var(--gutter-width) minmax(0, 1fr);
+  }
+
+  @media (max-width: 640px) {
+    .md-row {
+      grid-template-columns: 0.75rem minmax(0, 1fr);
+    }
+  }
+
+  /* ═══ Top bar ════════════════════════════════════════════════════════════
+     Sticky, 3.5rem, white over the canvas, closed by the spectrum seam: a 2px
+     gradient rule that is the app's one piece of ornament. It reappears
+     nowhere else, so it reads as the horizon line rather than decoration. */
+  .topbar {
+    @apply sticky top-0 z-30 bg-surface/95 backdrop-blur-sm;
+  }
+
+  .topbar-inner {
+    @apply flex h-14 items-center gap-4;
+  }
+
+  .topbar-seam {
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      var(--color-brand) 0%,
+      var(--color-pending) 26%,
+      var(--color-added) 48%,
+      var(--color-modified) 72%,
+      var(--color-removed) 100%
+    );
+    opacity: 0.55;
+  }
+
+  /* ═══ Panels & ledger rows ═══════════════════════════════════════════════
+     Lists are ledgers, not card decks: one bordered panel, hairline-separated
+     rows. Dense, scannable, and it keeps the page from turning into a grid of
+     identical floating rectangles. */
+  .panel {
+    @apply overflow-hidden rounded-xl border border-line bg-surface;
+  }
+
+  .panel-head {
+    @apply flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2.5;
+  }
+
+  .panel-title {
+    @apply font-display text-sm font-semibold tracking-tight text-ink;
+  }
+
+  .row {
+    @apply flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0;
+  }
+
+  /* A row that navigates. The left edge lights up in brand violet on hover —
+     a 2px tick that echoes the gutter bars on the review screen. */
+  .row-link {
+    @apply relative block border-b border-line px-4 py-3 transition-colors last:border-b-0
+           hover:bg-brand-soft/45 focus-visible:bg-brand-soft/45;
+  }
+
+  .row-link::before {
+    content: "";
+    @apply absolute inset-y-0 left-0 w-0.5 bg-brand opacity-0 transition-opacity;
+  }
+
+  .row-link:hover::before,
+  .row-link:focus-visible::before {
+    @apply opacity-100;
+  }
+
+  .row-title {
+    @apply font-display text-[0.95rem] font-semibold leading-snug tracking-tight text-ink;
+  }
+
+  /* The one-line metadata under a row title. Plain words, no separator dots. */
+  .row-meta {
+    @apply mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-faint;
+  }
+
+  /* ═══ Section headings ═══════════════════════════════════════════════════
+     A section is announced by its name in the display face over a hairline —
+     no uppercase eyebrow, because the rule already does the separating. */
+  .section-head {
+    @apply mb-3 flex items-baseline justify-between gap-3 border-b border-line pb-2;
+  }
+
+  .section-title {
+    @apply font-display text-sm font-semibold tracking-tight text-ink;
+  }
+
+  .section-note {
+    @apply text-xs text-ink-faint;
+  }
+
+  /* ═══ Buttons ════════════════════════════════════════════════════════════ */
+  .btn-primary {
+    @apply btn bg-brand text-white hover:bg-brand-deep active:translate-y-px;
+  }
+
+  .btn-secondary {
+    @apply btn border border-line bg-surface text-ink hover:border-line-strong hover:bg-sunk active:translate-y-px;
+  }
+
+  .btn-ghost {
+    @apply btn px-2.5 text-ink-soft hover:bg-sunk hover:text-ink;
+  }
+
+  .btn-danger {
+    @apply btn border border-removed/30 bg-surface text-removed hover:bg-removed-soft active:translate-y-px;
+  }
+
+  .btn-lg {
+    @apply px-5 py-3 text-base;
+  }
+
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+
+  /* ═══ Fields ═════════════════════════════════════════════════════════════ */
+  .field-label {
+    @apply mb-1.5 block text-sm font-medium text-ink;
+  }
+
+  .field-hint {
+    @apply mt-1.5 text-xs text-ink-faint;
+  }
+
+  /* Search with room for the leading magnifier icon. */
+  .field-search {
+    @apply field-input pl-9;
+  }
+
+  /* ═══ Pills ══════════════════════════════════════════════════════════════
+     One shape, many meanings. `.pill` is the base; the modifier carries the
+     color. Every pill states its meaning in words, never in color alone. */
+  .pill-neutral   { @apply pill bg-sunk text-ink-soft ring-1 ring-inset ring-line; }
+  .pill-brand     { @apply pill bg-brand-soft text-brand; }
+  .pill-pending   { @apply pill bg-pending-soft text-pending; }
+  .pill-added     { @apply pill bg-added-soft text-added; }
+  .pill-modified  { @apply pill bg-modified-soft text-modified; }
+  .pill-removed   { @apply pill bg-removed-soft text-removed; }
+  .pill-resolved  { @apply pill bg-resolved-soft text-resolved ring-1 ring-inset ring-line; }
+
+  /* Solid state pill for the PR header, where the state is the headline fact.
+     Pair with a .pill-* modifier for color via `pill-solid pill-added`. */
+  .pill-solid {
+    @apply pill px-3 py-1 font-semibold;
+  }
+
+  /* A GitHub label. Its color comes from the repo, so the background is set
+     inline and `label_pill_style` computes a readable text color. */
+  .label-pill {
+    @apply inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium leading-5;
+  }
+
+  /* Branch names, paths, SHAs — anything the user might retype. */
+  .mono-tag {
+    @apply inline-flex items-center rounded-md bg-sunk px-1.5 py-0.5 font-mono text-xs text-ink-soft;
+  }
+
+  /* ═══ Avatars ════════════════════════════════════════════════════════════
+     People are round, repositories and organizations are squared — the same
+     distinction GitHub makes, and it lets you tell a row's subject at a glance. */
+  .avatar {
+    @apply inline-block shrink-0 rounded-full bg-sunk object-cover ring-1 ring-line;
+  }
+
+  .avatar-sq {
+    @apply inline-block shrink-0 rounded-md bg-sunk object-cover ring-1 ring-line;
+  }
+
+  /* ═══ Tabs ═══════════════════════════════════════════════════════════════
+     Underline tabs, not a segmented pill: this is a reading tool, and an
+     underline is the quieter of the two. */
+  .tabs {
+    @apply flex items-center gap-1 border-b border-line;
+  }
+
+  .tab {
+    @apply -mb-px border-b-2 border-transparent px-3 py-2 font-display text-sm font-medium text-ink-soft
+           transition-colors hover:border-line-strong hover:text-ink;
+  }
+
+  .tab-active {
+    @apply border-brand text-ink;
+  }
+
+  /* ═══ Flash & banners ════════════════════════════════════════════════════ */
+  .flash-notice { @apply flash border-brand/25 bg-brand-soft text-brand; }
+  .flash-alert  { @apply flash border-removed/25 bg-removed-soft text-removed; }
+
+  /* A rate-limit or degraded-data banner. Sits above the content, not over it:
+     the page still rendered, it just may be stale. */
+  .banner {
+    @apply flex items-start gap-3 rounded-lg border border-modified/25 bg-modified-soft px-4 py-3 text-sm text-modified;
+  }
+
+  /* ═══ Empty states ═══════════════════════════════════════════════════════ */
+  .empty-state {
+    @apply flex flex-col items-center px-6 py-14 text-center;
+  }
+
+  .empty-title {
+    @apply font-display text-base font-semibold tracking-tight text-ink;
+  }
+
+  .empty-body {
+    @apply mt-1.5 max-w-sm text-sm text-ink-soft;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     REVIEW GUTTER — the primitives the rendered-file screen is built from.
+     Workstream D implements the behavior; these are the styles it inherits.
+
+     Structure per block, inside `.reading-shell`:
+
+       <div class="md-block md-block--added" data-block-id="…">
+         <div class="md-gutter">          ← column 1, .gutter-width wide
+           <span class="md-gutter-bar"></span>
+           <button class="md-add">+</button>
+         </div>
+         <div class="md-body md-prose">…sanitized block HTML…</div>
+       </div>
+     ═══════════════════════════════════════════════════════════════════════ */
+  .md-block {
+    @apply relative grid;
+    /* Spans its parent's columns if it ever ends up inside another grid, so a
+       block can never be squeezed into a single cell. Harmless in the block
+       flow of `.reading-shell`, where it normally lives. */
+    grid-column: 1 / -1;
+    grid-template-columns: var(--gutter-width) minmax(0, 1fr);
+  }
+
+  @media (max-width: 640px) {
+    .md-block {
+      grid-template-columns: 0.75rem minmax(0, 1fr);
+    }
+
+    /* A 0.75rem gutter cannot hold a 24px button, and there is no hover on a
+       touch screen, so the BLOCK's "+" moves to its top-left corner and stays
+       visible. It overlays the body's left padding — the deliberate trade for
+       keeping one affordance at every width.
+
+       The `:not()`s matter. This selector is two classes; `.md-add--child` and
+       `.md-add--row` are one, so without them this rule wins and collapses
+       every child affordance onto the left edge of its own <li> or <td>, on
+       top of an ordered list's numbers. Excluding children here means the two
+       rules can never race on source order. */
+    .md-block .md-add:not(.md-add--child):not(.md-add--row) {
+      @apply absolute left-0 top-0 opacity-100;
+    }
+
+    /* Below 640px a reviewer comments on the list or the table, not on one
+       item or one row.
+       ------------------------------------------------------------------
+       This is a product decision, not a layout workaround. There is nowhere
+       for a second, nested affordance to go at this width: the list's indent
+       is occupied by its markers, and a table is `overflow-x-auto` so its
+       row button lives inside the first cell, which is already tight. Putting
+       it anywhere covers the "1." and "2." of an ordered list — and in a
+       document under review those numbers carry meaning, so losing them is
+       worse than losing the finer granularity.
+
+       Nothing becomes uncommentable: the block's own "+" still covers the
+       whole list or table. It is the same trade §7 already makes for the
+       gutter, one level down. */
+    .md-block .md-add--child,
+    .md-block .md-add--row {
+      @apply hidden;
+    }
+  }
+
+  /* The gutter cell. The "+" only appears on hover or keyboard focus, so a
+     page at rest is just the document and its change bars. */
+  .md-gutter {
+    @apply relative flex justify-center pt-1;
+  }
+
+  /* The change bar: a full-height 3px band in the block's spectrum color. */
+  .md-gutter-bar {
+    @apply absolute inset-y-0 left-2 w-[3px] rounded-full bg-transparent sm:left-3;
+  }
+
+  .md-block--added    .md-gutter-bar { @apply bg-added; }
+  .md-block--modified .md-gutter-bar { @apply bg-modified; }
+  .md-block--removed  .md-gutter-bar { @apply bg-removed; }
+
+  /* A very faint tint behind changed blocks so a skim finds them without the
+     page turning into a diff. */
+  .md-block--added .md-body    { background: color-mix(in oklab, var(--color-added-soft) 42%, transparent); }
+  .md-block--modified .md-body { background: color-mix(in oklab, var(--color-modified-soft) 42%, transparent); }
+
+  .md-body {
+    @apply min-w-0 px-3 py-0.5;
+  }
+
+  /* The "+" affordance. Hidden until the block is hovered or something inside
+     it has focus; always reachable by keyboard because it is focusable. */
+  .md-add {
+    @apply relative z-10 flex h-6 w-6 items-center justify-center rounded-md border border-line
+           bg-surface font-display text-sm leading-none text-brand opacity-0 transition
+           hover:bg-brand hover:text-white focus-visible:opacity-100;
+  }
+
+  .md-block:hover .md-add,
+  .md-block:focus-within .md-add {
+    @apply opacity-100;
+  }
+
+  /* A block GitHub cannot anchor a line comment to. The "+" still works — it
+     opens the composer in file-comment mode — but it is muted so the
+     difference is visible before you click. */
+  .md-add--muted {
+    @apply border-dashed text-ink-faint hover:bg-sunk hover:text-ink-soft;
+  }
+
+  /* Content this PR deleted, shown as a collapsed strip where it used to be. */
+  .md-removed-strip {
+    @apply my-2 rounded-lg border border-removed/20 bg-removed-soft/50;
+  }
+
+  .md-removed-summary {
+    @apply flex cursor-pointer items-center gap-2 px-3 py-1.5 font-display text-xs font-medium text-removed;
+  }
+
+  /* The expanded old content: struck through the way a deletion reads. */
+  .md-removed-body {
+    @apply border-t border-removed/20 px-3 py-2 opacity-75;
+  }
+
+  .md-removed-body .md-prose > * {
+    @apply line-through decoration-removed/35;
+  }
+
+
+  /* ═══ Review file view (workstream D) ════════════════════════════════════
+     The per-file bar, and the gutter affordances for child blocks — a list
+     item or a table row a reviewer can comment on on its own. */
+
+  /* File-level comments live at the top of the file. The section (heading
+     included) is always in the DOM so a comment streamed in by Turbo gets a
+     heading; it simply stays hidden while the list is empty. */
+  .file-threads:not(:has(#file_threads > *)) {
+    display: none;
+  }
+
+  /* Sits directly under the app top bar. The offset is the token, so the
+     spectrum seam stays visible instead of being covered. */
+  .filebar {
+    @apply sticky z-20 border-b border-line bg-surface/95 backdrop-blur-sm;
+    top: var(--topbar-height);
+  }
+
+  .filebar-inner {
+    @apply mx-auto flex max-w-[var(--measure-read)] flex-wrap items-center gap-x-3 gap-y-1
+           px-4 py-2 text-sm md:px-6;
+  }
+
+  /* ── Child blocks ──────────────────────────────────────────────────────
+     A child carries its own "+", positioned against the child rather than the
+     block. Hovering the block must NOT light up every child at once, so the
+     block-level reveal is cancelled for children and re-granted only to the
+     child actually under the pointer. That rule is deliberately one class more
+     specific than the block-level one, so it does not depend on source order. */
+  .md-block:hover .md-add--child,
+  .md-block:focus-within .md-add--child {
+    @apply opacity-0;
+  }
+
+  .md-prose li.md-child,
+  .md-child {
+    @apply relative;
+  }
+
+  .md-add--child {
+    @apply absolute top-0 h-5 w-5 text-xs;
+    left: calc(var(--gutter-width) * -1 + 0.25rem);
+  }
+
+  /* A nested item is already indented by its list's 1.5rem padding, so the
+     gutter offset above would land the "+" on top of the text. Inside a nested
+     list it sits in that list's own indent channel instead, over the bullet —
+     which is only covered while the item is hovered. This holds at any depth,
+     because every level adds the same indent. */
+  .md-prose li li.md-child > .md-add--child {
+    left: -1.5rem;
+  }
+
+  .md-block .md-child:hover > .md-add--child,
+  .md-block .md-child:focus-within > .md-add--child {
+    @apply opacity-100;
+  }
+
+  /* A table is `overflow-x-auto`, so a row's "+" cannot hang outside it — it
+     lives inside the first cell instead, over extra left padding.
+
+     Scoped to the widths where that button exists rather than reserved always
+     and given back below 640px: the compiler reorders rules, so an override
+     of equal specificity is not guaranteed to win, and this is the narrowest
+     column in the app to be wasting 2.25rem in. */
+  @media (min-width: 641px) {
+    .md-prose table.md-child-table th:first-child,
+    .md-prose table.md-child-table td:first-child {
+      @apply relative pl-9;
+    }
+  }
+
+  .md-add--row {
+    @apply absolute left-2 top-1.5 h-5 w-5 text-xs;
+  }
+
+  /* The extra row that carries a table row's threads and composer. It is a
+     continuation of the row above, so it drops the rule between them. */
+  .md-prose .md-thread-row > td {
+    @apply border-t-0 px-3 py-0;
+  }
+
+  /* ═══ Comment cards ══════════════════════════════════════════════════════
+     Used under a block on the review screen and anywhere a GitHub comment is
+     shown. A thread is a stack of these inside one `.thread`. */
+  .thread {
+    @apply my-3 overflow-hidden rounded-xl border border-line bg-surface;
+  }
+
+  .thread--pending  { @apply border-pending/40 bg-pending-soft/30; }
+  .thread--resolved { @apply border-line bg-sunk/60; }
+  .thread--outdated { @apply border-modified/30; }
+
+  .comment-card {
+    @apply border-b border-line px-4 py-3 last:border-b-0;
+  }
+
+  .comment-head {
+    @apply flex items-center gap-2 text-xs text-ink-faint;
+  }
+
+  .comment-author {
+    @apply font-display text-sm font-semibold text-ink;
+  }
+
+  .comment-body {
+    @apply mt-2;
+  }
+
+  .comment-actions {
+    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  }
+
+  /* A reaction. Filled when the viewer has reacted, so the toggle state is
+     legible without reading the count. */
+  .reaction-pill {
+    @apply inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5
+           text-xs text-ink-soft transition hover:border-line-strong hover:bg-sunk;
+  }
+
+  .reaction-pill--on {
+    @apply border-brand/40 bg-brand-soft text-brand;
+  }
+
+  /* The reply / new comment box at the foot of a thread. */
+  .reply-box {
+    @apply border-t border-line bg-sunk/50 px-4 py-3;
+  }
+
+  .composer-textarea {
+    @apply field-input min-h-[5.5rem] resize-y font-prose text-[0.95rem] leading-relaxed;
+  }
+
+  /* ═══ Sticky bottom tray ═════════════════════════════════════════════════
+     The pending-review tray. Full-bleed bar, content aligned to the reading
+     column, so it lines up with the document above it. */
+  .tray {
+    @apply sticky bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-sm;
+  }
+
+  .tray-inner {
+    @apply mx-auto flex max-w-[var(--measure-read)] items-center gap-3 px-4 py-2.5 md:px-6;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     RENDERED MARKDOWN — `.md-prose`
+     ---------------------------------------------------------------------
+     Applied to sanitized HTML we cannot add classes to, so everything is a
+     descendant selector. Prose is capped at the reading measure; code, tables
+     and images are allowed to run the full width of the column, because
+     wrapping a table is worse than a long line.
+     ═══════════════════════════════════════════════════════════════════════ */
+  .md-prose {
+    font-family: var(--font-prose);
+    @apply text-[1.0625rem] leading-[1.7] text-ink;
+    font-variant-numeric: oldstyle-nums;
+  }
+
+  .md-prose > * {
+    max-width: var(--measure-prose);
+  }
+
+  .md-prose > pre,
+  .md-prose > table,
+  .md-prose > .table-scroll,
+  .md-prose > img,
+  .md-prose > details,
+  .md-prose > .markdown-alert {
+    max-width: 100%;
+  }
+
+  .md-prose > * + * {
+    @apply mt-4;
+  }
+
+  /* Headings switch to the display face: the interface voice announcing a
+     section of the reading voice. */
+  .md-prose h1,
+  .md-prose h2,
+  .md-prose h3,
+  .md-prose h4,
+  .md-prose h5,
+  .md-prose h6 {
+    font-family: var(--font-display);
+    @apply font-semibold tracking-tight text-ink;
+    font-variant-numeric: normal;
+  }
+
+  .md-prose h1 { @apply text-3xl leading-tight; }
+  .md-prose h2 { @apply text-2xl leading-tight; }
+  .md-prose h3 { @apply text-xl leading-snug; }
+  .md-prose h4 { @apply text-lg leading-snug; }
+  .md-prose h5 { @apply text-base; }
+  .md-prose h6 { @apply text-sm text-ink-soft; }
+
+  .md-prose > h1 + *,
+  .md-prose > h2 + *,
+  .md-prose > h3 + * {
+    @apply mt-3;
+  }
+
+  /* h1/h2 carry a hairline, the way a document's own sections do. */
+  .md-prose h1,
+  .md-prose h2 {
+    @apply border-b border-line pb-2;
+  }
+
+  .md-prose a {
+    @apply text-brand underline decoration-brand/30 underline-offset-2 transition-colors
+           hover:decoration-brand;
+  }
+
+  .md-prose strong { @apply font-semibold text-ink; }
+  .md-prose em { @apply italic; }
+  .md-prose del { @apply text-ink-faint line-through; }
+
+  .md-prose ul,
+  .md-prose ol {
+    @apply pl-6;
+  }
+
+  .md-prose ul { @apply list-disc; }
+  .md-prose ol { @apply list-decimal; }
+  .md-prose li::marker { @apply text-ink-faint; }
+  .md-prose li + li { @apply mt-1.5; }
+  .md-prose li > ul,
+  .md-prose li > ol { @apply mt-1.5; }
+  .md-prose li > p + p { @apply mt-3; }
+
+  /* Task lists: no bullet, the checkbox is the marker. */
+  .md-prose li:has(> input[type="checkbox"]) {
+    @apply list-none -ml-6 pl-6 relative;
+  }
+
+  .md-prose input[type="checkbox"] {
+    @apply absolute left-0 top-[0.45em] h-3.5 w-3.5 rounded border-line accent-[var(--color-brand)];
+  }
+
+  /* Not italicised: a blockquote in a document under review is often several
+     paragraphs of real prose, and italic serif at length is harder to read. The
+     rule and the muted color do the quoting. */
+  .md-prose blockquote {
+    @apply border-l-2 border-line-strong pl-4 text-ink-soft;
+  }
+
+  .md-prose hr {
+    @apply border-0 border-t border-line;
+  }
+
+  /* Inline code keeps the prose size but drops to mono with a tinted well. */
+  .md-prose code {
+    font-family: var(--font-mono);
+    @apply rounded bg-sunk px-1 py-0.5 text-[0.85em] text-ink;
+    font-variant-numeric: normal;
+  }
+
+  .md-prose pre {
+    font-family: var(--font-mono);
+    @apply overflow-x-auto rounded-lg border border-line bg-sunk p-4 text-[0.82rem] leading-relaxed;
+  }
+
+  .md-prose pre code {
+    @apply bg-transparent p-0 text-[1em];
+  }
+
+  .md-prose table {
+    @apply block w-max min-w-full max-w-full overflow-x-auto border-collapse text-[0.9rem];
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-prose thead {
+    @apply border-b border-line-strong text-left;
+  }
+
+  .md-prose th {
+    @apply px-3 py-2 font-semibold text-ink;
+  }
+
+  .md-prose td {
+    @apply border-t border-line px-3 py-2 align-top text-ink-soft;
+  }
+
+  .md-prose img {
+    @apply rounded-lg border border-line;
+  }
+
+  .md-prose details {
+    @apply rounded-lg border border-line bg-surface px-4 py-2;
+  }
+
+  .md-prose summary {
+    font-family: var(--font-display);
+    @apply cursor-pointer text-sm font-medium text-ink;
+  }
+
+  /* Footnote references and the footnote section GFM emits at the end. */
+  .md-prose sup a {
+    @apply no-underline;
+  }
+
+  .md-prose .footnotes {
+    @apply mt-8 border-t border-line pt-4 text-sm text-ink-soft;
+  }
+
+  /* GitHub alerts (> [!NOTE] …). Each takes the spectrum band that matches
+     its severity, so an alert reads in the same language as a change bar. */
+  .md-prose .markdown-alert {
+    @apply rounded-lg border-l-[3px] bg-sunk/60 px-4 py-3;
+  }
+
+  .md-prose .markdown-alert > :first-child { @apply mt-0; }
+  .md-prose .markdown-alert > * + * { @apply mt-2; }
+
+  .md-prose .markdown-alert-title {
+    font-family: var(--font-display);
+    @apply flex items-center gap-2 text-sm font-semibold;
+  }
+
+  .md-prose .markdown-alert-note      { @apply border-pending bg-pending-soft/45; }
+  .md-prose .markdown-alert-note .markdown-alert-title { @apply text-pending; }
+
+  .md-prose .markdown-alert-tip       { @apply border-added bg-added-soft/45; }
+  .md-prose .markdown-alert-tip .markdown-alert-title { @apply text-added; }
+
+  .md-prose .markdown-alert-important { @apply border-brand bg-brand-soft/45; }
+  .md-prose .markdown-alert-important .markdown-alert-title { @apply text-brand; }
+
+  .md-prose .markdown-alert-warning   { @apply border-modified bg-modified-soft/45; }
+  .md-prose .markdown-alert-warning .markdown-alert-title { @apply text-modified; }
+
+  .md-prose .markdown-alert-caution   { @apply border-removed bg-removed-soft/45; }
+  .md-prose .markdown-alert-caution .markdown-alert-title { @apply text-removed; }
+
+  /* A compact variant for comment bodies and PR descriptions, where the prose
+     sits inside a card rather than being the whole page. */
+  .md-prose-compact {
+    @apply text-[0.95rem] leading-relaxed;
+  }
+
+  .md-prose-compact > * + * { @apply mt-3; }
+  .md-prose-compact h1 { @apply text-xl; }
+  .md-prose-compact h2 { @apply text-lg; }
+  .md-prose-compact h3 { @apply text-base; }
+  .md-prose-compact > * { max-width: 100%; }
+}
+
+/* ═══ Code highlighting (Rouge, light) ════════════════════════════════════
+   Rouge tags fenced code with short class names. Hues are pulled from the
+   spectrum so a code block belongs to the same palette as everything else;
+   comments recede, strings and numbers take the warm end, keywords the violet
+   end. Workstream B applies Rouge to `pre[lang]`. */
+@layer components {
+  .md-prose .highlight .c,
+  .md-prose .highlight .cm,
+  .md-prose .highlight .c1,
+  .md-prose .highlight .cs  { @apply text-ink-faint italic; }
+
+  .md-prose .highlight .k,
+  .md-prose .highlight .kd,
+  .md-prose .highlight .kn,
+  .md-prose .highlight .kp,
+  .md-prose .highlight .kr,
+  .md-prose .highlight .kt,
+  .md-prose .highlight .ow  { @apply text-brand; }
+
+  .md-prose .highlight .s,
+  .md-prose .highlight .s1,
+  .md-prose .highlight .s2,
+  .md-prose .highlight .sb,
+  .md-prose .highlight .sd,
+  .md-prose .highlight .se,
+  .md-prose .highlight .sh,
+  .md-prose .highlight .si,
+  .md-prose .highlight .sx,
+  .md-prose .highlight .sr  { @apply text-added; }
+
+  .md-prose .highlight .m,
+  .md-prose .highlight .mf,
+  .md-prose .highlight .mh,
+  .md-prose .highlight .mi,
+  .md-prose .highlight .mo,
+  .md-prose .highlight .il  { @apply text-modified; }
+
+  .md-prose .highlight .nc,
+  .md-prose .highlight .nn,
+  .md-prose .highlight .no  { @apply text-pending; }
+
+  .md-prose .highlight .nf,
+  .md-prose .highlight .nd  { @apply text-pending; }
+
+  .md-prose .highlight .nt  { @apply text-removed; }
+  .md-prose .highlight .na,
+  .md-prose .highlight .nv,
+  .md-prose .highlight .vi  { @apply text-ink-soft; }
+
+  .md-prose .highlight .err { @apply text-removed; }
+  .md-prose .highlight .gd  { @apply bg-removed-soft text-removed; }
+  .md-prose .highlight .gi  { @apply bg-added-soft text-added; }
+}
+
+/* ═══ Dark theme (scaffolded, not shipped) ════════════════════════════════
+   Every token above is semantic, so a dark theme is a matter of redefining
+   them — no component class changes. This block is opt-in: nothing sets
+   `data-theme="dark"` yet and it has not been reviewed on screen. When dark
+   mode is taken on, switch the selector to also cover
+   `@media (prefers-color-scheme: dark)` and re-measure contrast (DESIGN.md §2).  */
+:root[data-theme="dark"] {
+  --color-canvas: #0f1120;
+  --color-surface: #171a2c;
+  --color-sunk: #1f2338;
+  --color-ink: #e8eaf4;
+  --color-ink-soft: #a6acc6;
+  --color-ink-faint: #848bab;
+  --color-line: #2b3049;
+  --color-line-strong: #3d4360;
+
+  --color-brand: #a394ff;
+  --color-brand-deep: #bdb2ff;
+  --color-brand-soft: #241f4d;
+  --color-pending: #78b1f5;
+  --color-pending-soft: #142740;
+  --color-added: #5fd3a6;
+  --color-added-soft: #0f2e25;
+  --color-modified: #e0ac5c;
+  --color-modified-soft: #33260f;
+  --color-removed: #f0899a;
+  --color-removed-soft: #37151d;
+  --color-resolved: #a6acc6;
+  --color-resolved-soft: #1f2338;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

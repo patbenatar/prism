@@ -1,0 +1,48 @@
+# PostgreSQL. Versions 9.5 and up are supported.
+#
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  # For details on connection pooling, see Rails configuration guide
+  # https://guides.rubyonrails.org/configuring.html#database-pooling
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  # Connection details come from the environment so the same config works on the
+  # host and inside Docker Compose (where the host is the `postgres` service).
+  host: <%= ENV.fetch("DB_HOST", "localhost") %>
+  port: <%= ENV.fetch("DB_PORT", 5432) %>
+  username: <%= ENV.fetch("DB_USERNAME", "postgres") %>
+  password: <%= ENV.fetch("DB_PASSWORD", "postgres") %>
+
+development:
+  <<: *default
+  database: prism_development
+
+# Warning: The database defined as "test" will be erased and
+# re-generated from your development database when you run "rake".
+# Do not set this db to the same as development or production.
+test:
+  <<: *default
+  database: <%= ENV.fetch("TEST_DATABASE", "prism_test") %>
+
+# As with config/credentials.yml, you never want to store sensitive information,
+# like your database password, in your source code. If your source code is
+# ever seen by anyone, they now have access to your database.
+#
+# Instead, provide the password or a full connection URL as an environment
+# variable when you boot the app. For example:
+#
+#   DATABASE_URL="postgres://myuser:mypass@localhost/somedatabase"
+#
+# Single database, hosted wherever production runs. The full connection string
+# is injected via the DATABASE_URL environment variable. Solid Queue's tables
+# live in THIS primary database (install_solid_queue_tables migration); cache
+# and cable don't use the database in production (see production.rb /
+# cable.yml), so no separate cache/queue/cable databases are needed.
+production:
+  adapter: postgresql
+  encoding: unicode
+  # The pool must cover BOTH the Puma web threads (RAILS_MAX_THREADS) and Solid
+  # Queue, which runs inside Puma (SOLID_QUEUE_IN_PUMA) in async mode and needs
+  # a handful of extra connections (worker threads + dispatcher + supervisor).
+  max_connections: <%= ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS", 5).to_i + 7 } %>
+  url: <%= ENV.fetch("DATABASE_URL", "postgresql://localhost/prism_unused") %>

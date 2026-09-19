@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1296269,
+    "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+    "name": "docs-site",
+    "full_name": "acme/docs-site",
+    "private": true,
+    "owner": {
+      "login": "acme",
+      "id": 9001,
+      "avatar_url": "https://avatars.githubusercontent.com/u/9001?v=4",
+      "html_url": "https://github.com/acme",
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/acme/docs-site",
+    "description": "Product documentation, written in Markdown.",
+    "fork": false,
+    "default_branch": "main",
+    "open_issues_count": 7,
+    "pushed_at": "2026-09-18T14:02:11Z",
+    "created_at": "2024-01-03T09:00:00Z",
+    "updated_at": "2026-09-18T14:02:11Z",
+    "visibility": "private",
+    "archived": false
+  },
+  {
+    "id": 1296270,
+    "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2Mjcw",
+    "name": "scratchpad",
+    "full_name": "prism-dev/scratchpad",
+    "private": false,
+    "owner": {
+      "login": "prism-dev",
+      "id": 4242,
+      "avatar_url": "https://avatars.githubusercontent.com/u/4242?v=4",
+      "html_url": "https://github.com/prism-dev",
+      "type": "User"
+    },
+    "html_url": "https://github.com/prism-dev/scratchpad",
+    "description": null,
+    "fork": false,
+    "default_branch": "main",
+    "open_issues_count": 0,
+    "pushed_at": "2026-08-30T08:15:00Z",
+    "created_at": "2025-05-20T12:00:00Z",
+    "updated_at": "2026-08-30T08:15:00Z",
+    "visibility": "public",
+    "archived": false
+  }
+]

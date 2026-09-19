@@ -1,0 +1,10 @@
+<% content_for :title, "Not found" %>
+
+<div class="shell-narrow py-20">
+  <%= render "shared/empty_state",
+             icon: :search,
+             title: "GitHub has nothing here",
+             body: "Either this repository or pull request doesn't exist, or your GitHub account can't see it. GitHub answers the same way for both, and so does Prism.",
+             cta_label: "Back to repositories",
+             cta_to: repos_path %>
+</div>

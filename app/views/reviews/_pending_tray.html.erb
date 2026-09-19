@@ -1,0 +1,50 @@
+<%#
+  The sticky bottom bar for the viewer's pending review. D renders this once
+  (into `content_for :tray`, per DESIGN.md §8's `.tray`/`.tray-inner`); E
+  replaces it by id after every write that could change the pending count.
+
+  The root element always keeps `id="pending_tray"` — even with nothing
+  pending — so a later turbo_stream.replace always has a target to land on.
+
+  Locals:
+    pull_request:  (required) Github::Types::PullRequest
+    pending_review: Github::Types::Review or nil
+    pending_count:  Integer — PENDING comments across the whole pull request
+%>
+<% pull_request = local_assigns.fetch(:pull_request) %>
+<% pending_review = local_assigns[:pending_review] %>
+<% pending_count = local_assigns[:pending_count].to_i %>
+
+<div id="pending_tray" data-testid="pending-review"
+     data-controller="pending-review"
+     data-pending-review-node-id-value="<%= pending_review&.node_id %>"
+     data-pending-review-count-value="<%= pending_count %>">
+  <% if pending_review.present? %>
+    <%# Also carries D's fallback testid ("pending-tray") alongside the
+        canonical one DESIGN.md §10 documents ("pending-review" on the
+        wrapper above), so a page built before this partial existed and one
+        built after it both find the tray the same way. %>
+    <div class="tray" data-testid="pending-tray">
+      <div class="tray-inner">
+        <span class="tnum text-sm text-ink-soft" data-testid="pending-count">
+          <%= count_of(pending_count, "pending comment") %>
+        </span>
+        <span class="flex-1"></span>
+
+        <details class="relative">
+          <summary class="btn btn-primary btn-sm cursor-pointer list-none" data-testid="review-submit-open">
+            Submit review
+          </summary>
+          <div class="absolute bottom-full right-0 z-30 mb-2 w-80 rounded-xl border border-line bg-surface p-3 shadow-lg shadow-ink/5">
+            <%= render "reviews/submit_panel", pull_request: pull_request, pending_review: pending_review %>
+          </div>
+        </details>
+
+        <%= button_to "Discard", repo_pull_review_path(owner: params[:owner], repo: params[:repo], number: pull_request.number, id: pending_review.id),
+                       method: :delete, class: "btn btn-danger btn-sm",
+                       form: { data: { turbo_confirm: "Discard this pending review and every draft comment on it?" } },
+                       data: { testid: "review-discard" } %>
+      </div>
+    </div>
+  <% end %>
+</div>

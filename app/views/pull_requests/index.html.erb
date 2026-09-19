@@ -1,0 +1,86 @@
+<% content_for :title, "#{@repo.full_name} pull requests" %>
+
+<% content_for :breadcrumb do %>
+  <span class="truncate font-medium text-ink"><%= @repo.full_name %></span>
+<% end %>
+
+<div class="shell pb-16">
+  <% repo_title = capture do %>
+    <span class="font-normal text-ink-soft"><%= @repo.owner %>/</span><%= @repo.name %>
+  <% end %>
+  <% repo_actions = capture do %>
+    <%= link_to "Open on GitHub", @repo.html_url, class: "btn-secondary",
+                target: "_blank", rel: "noopener" %>
+  <% end %>
+
+  <%= render "shared/page_header",
+             title: repo_title,
+             subtitle: @repo.description,
+             actions: repo_actions %>
+
+  <nav class="tabs mb-4" aria-label="Pull request state" data-testid="pr-tabs">
+    <% pull_request_tabs(@state).each do |label, state, active| %>
+      <%= link_to label, repo_pulls_path(owner: @owner, repo: @name, state: state),
+                  class: "tab #{'tab-active' if active}",
+                  aria: { current: (active ? "page" : nil) },
+                  data: { testid: "pr-tab-#{state}" } %>
+    <% end %>
+  </nav>
+
+  <% if @pull_requests.any? %>
+    <div class="panel" data-testid="pull-request-list">
+      <% @pull_requests.each do |pull_request| %>
+        <% _key, state_word, state_class = pull_request_state(pull_request) %>
+        <%= link_to repo_pull_path(owner: @owner, repo: @name, number: pull_request.number),
+                    class: "row-link", data: { testid: "pull-request-row" } do %>
+          <div class="flex items-start gap-3">
+            <span class="<%= state_class %> mt-0.5"><%= state_word %></span>
+
+            <div class="min-w-0 flex-1">
+              <p class="row-title break-words"><%= pull_request.title %></p>
+
+              <% if pull_request.labels.present? %>
+                <div class="mt-1.5">
+                  <%= render "shared/labels", labels: pull_request.labels, limit: 4 %>
+                </div>
+              <% end %>
+
+              <div class="row-meta">
+                <span class="tnum">#<%= pull_request.number %></span>
+                <span>
+                  <%= relative_time(pull_request.created_at, prefix: "opened") %>
+                  <% if pull_request.author %>by <%= pull_request.author.login %><% end %>
+                </span>
+                <% if pull_request.changed_files.to_i.positive? %>
+                  <span><%= count_of(pull_request.changed_files, "file") %> changed</span>
+                <% end %>
+                <span><%= relative_time(pull_request.updated_at, prefix: "updated") %></span>
+              </div>
+            </div>
+
+            <% if pull_request.author %>
+              <%= image_tag pull_request.author.avatar_url, alt: "",
+                            class: "avatar mt-0.5 h-6 w-6", loading: "lazy" %>
+            <% end %>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+
+    <% if @next_page %>
+      <div class="mt-4 flex justify-center">
+        <%= link_to "Next page", repo_pulls_path(owner: @owner, repo: @name, state: @state, page: @next_page),
+                    class: "btn-secondary", data: { testid: "next-page" } %>
+      </div>
+    <% end %>
+  <% else %>
+    <div class="panel">
+      <%= render "shared/empty_state",
+                 icon: :pull,
+                 title: @state == "open" ? "No open pull requests" : "Nothing here",
+                 body: @state == "open" ?
+                   "When someone opens a pull request against #{@repo.full_name}, it shows up here." :
+                   "No #{@state} pull requests in #{@repo.full_name}." %>
+    </div>
+  <% end %>
+</div>

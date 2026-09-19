@@ -1,0 +1,144 @@
+<%#
+  The rendered Markdown file view — the screen Prism exists for.
+
+  Layout is DESIGN §4's `.reading-shell`: a plain column at the reading width.
+  The gutter grid belongs to each row — `.md-block` for a block of the document,
+  `.md-row` for page furniture that still wants to line up with it — so every
+  change bar sits in the same channel all the way down.
+
+  Ids and data attributes here are the seam with workstream E (PLAN.md "Phase 2
+  seam"). Don't rename one without telling them.
+%>
+<% content_for :title, "#{@path} · #{@owner}/#{@name}##{@number}" %>
+
+<% content_for :breadcrumb do %>
+  <%= link_to "#{@owner}/#{@name}", repo_pulls_path(owner: @owner, repo: @name),
+              class: "shrink-0 hover:text-brand" %>
+  <span class="text-ink-faint" aria-hidden="true">/</span>
+  <%= link_to "##{@number}", repo_pull_path(owner: @owner, repo: @name, number: @number),
+              class: "shrink-0 tnum hover:text-brand" %>
+  <%# Below `sm` there is no room for the path here, and the file bar right
+      underneath already names the file in full. %>
+  <span class="hidden text-ink-faint sm:inline" aria-hidden="true">/</span>
+  <span class="hidden truncate font-mono text-xs text-ink sm:inline"
+        title="<%= @path %>"><%= @path %></span>
+<% end %>
+
+<div id="file_view"
+     <%# `pending-review` is deliberately NOT here, though the seam lists it.
+         The tray renders through `content_for :tray`, outside <main>, and
+         declares that controller on its own root — which is the instance that
+         has the values and survives a Turbo replace. A second, value-less
+         instance here would broadcast "nothing pending" on every load. %>
+     data-controller="composer gutter block-nav"
+     data-composer-template-id="composer_template"
+     data-composer-owner="<%= @owner %>"
+     data-composer-repo="<%= @name %>"
+     data-composer-number="<%= @number %>"
+     data-composer-path="<%= @path %>"
+     data-composer-head-sha="<%= @pull_request.head_sha %>"
+     data-composer-pull-request-node-id="<%= @page.pull_request_node_id %>"
+     data-composer-pending-review-node-id="<%= @page.pending_review&.node_id %>"
+     data-composer-pending-review-id="<%= @page.pending_review&.id %>"
+     data-composer-file-comment-permalink-base="<%= @page.file_comment_permalink_base %>"
+     data-composer-side="<%= @result&.side || "right" %>">
+
+  <%= render "file_bar" %>
+
+  <div class="reading-shell pb-24 pt-5">
+    <%# ── Notices ────────────────────────────────────────────────────── %>
+    <div class="empty:hidden">
+      <% if @page.rate_limited? %>
+        <%= render "shared/rate_limit_banner",
+                   retry_in: @page.rate_limit_retry_in, reset_at: @page.rate_limited_at %>
+      <% elsif @page.threads_unavailable? %>
+        <div class="banner mb-4" role="status" data-testid="threads-unavailable">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.25 6a.75.75 0 0 1 1.5 0v4.5a.75.75 0 0 1-1.5 0V6Zm.75 7a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" clip-rule="evenodd" />
+          </svg>
+          <%# The error writes its own sentence; ours only says what is missing
+              from the page as a result. %>
+          <p>
+            <%= @page.threads_error_message %>
+            The document is here, but the comments on it are not.
+          </p>
+        </div>
+      <% end %>
+
+      <% if @page.missing_content? %>
+        <%= render "uncommentable_notice", kind: @page.content_problem, page: @page %>
+      <% elsif @page.no_patch? %>
+        <%= render "uncommentable_notice", kind: :no_patch, page: @page %>
+      <% elsif @file.removed? %>
+        <%= render "uncommentable_notice", kind: :file_removed, page: @page %>
+      <% end %>
+    </div>
+
+    <% if @page.missing_content? %>
+      <div>
+        <%= render "shared/empty_state",
+                   icon: :file,
+                   title: "Prism can't render this file",
+                   body: (@page.content_problem == :too_large ?
+                            "It's larger than Prism renders in a request. Reading it here would mean parsing several megabytes of Markdown before the page could start, so the file stays on GitHub." :
+                            "GitHub didn't return readable text for it at this commit — it may be binary, or too large to serve. The file itself is still on GitHub."),
+                   cta_label: "View on GitHub",
+                   cta_to: @page.github_blob_url %>
+      </div>
+    <% else %>
+      <%# ── File-level threads ─────────────────────────────────────────── %>
+      <%= render "file_threads", threads: @result.file_threads, pull_request: @pull_request %>
+
+      <%# ── The document ───────────────────────────────────────────────── %>
+      <article data-testid="rendered-file"
+               aria-label="<%= @path %>, rendered">
+        <% @result.blocks.each do |annotated| %>
+          <%= render "block", annotated: annotated, pull_request: @pull_request, page: @page %>
+        <% end %>
+
+        <%# Content deleted from the end of the file has no following block to
+            sit before, so it goes here. Dropping it would tell the reviewer
+            the content is still there. %>
+        <% if @result.trailing_removed.any? %>
+          <%= render "removed_strip", blocks: @result.trailing_removed,
+                                      page: @page, pull_request: @pull_request %>
+        <% end %>
+      </article>
+
+      <%# ── Outdated, and anything we couldn't place ───────────────────── %>
+      <%= render "outdated_threads",
+                 outdated: @result.outdated_threads,
+                 unplaced: @page.unattached_threads,
+                 pull_request: @pull_request %>
+    <% end %>
+  </div>
+
+  <%# E's composer form, cloned into `composer_<block_id>` on demand. %>
+  <% if review_partial?("review_comments/composer_template") %>
+    <%= render "review_comments/composer_template",
+               pull_request: @pull_request, path: @path, pending_review: @page.pending_review %>
+  <% end %>
+</div>
+
+<%# The sticky pending-review tray. The layout yields :tray after <main>. %>
+<% if review_partial?("reviews/pending_tray") %>
+  <% content_for :tray do %>
+    <%= render "reviews/pending_tray",
+               pull_request: @pull_request,
+               pending_review: @page.pending_review,
+               pending_count: @page.pending_count %>
+  <% end %>
+<% elsif @page.pending_count.positive? %>
+  <% content_for :tray do %>
+    <div class="tray" id="pending_tray" data-testid="pending-tray">
+      <div class="tray-inner">
+        <span class="pill-pending"><%= count_of(@page.pending_count, "pending comment") %></span>
+        <span class="flex-1 text-sm text-ink-soft">
+          Your unsubmitted review lives on GitHub.
+        </span>
+        <%= link_to "Open on GitHub", @pull_request.html_url, class: "btn-secondary btn-sm",
+                    target: "_blank", rel: "noopener" %>
+      </div>
+    </div>
+  <% end %>
+<% end %>

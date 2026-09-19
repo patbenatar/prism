@@ -1,0 +1,22 @@
+[
+  {
+    "login": "octocat",
+    "id": 583231,
+    "avatar_url": "https://avatars.githubusercontent.com/u/583231?v=4",
+    "html_url": "https://github.com/octocat",
+    "name": "The Octocat",
+    "type": "User",
+    "role_name": "write",
+    "permissions": { "pull": true, "triage": true, "push": true, "maintain": false, "admin": false }
+  },
+  {
+    "login": "prism-dev",
+    "id": 4242,
+    "avatar_url": "https://avatars.githubusercontent.com/u/4242?v=4",
+    "html_url": "https://github.com/prism-dev",
+    "name": "Prism Dev",
+    "type": "User",
+    "role_name": "admin",
+    "permissions": { "pull": true, "triage": true, "push": true, "maintain": true, "admin": true }
+  }
+]

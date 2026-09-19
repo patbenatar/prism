@@ -1,0 +1,9 @@
+development:
+  adapter: async
+
+test:
+  adapter: test
+
+# In-process async adapter — no Redis needed. Fine for a single web instance.
+production:
+  adapter: async

@@ -1,0 +1,45 @@
+<%#
+  The Markdown files in this pull request, as a dropdown. A native <details>,
+  so it opens without JavaScript; the `menu` controller only adds outside-click
+  and Escape closing.
+
+  Locals: page (Review::Page), owner, name, number
+%>
+<% directory, basename = split_path(page.file.path) %>
+
+<details class="relative min-w-0 shrink" data-controller="menu" data-testid="file-switcher">
+  <summary class="flex min-w-0 cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-sunk"
+           aria-haspopup="menu">
+    <span class="sr-only">Switch file. Currently <%= page.file.path %>.</span>
+    <span class="min-w-0 truncate font-mono text-xs" aria-hidden="true">
+      <% if directory %><span class="text-ink-faint"><%= directory %></span><% end %><span class="font-medium text-ink"><%= basename %></span>
+    </span>
+    <span class="shrink-0 text-xs text-ink-faint tnum" aria-hidden="true">
+      <%= page.file_index.to_i + 1 %>/<%= page.files.size %>
+    </span>
+    <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 shrink-0 text-ink-faint" aria-hidden="true">
+      <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+    </svg>
+  </summary>
+
+  <div class="absolute left-0 z-40 mt-2 max-h-[70vh] w-[22rem] max-w-[calc(100vw-2rem)] overflow-auto rounded-xl border border-line bg-surface shadow-lg shadow-ink/5"
+       role="menu" data-testid="file-switcher-menu">
+    <% page.files.each do |candidate| %>
+      <% status_word, status_class = file_status_label(candidate.status) %>
+      <% candidate_dir, candidate_base = split_path(candidate.path) %>
+      <% current = candidate.path == page.file.path %>
+      <%= link_to repo_pull_file_path(owner: owner, repo: name, number: number, path: candidate.path),
+                  class: class_names("flex items-start gap-2.5 border-b border-line px-3 py-2 last:border-b-0 hover:bg-sunk",
+                                     "bg-brand-soft/60" => current),
+                  role: "menuitem",
+                  aria: { current: ("page" if current) },
+                  data: { testid: "file-switcher-item" } do %>
+        <span class="<%= status_class %> mt-0.5 shrink-0"><%= status_word %></span>
+        <span class="min-w-0 flex-1 font-mono text-xs break-all">
+          <% if candidate_dir %><span class="text-ink-faint"><%= candidate_dir %></span><% end %><span class="font-medium text-ink"><%= candidate_base %></span>
+        </span>
+        <span class="mt-0.5 shrink-0"><%= diffstat(candidate.additions, candidate.deletions) %></span>
+      <% end %>
+    <% end %>
+  </div>
+</details>

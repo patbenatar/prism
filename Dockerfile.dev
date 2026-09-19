@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+#
+# Development image for Prism.
+# Production deployment uses the Rails-generated ./Dockerfile (Kamal/Thruster).
+#
+# Gems are installed into /usr/local/bundle (outside /app). In development the
+# working tree is bind-mounted over /app by docker-compose, and because the gem
+# path lives outside /app it is NOT shadowed by that mount. Rebuild the image
+# (`docker compose build`) whenever the Gemfile/Gemfile.lock changes.
+ARG RUBY_VERSION=3.4.9
+FROM ruby:${RUBY_VERSION}-slim
+
+# System packages: build native gems (pg), connect to Postgres, run headless
+# Chromium for system tests.
+RUN apt-get update -qq \
+ && apt-get install --no-install-recommends -y \
+      build-essential \
+      curl \
+      git \
+      libpq-dev \
+      libvips \
+      libyaml-dev \
+      postgresql-client \
+      chromium \
+      chromium-driver \
+      fonts-liberation \
+ && rm -rf /var/lib/apt/lists/* \
+ && truncate -s 0 /var/log/*log 2>/dev/null || true
+
+WORKDIR /app
+
+ENV RAILS_ENV=development \
+    BUNDLE_PATH=/usr/local/bundle \
+    HOME=/tmp
+
+# Install gems first for better layer caching.
+COPY Gemfile Gemfile.lock ./
+RUN gem install bundler \
+ && bundle install \
+ && chmod -R a+rX /usr/local/bundle
+
+EXPOSE 3000
+
+# The entrypoint (bind-mounted with the app at runtime) waits for Postgres and
+# prepares the database before handing off to CMD.
+ENTRYPOINT ["bin/docker-dev-entrypoint"]
+CMD ["bin/rails", "server", "-b", "0.0.0.0", "-p", "3000"]

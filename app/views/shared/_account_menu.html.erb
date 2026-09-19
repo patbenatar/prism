@@ -1,0 +1,37 @@
+<%#
+  The account menu: avatar → GitHub profile, sign out.
+
+  A native <details> so it works without JavaScript; the `menu` Stimulus
+  controller only adds outside-click and Escape closing on top.
+%>
+<details class="relative" data-controller="menu" data-testid="account-menu">
+  <summary class="flex cursor-pointer list-none items-center gap-1.5 rounded-lg p-1 hover:bg-sunk"
+           aria-haspopup="menu">
+    <span class="sr-only">Account menu for <%= current_user.login %></span>
+    <%= image_tag current_user.avatar_url, alt: "", class: "avatar h-7 w-7", loading: "lazy" %>
+    <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 text-ink-faint" aria-hidden="true">
+      <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+    </svg>
+  </summary>
+
+  <div class="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-line bg-surface shadow-lg shadow-ink/5"
+       role="menu">
+    <div class="border-b border-line px-3 py-2.5">
+      <p class="font-display text-sm font-semibold text-ink"><%= current_user.login %></p>
+      <% if current_user.name.present? %>
+        <p class="text-xs text-ink-faint"><%= current_user.name %></p>
+      <% end %>
+    </div>
+
+    <%= link_to current_user.html_url,
+                class: "block px-3 py-2 text-sm text-ink-soft hover:bg-sunk hover:text-ink",
+                role: "menuitem", target: "_blank", rel: "noopener" do %>
+      Your GitHub profile
+    <% end %>
+
+    <%= button_to "Sign out", session_path, method: :delete,
+                  class: "block w-full px-3 py-2 text-left text-sm text-ink-soft hover:bg-sunk hover:text-ink",
+                  form_class: "border-t border-line",
+                  data: { testid: "sign-out" } %>
+  </div>
+</details>

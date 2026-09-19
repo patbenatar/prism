@@ -1,0 +1,38 @@
+<%#
+  The panel opened from the pending-review tray's "Submit review" button: an
+  optional body and the three GitHub review events. `body` is required for
+  Request changes / Comment and optional for Approve — ReviewsController
+  validates this again server-side before calling GitHub.
+
+  Locals: pull_request: (required), pending_review: (required)
+%>
+<% pull_request = local_assigns.fetch(:pull_request) %>
+<% pending_review = local_assigns.fetch(:pending_review) %>
+
+<%= form_with url: repo_pull_review_submit_path(owner: params[:owner], repo: params[:repo], number: pull_request.number, id: pending_review.id),
+              method: :post, data: { turbo: true, testid: "review-submit-form" } do |f| %>
+  <p class="field-label">Review summary</p>
+  <%= f.text_area :body, rows: 3, class: "composer-textarea w-full",
+                   placeholder: "Leave a summary (required unless approving)",
+                   data: { testid: "review-submit-body" }, aria: { label: "Review summary" } %>
+
+  <fieldset class="mt-3 space-y-2">
+    <legend class="field-label">Decision</legend>
+    <label class="flex items-center gap-2 text-sm">
+      <%= f.radio_button :event, "APPROVE", checked: true, data: { testid: "review-event-approve" } %>
+      Approve
+    </label>
+    <label class="flex items-center gap-2 text-sm">
+      <%= f.radio_button :event, "REQUEST_CHANGES", data: { testid: "review-event-request-changes" } %>
+      Request changes
+    </label>
+    <label class="flex items-center gap-2 text-sm">
+      <%= f.radio_button :event, "COMMENT", data: { testid: "review-event-comment" } %>
+      Comment
+    </label>
+  </fieldset>
+
+  <div class="mt-3 flex justify-end">
+    <%= f.submit "Submit review", class: "btn btn-primary btn-sm", data: { testid: "review-submit-confirm" } %>
+  </div>
+<% end %>

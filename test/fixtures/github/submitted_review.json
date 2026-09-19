@@ -1,0 +1,16 @@
+{
+  "id": 80002,
+  "node_id": "PRR_kwDOABCD12MAAAABc9BB",
+  "user": {
+    "login": "prism-dev",
+    "id": 4242,
+    "avatar_url": "https://avatars.githubusercontent.com/u/4242?v=4",
+    "html_url": "https://github.com/prism-dev",
+    "type": "User"
+  },
+  "body": "Looks good to me.",
+  "state": "APPROVED",
+  "html_url": "https://github.com/acme/docs-site/pull/42#pullrequestreview-80002",
+  "submitted_at": "2026-09-19T09:00:00Z",
+  "commit_id": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+}

@@ -1,0 +1,49 @@
+<%#
+  Swapped in for a comment's body by comment_actions_controller.js when its
+  Edit button is clicked — no round trip needed to show the form, since both
+  panes are rendered up front and toggled client-side.
+
+  Locals:
+    comment:   (required)
+    thread_id: (required) the owning thread's GraphQL node id. Carried as a
+               hidden field so a save re-render still has it, matching
+               _reply_form's `f.hidden_field :thread_id`; without it,
+               ReviewCommentsController#update re-renders the comment card
+               with a blank thread_id, and the next Delete on that same
+               comment can no longer find the thread to remove or replace.
+%>
+<% comment = local_assigns.fetch(:comment) %>
+<% thread_id = local_assigns.fetch(:thread_id) %>
+
+<%= form_with url: repo_pull_comment_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: comment.node_id),
+              method: :patch, data: { turbo: true, testid: "comment-edit-form" } do |f| %>
+  <%= f.hidden_field :thread_id, value: thread_id %>
+  <div data-controller="markdown-preview mention"
+       data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
+       data-mention-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
+       data-mention-target="container">
+    <div class="mb-1.5 flex items-center gap-1">
+      <button type="button" class="tab tab-active text-xs" data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab">Write</button>
+      <button type="button" class="tab text-xs" data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab">Preview</button>
+    </div>
+
+    <div data-markdown-preview-target="writePane">
+      <%= f.text_area :body, value: comment.body, rows: 3, class: "composer-textarea w-full",
+                       data: { testid: "comment-edit-textarea", markdown_preview_target: "textarea", mention_target: "textarea",
+                                action: "input->composer#autosize keydown->mention#keydown input->mention#input input->markdown-preview#dirty" },
+                       aria: { label: "Edit comment" } %>
+      <div data-mention-target="list"
+           class="absolute z-20 mt-1 max-h-56 w-72 overflow-auto rounded-lg border border-line bg-surface py-1 text-sm shadow-lg shadow-ink/5"
+           hidden role="listbox" aria-label="Mention someone"></div>
+    </div>
+
+    <div data-markdown-preview-target="previewPane" hidden class="md-prose md-prose-compact min-h-[2rem] rounded-lg border border-line bg-surface px-3 py-2">
+      <p class="text-ink-faint" data-markdown-preview-target="previewBody">Nothing to preview yet.</p>
+    </div>
+  </div>
+
+  <div class="mt-2 flex items-center justify-end gap-2">
+    <button type="button" class="btn btn-ghost btn-sm" data-action="comment-actions#cancelEdit" data-testid="comment-edit-cancel">Cancel</button>
+    <%= f.submit "Save", class: "btn btn-primary btn-sm", data: { testid: "comment-edit-save" } %>
+  </div>
+<% end %>

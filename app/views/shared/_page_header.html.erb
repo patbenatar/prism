@@ -1,0 +1,30 @@
+<%#
+  The title block for a browsing screen. Sits directly under the top bar.
+
+  Locals:
+    title:    (required) string or a block-free ERB fragment
+    subtitle: (optional) one line under the title
+    meta:     (optional) safe HTML rendered as a metadata row under the title
+    actions:  (optional) safe HTML for the right-hand side
+%>
+<% title    = local_assigns.fetch(:title) %>
+<% subtitle = local_assigns.fetch(:subtitle, nil) %>
+<% meta     = local_assigns.fetch(:meta, nil) %>
+<% actions  = local_assigns.fetch(:actions, nil) %>
+
+<header class="flex flex-wrap items-start justify-between gap-4 pb-5 pt-6">
+  <div class="min-w-0 flex-1">
+    <h1 class="font-display text-2xl font-semibold leading-tight tracking-tight text-ink break-words">
+      <%= title %>
+    </h1>
+    <% if subtitle.present? %>
+      <p class="mt-1 text-sm text-ink-soft break-words"><%= subtitle %></p>
+    <% end %>
+    <% if meta.present? %>
+      <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-ink-soft"><%= meta %></div>
+    <% end %>
+  </div>
+  <% if actions.present? %>
+    <div class="flex shrink-0 items-center gap-2"><%= actions %></div>
+  <% end %>
+</header>

@@ -1,0 +1,90 @@
+<% content_for :title, "Repositories" %>
+
+<div class="shell pb-16" data-controller="filter">
+  <%= render "shared/page_header",
+             title: "Repositories",
+             subtitle: "Sorted by most recent push. Pick one to see its pull requests." %>
+
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="relative min-w-0 flex-1 sm:max-w-sm">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"
+           class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" aria-hidden="true">
+        <path stroke-linecap="round" d="m17 17-3.6-3.6M15 9a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" />
+      </svg>
+      <label class="sr-only" for="repo-filter">Filter repositories</label>
+      <input id="repo-filter" type="search" class="field-search" placeholder="Filter by name or description"
+             autocomplete="off"
+             data-filter-target="query"
+             data-action="input->filter#apply keydown.esc->filter#clear"
+             data-testid="repo-filter">
+    </div>
+
+    <p class="text-sm text-ink-faint">
+      <span class="tnum" data-filter-target="count"><%= @repos.size %></span>
+      of <span class="tnum"><%= @repos.size %></span>
+      <%= @repos.size == 1 ? "repository" : "repositories" %>
+    </p>
+  </div>
+
+  <% if @repos.any? %>
+    <div class="panel" data-testid="repo-list">
+      <% @repos.each do |repo| %>
+        <%= link_to repo_pulls_path(owner: repo.owner, repo: repo.name),
+                    class: "row-link",
+                    data: { filter_target: "item",
+                            filter_text: "#{repo.full_name} #{repo.description}",
+                            testid: "repo-row" } do %>
+          <div class="flex items-start gap-3">
+            <%= image_tag repo.owner_avatar_url, alt: "",
+                          class: "#{repo.owner_type == 'Organization' ? 'avatar-sq' : 'avatar'} mt-0.5 h-6 w-6",
+                          loading: "lazy" %>
+
+            <div class="min-w-0 flex-1">
+              <p class="flex flex-wrap items-center gap-2">
+                <span class="row-title">
+                  <span class="font-normal text-ink-soft"><%= repo.owner %>/</span><%= repo.name %>
+                </span>
+                <% if repo.private? %>
+                  <span class="pill-neutral">Private</span>
+                <% end %>
+              </p>
+
+              <% if repo.description.present? %>
+                <p class="mt-1 line-clamp-2 text-sm text-ink-soft"><%= repo.description %></p>
+              <% end %>
+
+              <div class="row-meta">
+                <% if repo.open_issues_count.to_i.positive? %>
+                  <span><%= count_of(repo.open_issues_count, "open issue or pull request", "open issues and pull requests") %></span>
+                <% end %>
+                <span><%= relative_time(repo.pushed_at, prefix: "pushed") %></span>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+
+    <div class="empty-state" data-filter-target="empty" hidden data-testid="filter-empty">
+      <p class="empty-title">No repository matches that</p>
+      <p class="empty-body">
+        Only the <%= count_of(@repos.size, "repository", "repositories") %> loaded above are
+        searched<%= @next_page ? ". Clear the filter and load more to widen it." : "." %>
+      </p>
+    </div>
+
+    <% if @next_page %>
+      <div class="mt-4 flex justify-center" data-filter-target="hideWhenFiltering">
+        <%= link_to "Load more repositories", repos_path(page: @next_page),
+                    class: "btn-secondary", data: { testid: "load-more" } %>
+      </div>
+    <% end %>
+  <% else %>
+    <div class="panel">
+      <%= render "shared/empty_state",
+                 icon: :repo,
+                 title: "No repositories yet",
+                 body: "This GitHub account can't see any repositories. Create one on GitHub, or ask for access to the one you meant to review." %>
+    </div>
+  <% end %>
+</div>

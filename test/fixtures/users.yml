@@ -1,0 +1,31 @@
+# The signed-in reviewer used by sign_in_as in virtually every test.
+prism_dev:
+  github_id: 4242
+  login: prism-dev
+  name: Prism Dev
+  avatar_url: https://avatars.githubusercontent.com/u/4242?v=4
+  access_token: gho_test_token_prism_dev
+  token_scopes: repo,read:org,read:user
+  last_signed_in_at: <%= 1.hour.ago.to_fs(:db) %>
+
+# A second account, for asserting that one user's cached GitHub data never
+# reaches another's.
+octocat:
+  github_id: 583231
+  login: octocat
+  name: The Octocat
+  avatar_url: https://avatars.githubusercontent.com/u/583231?v=4
+  access_token: gho_test_token_octocat
+  token_scopes: repo,read:org,read:user
+  last_signed_in_at: <%= 2.days.ago.to_fs(:db) %>
+
+# Signed in, but GitHub granted a narrower scope than we asked for, so the
+# write path must be disabled for them.
+read_only:
+  github_id: 777
+  login: readonly-rita
+  name: Rita Read
+  avatar_url: https://avatars.githubusercontent.com/u/777?v=4
+  access_token: gho_test_token_readonly
+  token_scopes: read:org,read:user
+  last_signed_in_at: <%= 3.days.ago.to_fs(:db) %>

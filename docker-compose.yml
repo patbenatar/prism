@@ -1,0 +1,84 @@
+name: prism
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      # Created automatically on first boot; other DBs are made by db:prepare.
+      POSTGRES_DB: prism_development
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Host 5436 -> container 5432 (5432-5435 are held by other local projects).
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    # Run as the host user so any files written to the bind mount stay owned by you.
+    user: "1000:1000"
+    environment:
+      RAILS_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      # GitHub OAuth App credentials (see .env.example). Blank in .env just
+      # means sign-in is unavailable until they're set — nothing else breaks.
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # Active Record Encryption keys for users.access_token. Dev values live in
+      # .env.example; generate real ones with `bin/rails db:encryption:init`.
+      # Without them the app boots fine but signing in raises on token storage.
+      AR_ENCRYPTION_PRIMARY_KEY: ${AR_ENCRYPTION_PRIMARY_KEY:-}
+      AR_ENCRYPTION_DETERMINISTIC_KEY: ${AR_ENCRYPTION_DETERMINISTIC_KEY:-}
+      AR_ENCRYPTION_KEY_DERIVATION_SALT: ${AR_ENCRYPTION_KEY_DERIVATION_SALT:-}
+      # No background jobs yet, so the dev queue adapter is :async (in-process).
+      # When durable jobs land, run `bin/rails solid_queue:install`, configure
+      # the queue schema, then re-enable SOLID_QUEUE_IN_PUMA: "true" here to run
+      # the worker inside Puma.
+      HOME: /tmp
+    volumes:
+      # Bind-mount the working tree for live code reload. Gems live in
+      # /usr/local/bundle (baked into the image), so they are not shadowed.
+      - .:/app
+    ports:
+      # Host 3004 -> container 3000 (3000-3003 are held by other local projects).
+      - "3004:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+
+  # Recompiles app/assets/builds/tailwind.css on change. Overrides the image
+  # entrypoint to skip db:prepare — this service only watches CSS.
+  css:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    user: "1000:1000"
+    entrypoint: ["bin/rails"]
+    command: ["tailwindcss:watch"]
+    environment:
+      RAILS_ENV: development
+      HOME: /tmp
+      DB_HOST: postgres
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - .:/app
+    depends_on:
+      - app
+    tty: true
+
+volumes:
+  postgres_data:

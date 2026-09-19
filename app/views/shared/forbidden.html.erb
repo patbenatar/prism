@@ -1,0 +1,10 @@
+<% content_for :title, "No access" %>
+
+<div class="shell-narrow py-20">
+  <%= render "shared/empty_state",
+             icon: :repo,
+             title: "GitHub refused this request",
+             body: @forbidden_message.presence || "Your token can reach GitHub, but not this. If the repository belongs to an organization, it may need to approve Prism first.",
+             cta_label: "Back to repositories",
+             cta_to: repos_path %>
+</div>

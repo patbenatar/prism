@@ -1,0 +1,13 @@
+<%#
+  Swapped in for whatever container the write action already knew about
+  (composer_<block_id>, thread_<node_id>, comment_<node_id>) when the
+  underlying resource is gone or no longer visible to the viewer
+  (Github::NotFound / Github::Forbidden) — reloading the page will hit
+  D's own GithubErrorHandling and show the full explanation; this just says
+  enough to explain why nothing happened.
+
+  Locals: message: (required) String
+%>
+<div class="reply-box" data-testid="inline-error" role="alert">
+  <p class="text-xs text-removed"><%= local_assigns.fetch(:message) %></p>
+</div>

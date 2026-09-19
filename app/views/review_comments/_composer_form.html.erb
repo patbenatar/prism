@@ -1,0 +1,103 @@
+<%#
+  The composer, rendered two ways:
+
+  1. Wrapped in a <template> by `composer_template` (below), cloned by
+     composer_controller.js into `composer_<block_id>` when a gutter "+" is
+     clicked. Most locals are blank here — the controller fills the hidden
+     fields from the triggering button's data attributes before it inserts
+     the clone.
+  2. Rendered directly (not templated) by ReviewCommentsController when a
+     write fails, replacing `composer_<block_id>` with the same form carrying
+     the error and the reviewer's own text back.
+
+  Locals:
+    pull_request:        (required) Github::Types::PullRequest
+    path:                (required) String
+    pending_review:       Github::Types::Review or nil — decides the review
+                          button's starting label
+    block_id:             String or nil
+    subject_type:         "line" or "file", default "line"
+    line: / side: / start_line: / start_side:  raw anchor fields, strings
+    uncommentable_reason: String key ("outside_diff" etc.) or nil
+    body:                 String, default ""
+    block_text: / block_start_line: / block_end_line:  the block's own text
+                          and range, used server-side to build a file-level
+                          comment (Review::FileCommentBody)
+    error:                String or nil
+%>
+<% pull_request       = local_assigns.fetch(:pull_request) %>
+<% path                = local_assigns.fetch(:path) %>
+<% pending_review      = local_assigns[:pending_review] %>
+<% block_id            = local_assigns[:block_id] %>
+<% subject_type        = local_assigns[:subject_type].presence || "line" %>
+<% uncommentable_reason = local_assigns[:uncommentable_reason] %>
+<% body                = local_assigns[:body] %>
+<% error               = local_assigns[:error] %>
+
+<div class="reply-box" data-testid="composer" data-composer-target="form">
+  <% if error.present? %>
+    <p class="mb-2 text-xs text-removed" data-testid="composer-error" role="alert"><%= error %></p>
+  <% end %>
+
+  <p class="mb-2 text-xs text-ink-faint" data-composer-target="anchorNote">
+    <%# Filled by composer#open from the gutter button's data attributes;
+        the reasons below are exposed as data so the JS never has to
+        duplicate Review::NotCommentable#explanation's wording. %>
+  </p>
+
+  <div hidden data-composer-target="explanations"
+       data-outside-diff="<%= Review::NotCommentable.new(reason: :outside_diff).explanation %>"
+       data-no-patch="<%= Review::NotCommentable.new(reason: :no_patch).explanation %>"
+       data-file-removed="<%= Review::NotCommentable.new(reason: :file_removed).explanation %>"></div>
+
+  <%= form_with url: repo_pull_comments_path(owner: params[:owner], repo: params[:repo], number: pull_request.number),
+                method: :post, data: { turbo: true, testid: "composer-form" } do |f| %>
+    <%= f.hidden_field :path, value: path %>
+    <%= f.hidden_field :subject_type, value: subject_type, data: { composer_target: "subjectType" } %>
+    <%= f.hidden_field :line, value: local_assigns[:line], data: { composer_target: "line" } %>
+    <%= f.hidden_field :side, value: local_assigns[:side], data: { composer_target: "side" } %>
+    <%= f.hidden_field :start_line, value: local_assigns[:start_line], data: { composer_target: "startLine" } %>
+    <%= f.hidden_field :start_side, value: local_assigns[:start_side], data: { composer_target: "startSide" } %>
+    <%= f.hidden_field :block_id, value: block_id, data: { composer_target: "blockId" } %>
+    <%= f.hidden_field :uncommentable_reason, value: uncommentable_reason, data: { composer_target: "uncommentableReason" } %>
+    <%= f.hidden_field :block_text, value: local_assigns[:block_text], data: { composer_target: "blockText" } %>
+    <%= f.hidden_field :block_start_line, value: local_assigns[:block_start_line], data: { composer_target: "blockStartLine" } %>
+    <%= f.hidden_field :block_end_line, value: local_assigns[:block_end_line], data: { composer_target: "blockEndLine" } %>
+
+    <div data-controller="markdown-preview mention"
+         data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
+         data-mention-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
+         data-mention-target="container">
+      <div class="mb-2 flex items-center gap-1">
+        <button type="button" class="tab tab-active" data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab" data-testid="composer-write-tab">Write</button>
+        <button type="button" class="tab" data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab" data-testid="composer-preview-tab">Preview</button>
+      </div>
+
+      <div data-markdown-preview-target="writePane">
+        <%= f.text_area :body, value: body, rows: 4, class: "composer-textarea w-full",
+                         placeholder: "Leave a comment", data: { composer_target: "textarea", mention_target: "textarea", markdown_preview_target: "textarea",
+                                                                  action: "input->composer#autosize keydown->mention#keydown keydown->composer#keydown input->mention#input input->markdown-preview#dirty" },
+                         aria: { label: "Comment body" } %>
+        <div data-mention-target="list"
+             class="absolute z-20 mt-1 max-h-56 w-72 overflow-auto rounded-lg border border-line bg-surface py-1 text-sm shadow-lg shadow-ink/5"
+             hidden role="listbox" aria-label="Mention someone"></div>
+      </div>
+
+      <div data-markdown-preview-target="previewPane" hidden class="md-prose md-prose-compact min-h-[3rem] rounded-lg border border-line bg-surface px-3 py-2">
+        <p class="text-ink-faint" data-markdown-preview-target="previewBody">Nothing to preview yet.</p>
+      </div>
+    </div>
+
+    <p class="mt-1 text-[0.8rem] text-ink-faint" data-composer-target="filePreviewNote" hidden>
+      Will be posted as a file-level comment quoting this block; it appears at the top of the file, not here.
+    </p>
+
+    <div class="mt-2 flex items-center justify-end gap-2">
+      <button type="button" class="btn btn-ghost btn-sm" data-action="composer#close" data-testid="composer-cancel">Cancel</button>
+      <%= f.button "Add single comment", type: :submit, name: :commit, value: "single",
+                    class: "btn btn-secondary btn-sm", data: { testid: "composer-submit-single", composer_target: "singleButton" } %>
+      <%= f.button (pending_review ? "Add review comment" : "Start a review"), type: :submit, name: :commit, value: "review",
+                    class: "btn btn-primary btn-sm", data: { testid: "composer-submit-review", composer_target: "reviewButton" } %>
+    </div>
+  <% end %>
+</div>

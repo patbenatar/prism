@@ -1,0 +1,98 @@
+[
+  {
+    "number": 42,
+    "node_id": "PR_kwDOABCD12MAAAABc9Vk",
+    "title": "Rewrite the getting-started guide",
+    "body": "Tightens the prose and adds a troubleshooting section.",
+    "state": "open",
+    "draft": false,
+    "html_url": "https://github.com/acme/docs-site/pull/42",
+    "created_at": "2026-09-15T10:00:00Z",
+    "updated_at": "2026-09-18T16:30:00Z",
+    "user": {
+      "login": "hubot",
+      "id": 1001,
+      "avatar_url": "https://avatars.githubusercontent.com/u/1001?v=4",
+      "html_url": "https://github.com/hubot",
+      "type": "User"
+    },
+    "labels": [
+      {
+        "name": "documentation",
+        "color": "0075ca"
+      },
+      {
+        "name": "needs-review",
+        "color": "d93f0b"
+      }
+    ],
+    "head": {
+      "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+      "ref": "guide-rewrite"
+    },
+    "base": {
+      "sha": "1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5",
+      "ref": "main"
+    },
+    "merged_at": null,
+    "closed_at": null
+  },
+  {
+    "number": 41,
+    "node_id": "PR_kwDOABCD12MAAAABc9Vj",
+    "title": "Draft: restructure the API reference",
+    "body": null,
+    "state": "open",
+    "draft": true,
+    "html_url": "https://github.com/acme/docs-site/pull/41",
+    "created_at": "2026-09-12T08:00:00Z",
+    "updated_at": "2026-09-14T09:12:00Z",
+    "user": {
+      "login": "prism-dev",
+      "id": 4242,
+      "avatar_url": "https://avatars.githubusercontent.com/u/4242?v=4",
+      "html_url": "https://github.com/prism-dev",
+      "type": "User"
+    },
+    "labels": [],
+    "head": {
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ref": "api-restructure"
+    },
+    "base": {
+      "sha": "1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5",
+      "ref": "main"
+    },
+    "merged_at": null,
+    "closed_at": null
+  },
+  {
+    "number": 39,
+    "node_id": "PR_kwDOABCD12MAAAABc9Vh",
+    "title": "Add a troubleshooting section",
+    "body": "Closes #12.",
+    "state": "closed",
+    "draft": false,
+    "html_url": "https://github.com/acme/docs-site/pull/39",
+    "created_at": "2026-09-02T09:00:00Z",
+    "updated_at": "2026-09-05T15:45:00Z",
+    "closed_at": "2026-09-05T15:45:00Z",
+    "merged_at": "2026-09-05T15:45:00Z",
+    "user": {
+      "login": "octocat",
+      "id": 583231,
+      "avatar_url": "https://avatars.githubusercontent.com/u/583231?v=4",
+      "html_url": "https://github.com/octocat",
+      "type": "User"
+    },
+    "labels": [],
+    "head": {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ref": "troubleshooting"
+    },
+    "base": {
+      "sha": "1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5",
+      "ref": "main"
+    }
+  }
+]

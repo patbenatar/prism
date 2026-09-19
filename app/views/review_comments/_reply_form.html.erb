@@ -1,0 +1,64 @@
+<%#
+  The reply box at the foot of a thread.
+
+  GitHub's own reply endpoint takes the thread's root comment's REST id
+  (docs/research/github-api.md §3.3), so that is what the route's :id carries
+  here; `thread_id` (the thread's GraphQL node id) rides along as a hidden
+  field because reply_in_review needs it and no REST id maps to it.
+
+  Locals:
+    thread:         (required) Github::Types::ReviewThread
+    pending_review:  Github::Types::Review or nil — a pending review lets the
+                     reviewer add the reply as a draft instead of posting it
+    body:            String, default "" — preserved after a failed submit
+    error:           String or nil
+%>
+<% thread = local_assigns.fetch(:thread) %>
+<% pending_review = local_assigns[:pending_review] %>
+<% root = thread.root_comment %>
+
+<div class="reply-box" data-testid="reply-form">
+  <% if local_assigns[:error].present? %>
+    <p class="mb-2 text-xs text-removed" role="alert"><%= local_assigns[:error] %></p>
+  <% end %>
+
+  <%= form_with url: repo_pull_comment_replies_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: root.id),
+                method: :post, data: { turbo: true } do |f| %>
+    <%= f.hidden_field :thread_id, value: thread.node_id %>
+
+    <div data-controller="markdown-preview mention"
+         data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
+         data-mention-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
+         data-mention-target="container">
+      <div class="mb-1.5 flex items-center gap-1">
+        <button type="button" class="tab tab-active text-xs" data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab">Write</button>
+        <button type="button" class="tab text-xs" data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab">Preview</button>
+      </div>
+
+      <div data-markdown-preview-target="writePane">
+        <%= f.text_area :body, value: local_assigns[:body], rows: 2, class: "composer-textarea w-full",
+                         placeholder: (thread.resolved? ? "Reply (this will not reopen the thread)" : "Reply…"),
+                         data: { testid: "reply-textarea", markdown_preview_target: "textarea", mention_target: "textarea",
+                                  action: "input->composer#autosize keydown->mention#keydown input->mention#input input->markdown-preview#dirty" },
+                         aria: { label: "Reply" } %>
+        <div data-mention-target="list"
+             class="absolute z-20 mt-1 max-h-56 w-72 overflow-auto rounded-lg border border-line bg-surface py-1 text-sm shadow-lg shadow-ink/5"
+             hidden role="listbox" aria-label="Mention someone"></div>
+      </div>
+
+      <div data-markdown-preview-target="previewPane" hidden class="md-prose md-prose-compact min-h-[2rem] rounded-lg border border-line bg-surface px-3 py-2">
+        <p class="text-ink-faint" data-markdown-preview-target="previewBody">Nothing to preview yet.</p>
+      </div>
+    </div>
+
+    <div class="mt-2 flex items-center justify-end gap-2">
+      <%= f.button "Reply", type: :submit, name: :review, value: "0",
+                    class: "btn btn-secondary btn-sm", data: { testid: "reply-submit" } %>
+      <% if thread.viewer_can_reply %>
+        <%= f.button (pending_review ? "Add to review" : "Start a review with this reply"),
+                      type: :submit, name: :review, value: "1",
+                      class: "btn btn-primary btn-sm", data: { testid: "reply-submit-review" } %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

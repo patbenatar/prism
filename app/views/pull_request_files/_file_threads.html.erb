@@ -1,0 +1,27 @@
+<%#
+  Comments on the file as a whole (GitHub `subjectType: FILE`), at the top
+  where they set the frame for reading the rest.
+
+  They have no line, so there is no block to sit under. Prism's own file-level
+  fallback — a comment on a block GitHub can't anchor to — lands here too:
+  ReviewCommentsController streams it into `#file_threads`. The heading is
+  always in the DOM so a first streamed-in thread gets one; `.file-threads`
+  hides the whole section while the list is empty.
+
+  Locals: threads ([Github::Types::ReviewThread]), pull_request
+%>
+<section class="md-row file-threads" aria-labelledby="file-threads-heading">
+  <div class="md-gutter" aria-hidden="true"></div>
+
+  <div class="md-body">
+    <div class="section-head">
+      <h2 class="section-title" id="file-threads-heading">Comments on this file</h2>
+    </div>
+
+    <div id="file_threads" data-testid="file-threads">
+      <% threads.each do |thread| %>
+        <%= render "thread", thread: thread, pull_request: pull_request, block_id: "file" %>
+      <% end %>
+    </div>
+  </div>
+</section>
