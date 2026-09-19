@@ -100,6 +100,12 @@ jobs:
         env:
           RAILS_ENV: test
           DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          # Throwaway keys for the ephemeral CI database. The app reads these
+          # from the environment before falling back to credentials, so CI does
+          # not need config/master.key. Never used for real data.
+          AR_ENCRYPTION_PRIMARY_KEY: ci000000000000000000000000000000
+          AR_ENCRYPTION_DETERMINISTIC_KEY: ci111111111111111111111111111111
+          AR_ENCRYPTION_KEY_DERIVATION_SALT: ci222222222222222222222222222222
           # RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
           # REDIS_URL: redis://localhost:6379/0
         run: bin/rails db:test:prepare test
@@ -139,6 +145,12 @@ jobs:
         env:
           RAILS_ENV: test
           DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          # Throwaway keys for the ephemeral CI database. The app reads these
+          # from the environment before falling back to credentials, so CI does
+          # not need config/master.key. Never used for real data.
+          AR_ENCRYPTION_PRIMARY_KEY: ci000000000000000000000000000000
+          AR_ENCRYPTION_DETERMINISTIC_KEY: ci111111111111111111111111111111
+          AR_ENCRYPTION_KEY_DERIVATION_SALT: ci222222222222222222222222222222
           # RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
           # REDIS_URL: redis://localhost:6379/0
         run: bin/rails db:test:prepare test:system
