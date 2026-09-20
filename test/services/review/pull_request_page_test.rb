@@ -65,12 +65,21 @@ class Review::PullRequestPageTest < ActiveSupport::TestCase
     # the calls overlap at all, not how fast the machine is.
     stub_pull_request(content_delay: 0.12)
 
+    # Warm first, then measure. The first call inside each worker thread can
+    # trigger an autoload, and Rails serializes those — on a cold CI runner
+    # that one-time cost lands squarely on the number we are timing and makes
+    # genuinely concurrent fetches look sequential. Nothing else carries over:
+    # the test environment's cache is a null store, so the second pass still
+    # does all four reads and all four parses.
+    load_page
+
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     load_page
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 
     assert_operator elapsed, :<, 0.4,
-                    "five slow GitHub reads took #{(elapsed * 1000).round}ms — they are still sequential"
+                    "four slow GitHub reads took #{(elapsed * 1000).round}ms, against 480ms if " \
+                    "they ran one after another — they are not overlapping"
   end
 
   test "a content fetch that fails takes down its own file and nothing else" do
