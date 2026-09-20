@@ -140,6 +140,34 @@ class PullRequestFilesTest < ActionDispatch::IntegrationTest
     assert_select "#pending_tray [data-testid=pending-count]", text: /1 pending comment/
   end
 
+  test "the page root carries the composer context, including the viewer" do
+    # This is the seam with workstream E (PLAN.md "Phase 2 seam"). Their
+    # Stimulus controllers read these straight off the dataset, so a rename
+    # here breaks the write path silently.
+    sign_in_and_stub
+
+    get file_path
+
+    root = css_select("#file_view").first
+    assert root, "the composer controller needs a root to attach to"
+
+    assert_equal "composer_template", root["data-composer-template-id"]
+    assert_equal OWNER, root["data-composer-owner"]
+    assert_equal REPO, root["data-composer-repo"]
+    assert_equal NUMBER.to_s, root["data-composer-number"]
+    assert_equal PATH, root["data-composer-path"]
+    assert_equal HEAD_SHA, root["data-composer-head-sha"]
+    assert_equal "PR_kwDOABCD12MAAAABc9Vk", root["data-composer-pull-request-node-id"]
+    assert_equal "right", root["data-composer-side"]
+    assert_equal "https://github.com/#{OWNER}/#{REPO}/blob/#{HEAD_SHA}/#{PATH}",
+                 root["data-composer-file-comment-permalink-base"]
+
+    # The viewer, for the provisional card the composer shows while a comment
+    # is in flight.
+    assert_equal @user.login, root["data-composer-viewer-login"]
+    assert_equal @user.avatar_url, root["data-composer-viewer-avatar"]
+  end
+
   test "every block, thread slot and composer slot on the page has a unique id" do
     # Nested list items can start on the same source line, which is the case
     # that used to give two elements one id — and with it one gutter, and a

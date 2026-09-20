@@ -11,7 +11,19 @@
     pending_review:  Github::Types::Review or nil — a pending review lets the
                      reviewer add the reply as a draft instead of posting it
     body:            String, default "" — preserved after a failed submit
+    pending_count:   Integer or nil, default 0 — see the note below on the
+                     hidden fields; composer_controller.js keeps this current
+                     from the moment the page connects, well before a real
+                     reply could ever be submitted
     error:           String or nil
+
+  The hidden pending_review_node_id/pending_review_id/pending_count fields
+  below reuse composer_controller.js's existing data-composer-target names —
+  its pending-review:changed handler refreshes every element with those
+  names across the whole page, this static form included, not only a cloned
+  composer — so ReviewCommentsController#reply can render the tray after a
+  review-mode reply without a reviewThreads refetch, the same way create
+  already does (performance fix, 2026-09-19).
 %>
 <% thread = local_assigns.fetch(:thread) %>
 <% pending_review = local_assigns[:pending_review] %>
@@ -25,6 +37,9 @@
   <%= form_with url: repo_pull_comment_replies_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: root.id),
                 method: :post, data: { turbo: true } do |f| %>
     <%= f.hidden_field :thread_id, value: thread.node_id %>
+    <%= f.hidden_field :pending_review_node_id, value: pending_review&.node_id, data: { composer_target: "pendingReviewNodeId" } %>
+    <%= f.hidden_field :pending_review_id, value: pending_review&.id, data: { composer_target: "pendingReviewId" } %>
+    <%= f.hidden_field :pending_count, value: local_assigns[:pending_count] || 0, data: { composer_target: "pendingCount" } %>
 
     <div data-controller="markdown-preview mention"
          data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
@@ -57,7 +72,8 @@
       <% if thread.viewer_can_reply %>
         <%= f.button (pending_review ? "Add to review" : "Start a review with this reply"),
                       type: :submit, name: :review, value: "1",
-                      class: "btn btn-primary btn-sm", data: { testid: "reply-submit-review" } %>
+                      class: "btn btn-primary btn-sm",
+                      data: { testid: "reply-submit-review", composer_target: "replyReviewButton" } %>
       <% end %>
     </div>
   <% end %>

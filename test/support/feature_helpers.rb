@@ -204,6 +204,28 @@ module FeatureHelpers
       end
   end
 
+  # A single `addPullRequestReviewThread` response that pushes `thread` into
+  # `state[:threads]` at the moment the request actually arrives, not when
+  # the test sets this stub up. That distinction matters the instant a full
+  # page load (a file switch, a reload) sits between registering the stub and
+  # the click that triggers it: `Page#load` reads `state[:threads]` for real
+  # on that load, so mutating eagerly makes it see a comment that, from the
+  # app's point of view, hasn't been created yet — one call too early. This
+  # is the GraphQL-mutation counterpart to
+  # `stub_feature_create_pending_review_dynamic`'s REST one.
+  def stub_feature_add_thread_dynamic(state, thread)
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .with { |request| graphql_operation_name(request.body) == "AddThread" }
+      .to_return do
+        state[:threads] << thread
+        {
+          status: 200,
+          body: { data: { addPullRequestReviewThread: { thread: thread } } }.to_json,
+          headers: GithubStubs::JSON_HEADERS
+        }
+      end
+  end
+
   # ------------------------------------------------------------------ DOM ---
 
   # Visits the rendered file view and waits for the document to be there.

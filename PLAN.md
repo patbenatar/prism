@@ -640,3 +640,14 @@ Recorded here so nobody rediscovers them as bugs (see `docs/review-2026-09-19.md
   `config/cache.yml`) before scaling horizontally.
 - **Mermaid and math** render as their `<pre>` fallback (still commentable);
   client-side upgrades are a later step.
+- **The pending-review count after a write comes from the client, not GitHub.**
+  A comment save used to cost up to five sequential GitHub round trips, and
+  GraphQL alone measures 240-350ms from the container, so the tray count is now
+  carried in the form and incremented rather than recomputed by refetching
+  every thread. A full page load still recomputes it from GitHub, so the number
+  is authoritative on arrival and can only drift within a session (two tabs
+  drafting at once). Worth the round trip; revisit if the drift is ever visible.
+- **Comment cards render optimistically.** The card appears on submit and the
+  real one replaces it when GitHub answers, so perceived latency is zero. The
+  provisional card is removed on `turbo:submit-end` whatever the outcome, and a
+  failed write re-renders the composer with the text intact.

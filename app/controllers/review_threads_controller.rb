@@ -20,14 +20,12 @@ class ReviewThreadsController < ApplicationController
 
   # POST .../threads/:id/resolve — :id is the thread's GraphQL node id.
   def resolve
-    github.resolve_thread(params[:id])
-    render_thread(params[:id])
+    render_thread(github.resolve_thread(params[:id]))
   end
 
   # POST .../threads/:id/unresolve
   def unresolve
-    github.unresolve_thread(params[:id])
-    render_thread(params[:id])
+    render_thread(github.unresolve_thread(params[:id]))
   end
 
   private
@@ -38,18 +36,24 @@ class ReviewThreadsController < ApplicationController
     @number = params[:number].to_i
   end
 
-  def render_thread(thread_node_id)
-    pull_request = github.pull_request(@owner, @repo, @number)
-    result = github.review_threads(@owner, @repo, @number)
-    thread = result.threads.find { |t| t.node_id == thread_node_id }
+  # `thread` is resolve_thread/unresolve_thread's own returned payload — the
+  # same THREAD_FIELDS + COMMENT_FIELDS fragments a reviewThreads query would
+  # return — so this renders it directly with no refetch of the thread list
+  # at all (2026-09-19, "saving a comment feels slow": the heaviest call in
+  # this request was exactly that refetch). `pending_review` is still a real
+  # `GET .../reviews` — needed for the reply form's button label, and cheap
+  # enough on its own (~200ms) not to be worth the same trick create's
+  # composer plays with hidden fields, since resolve/unresolve have no
+  # composer to carry that state through.
+  def render_thread(thread)
     pending_review = github.pending_review(@owner, @repo, @number)
 
     respond_to do |format|
       format.turbo_stream do
         render turbo_stream: turbo_stream.replace(
-          "thread_#{thread_node_id}",
+          "thread_#{thread.node_id}",
           partial: "review_comments/thread",
-          locals: { thread: thread, pull_request: pull_request, pending_review: pending_review, block_id: nil }
+          locals: { thread: thread, pull_request: nil, pending_review: pending_review, block_id: nil }
         )
       end
       format.html { redirect_to fallback_path(thread), notice: "Thread updated." }

@@ -79,6 +79,15 @@
      because wrapping a table is worse than a long line. */
   --measure-prose: 72ch;
   --measure-read: 60rem;          /* the reading column incl. its gutter */
+  /* The page floor that keeps the fixed pending-review tray off the end of
+     the document. The tray's height is content rather than a constant, so
+     this is measured, not chosen: 59px at laptop width and 61px at 390px,
+     plus headroom. It only holds because `.btn` is `whitespace-nowrap` — when
+     "Submit review" wrapped, the bar grew to 77px at phone width and this
+     value hid the last 9px of the document. Pinned by
+     test/system/tray_layout_test.rb, which fails with both numbers in the
+     message if either drifts. Don't set it by eye. */
+  --tray-height: 4.5rem;
   --measure-app: 76rem;           /* browsing screens (repo / PR lists) */
   --gutter-width: 2.5rem;         /* the review gutter: change bar + "+" */
 
@@ -93,7 +102,10 @@
    other component classes build on are registered with `@utility`. Use them
    directly too: `.btn` alone is an unstyled-but-correctly-sized button. */
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2
+  /* `whitespace-nowrap`: a button label is a phrase, and "Submit review"
+     broken across two lines reads as two controls. It also keeps the fixed
+     tray one line tall at phone width, which the page floor depends on. */
+  @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2
          font-display text-sm font-medium transition
          disabled:cursor-not-allowed disabled:opacity-55;
 }
@@ -642,11 +654,32 @@
     @apply field-input min-h-[5.5rem] resize-y font-prose text-[0.95rem] leading-relaxed;
   }
 
-  /* ═══ Sticky bottom tray ═════════════════════════════════════════════════
+  /* ═══ Fixed bottom tray ══════════════════════════════════════════════════
      The pending-review tray. Full-bleed bar, content aligned to the reading
-     column, so it lines up with the document above it. */
+     column, so it lines up with the document above it.
+
+     It is `fixed`, not `sticky`. Sticky only pins an element while its
+     containing block is still on screen, and the tray is the last child of
+     <body>, so it stuck only once you had scrolled to the very bottom — the
+     one place a reviewer does not need it. A reviewer with drafts open needs
+     the count and Submit within reach on every screenful. `body:has()` adds
+     the matching floor so the last block is never hidden underneath. */
   .tray {
-    @apply sticky bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-sm;
+    @apply fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-sm;
+  }
+
+  body:has(.tray) main {
+    padding-bottom: var(--tray-height);
+  }
+
+  /* The floor keeps the tray off the END of the document, but not off an
+     element the browser scrolls to — focusing a composer textarea near the
+     bottom would slide it under the bar. scroll-padding on the scroll
+     container fixes every such scroll at once, including `scrollIntoView`.
+     Only the bottom: block_nav_controller already offsets the top by
+     measuring the two pinned bars, and setting both would double it. */
+  html:has(.tray) {
+    scroll-padding-bottom: calc(var(--tray-height) + 0.5rem);
   }
 
   .tray-inner {
@@ -677,6 +710,19 @@
   .md-prose > img,
   .md-prose > details,
   .md-prose > .markdown-alert {
+    max-width: 100%;
+  }
+
+  /* Threads and the composer are ours, not prose. They sit inside `.md-body`
+     so they line up with the block they belong to, but the reading measure is
+     for reading — a comment box capped at 72ch looks half-finished next to a
+     full-width block. A list holding an open composer gets the same room. */
+  .md-prose > .md-threads,
+  .md-prose > .md-composer,
+  .md-prose > ul:has(.md-composer:not(:empty)),
+  .md-prose > ol:has(.md-composer:not(:empty)),
+  .md-prose > ul:has(.md-threads > *),
+  .md-prose > ol:has(.md-threads > *) {
     max-width: 100%;
   }
 

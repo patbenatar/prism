@@ -18,6 +18,7 @@
 <div id="pending_tray" data-testid="pending-review"
      data-controller="pending-review"
      data-pending-review-node-id-value="<%= pending_review&.node_id %>"
+     data-pending-review-id-value="<%= pending_review&.id %>"
      data-pending-review-count-value="<%= pending_count %>">
   <% if pending_review.present? %>
     <%# Also carries D's fallback testid ("pending-tray") alongside the

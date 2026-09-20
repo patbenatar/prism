@@ -23,6 +23,11 @@
     block_text: / block_start_line: / block_end_line:  the block's own text
                           and range, used server-side to build a file-level
                           comment (Review::FileCommentBody)
+    pending_count:        Integer or nil, default 0 — only meaningful on the
+                          error-rerender path (case 2 above); the hidden
+                          field it fills is otherwise overwritten by
+                          composer_controller.js's own tracked count before
+                          a real submit ever reads it
     error:                String or nil
 %>
 <% pull_request       = local_assigns.fetch(:pull_request) %>
@@ -51,7 +56,9 @@
        data-file-removed="<%= Review::NotCommentable.new(reason: :file_removed).explanation %>"></div>
 
   <%= form_with url: repo_pull_comments_path(owner: params[:owner], repo: params[:repo], number: pull_request.number),
-                method: :post, data: { turbo: true, testid: "composer-form" } do |f| %>
+                method: :post,
+                data: { turbo: true, testid: "composer-form",
+                        action: "turbo:submit-start->composer#showProvisional turbo:submit-end->composer#removeProvisional" } do |f| %>
     <%= f.hidden_field :path, value: path %>
     <%= f.hidden_field :subject_type, value: subject_type, data: { composer_target: "subjectType" } %>
     <%= f.hidden_field :line, value: local_assigns[:line], data: { composer_target: "line" } %>
@@ -63,6 +70,13 @@
     <%= f.hidden_field :block_text, value: local_assigns[:block_text], data: { composer_target: "blockText" } %>
     <%= f.hidden_field :block_start_line, value: local_assigns[:block_start_line], data: { composer_target: "blockStartLine" } %>
     <%= f.hidden_field :block_end_line, value: local_assigns[:block_end_line], data: { composer_target: "blockEndLine" } %>
+    <%# Carries the composer's own knowledge of the pending review through to
+        the server, so ReviewCommentsController#create can render the tray
+        without a refetch — see its pending_review_for_create. Kept current
+        by composer_controller.js's pending-review:changed listener. %>
+    <%= f.hidden_field :pending_review_node_id, value: pending_review&.node_id, data: { composer_target: "pendingReviewNodeId" } %>
+    <%= f.hidden_field :pending_review_id, value: pending_review&.id, data: { composer_target: "pendingReviewId" } %>
+    <%= f.hidden_field :pending_count, value: local_assigns[:pending_count] || 0, data: { composer_target: "pendingCount" } %>
 
     <div data-controller="markdown-preview mention"
          data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"

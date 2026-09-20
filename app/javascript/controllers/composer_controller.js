@@ -6,9 +6,10 @@ import { Controller } from "@hotwired/stimulus"
 // Lives on the file view's <main> (data-controller="composer …"), which D
 // renders with plain data attributes (not Stimulus `-value` attributes) —
 // see the seam's `data-composer-template-id`, `-pending-review-node-id`,
-// etc. Read directly off `this.element.dataset` rather than `static values`
-// so this controller does not depend on D switching those to the Stimulus
-// value convention.
+// `-pending-review-id`, `-viewer-login`, `-viewer-avatar`, etc. Read
+// directly off `this.element.dataset` rather than `static values` so this
+// controller does not depend on D switching those to the Stimulus value
+// convention.
 //
 // The gutter button itself (also D's) carries plain data attributes too, so
 // D never needs this controller's JS loaded to render a valid page —
@@ -18,9 +19,13 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   connect() {
     this.openBlockId = null
-    // Seeded from the seam's own data attribute (the server's knowledge at
-    // page load); pending-review:changed keeps it current after that.
+    this.provisionalIds = []
+    // Seeded from the seam's own data attributes (the server's knowledge at
+    // page load); pending-review:changed keeps nodeId/id/count current
+    // after that — see syncPendingReview.
     this.pendingReviewNodeId = this.element.dataset.composerPendingReviewNodeId || null
+    this.pendingReviewId = this.element.dataset.composerPendingReviewId || null
+    this.pendingCount = 0
     this.boundSyncPendingReview = this.syncPendingReview.bind(this)
     window.addEventListener("pending-review:changed", this.boundSyncPendingReview)
   }
@@ -105,19 +110,115 @@ export default class extends Controller {
 
   // window:pending-review:changed — dispatched by pending_review_controller
   // every time the tray is replaced, so an open composer's "Start a
-  // review"/"Add review comment" label stays correct without a reload.
+  // review"/"Add review comment" label, and the next composer's hidden
+  // pending_review_node_id/pending_review_id/pending_count fields, stay
+  // correct without a reload.
   syncPendingReview(event) {
     this.pendingReviewNodeId = event.detail?.pendingReviewNodeId || null
+    this.pendingReviewId = event.detail?.pendingReviewId || null
+    this.pendingCount = event.detail?.pendingCount || 0
 
     this.element.querySelectorAll('[data-composer-target="reviewButton"]').forEach((button) => {
       button.textContent = this.pendingReviewNodeId ? "Add review comment" : "Start a review"
     })
+    // Every open thread's static reply form, not only a cloned composer —
+    // reply_form.html.erb reuses these same target names so its own hidden
+    // fields (read by ReviewCommentsController#reply, no refetch needed) and
+    // its "Add to review"/"Start a review with this reply" button stay
+    // correct without a reload too.
+    this.element.querySelectorAll('[data-composer-target="replyReviewButton"]').forEach((button) => {
+      button.textContent = this.pendingReviewNodeId ? "Add to review" : "Start a review with this reply"
+    })
+    this.element.querySelectorAll('[data-composer-target="pendingReviewNodeId"]').forEach((field) => {
+      field.value = this.pendingReviewNodeId || ""
+    })
+    this.element.querySelectorAll('[data-composer-target="pendingReviewId"]').forEach((field) => {
+      field.value = this.pendingReviewId || ""
+    })
+    this.element.querySelectorAll('[data-composer-target="pendingCount"]').forEach((field) => {
+      field.value = this.pendingCount
+    })
+  }
+
+  // data-action="turbo:submit-start->composer#showProvisional" on the
+  // composer's own form. Optimistic rendering (2026-09-19, "saving a
+  // comment feels slow"): a GitHub round trip is 200-400ms even after
+  // ReviewCommentsController#create stopped refetching, so this shows the
+  // comment immediately rather than waiting for the response — a card with
+  // the reviewer's own words and a muted "Sending…" state, inserted where
+  // the real thread will land (appended under the block, or prepended into
+  // #file_threads for a file-level comment). It is removed unconditionally
+  // on submit-end (success or failure) by id, so a failed submit — which
+  // re-renders the composer with the error instead of the thread — leaves
+  // no orphan behind.
+  showProvisional(event) {
+    const form = event.target
+    const blockId = form.querySelector('[data-composer-target="blockId"]')?.value
+    const subjectType = form.querySelector('[data-composer-target="subjectType"]')?.value
+    const body = form.querySelector('[data-composer-target="textarea"]')?.value?.trim()
+    if (!blockId || !body) return
+
+    const container =
+      subjectType === "file" ? document.getElementById("file_threads") : document.getElementById(`threads_${blockId}`)
+    if (!container) return
+
+    const card = this.buildProvisionalCard(body)
+    if (subjectType === "file") {
+      container.prepend(card)
+    } else {
+      container.appendChild(card)
+    }
+    this.provisionalIds.push(card.id)
+
+    // Visually clear the composer right away rather than emptying it —
+    // emptying it would remove the very form this submit-start handler is
+    // attached to while the request it just started is still in flight.
+    const composerContainer = document.getElementById(`composer_${blockId}`)
+    if (composerContainer) composerContainer.classList.add("hidden")
+  }
+
+  // data-action="turbo:submit-end->composer#removeProvisional" — fires once
+  // the response (success or failure) has already been processed, so the
+  // real thread (or the re-rendered composer, on failure) is already in the
+  // DOM by the time this runs.
+  removeProvisional() {
+    this.provisionalIds.forEach((id) => document.getElementById(id)?.remove())
+    this.provisionalIds = []
+    document.querySelectorAll('[id^="composer_"].hidden').forEach((el) => el.classList.remove("hidden"))
   }
 
   // ------------------------------------------------------------- private ---
 
   get templateId() {
     return this.element.dataset.composerTemplateId || "composer_template"
+  }
+
+  buildProvisionalCard(body) {
+    const id = `comment_provisional_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const login = this.element.dataset.composerViewerLogin || ""
+    const avatar = this.element.dataset.composerViewerAvatar || ""
+
+    const card = document.createElement("div")
+    card.id = id
+    card.className = "thread thread--pending"
+    card.dataset.testid = "provisional-comment"
+    card.innerHTML = `
+      <article class="comment-card">
+        <div class="comment-head">
+          ${avatar ? `<img alt="" class="avatar h-6 w-6" loading="lazy" src="${this.escapeHtml(avatar)}">` : ""}
+          ${login ? `<span class="comment-author">${this.escapeHtml(login)}</span>` : ""}
+          <span class="pill-pending">Sending…</span>
+        </div>
+        <div class="comment-body md-prose md-prose-compact">${this.escapeHtml(body).replace(/\n/g, "<br>")}</div>
+      </article>
+    `
+    return card
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement("div")
+    div.textContent = text
+    return div.innerHTML
   }
 
   fillFields(fragment, button) {
@@ -135,6 +236,9 @@ export default class extends Controller {
     set("blockEndLine", button.dataset.endLine)
     set("uncommentableReason", button.dataset.uncommentableReason || "")
     set("subjectType", commentable ? "line" : "file")
+    set("pendingReviewNodeId", this.pendingReviewNodeId)
+    set("pendingReviewId", this.pendingReviewId)
+    set("pendingCount", this.pendingCount)
 
     if (commentable && anchor) {
       set("line", anchor.line)

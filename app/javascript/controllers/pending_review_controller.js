@@ -18,13 +18,14 @@ import { Controller } from "@hotwired/stimulus"
 // (the identifier twice), not the single `data-pending-review-node-id-value`
 // the partial actually renders.
 export default class extends Controller {
-  static values = { nodeId: String, count: Number }
+  static values = { nodeId: String, id: String, count: Number }
 
   connect() {
     window.dispatchEvent(
       new CustomEvent("pending-review:changed", {
         detail: {
           pendingReviewNodeId: this.nodeIdValue || null,
+          pendingReviewId: this.idValue || null,
           pendingCount: this.countValue || 0
         }
       })

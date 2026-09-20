@@ -45,10 +45,20 @@ class ThreadActionsTest < ApplicationSystemTestCase
     open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
     assert_selector "[data-testid=thread]", text: "Worth a second look?"
 
-    reply_comment = feature_comment(node_id: "PRRC_reply", database_id: 900_101, body: "Fixed in the next push.")
-    stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/comments/900100/replies", fixture: :reply)
-    stub_feature_review_threads([ feature_thread(node_id: "PRRT_reply", path: PATH, line: 3,
-                                                 comments: [ root, reply_comment ]) ])
+    # ReviewCommentsController#reply now renders straight from this REST
+    # response rather than re-fetching reviewThreads (a performance change),
+    # so the stub has to carry the reviewer's own text in REST shape — the
+    # shared reply.json fixture's body ("Good catch, fixed in the next
+    # push.") is pinned by Github::ClientTest and isn't meant for this.
+    stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/comments/900100/replies",
+                      body: {
+                        id: 900_101, node_id: "PRRC_reply",
+                        user: { login: "prism-dev", avatar_url: "https://avatars.githubusercontent.com/u/4242?v=4",
+                                html_url: "https://github.com/prism-dev" },
+                        body: "Fixed in the next push.", created_at: Time.current.iso8601,
+                        html_url: "https://github.com/#{OWNER}/#{REPO}/pull/#{NUMBER}#discussion_r900101",
+                        diff_hunk: "", line: 3, side: "RIGHT", subject_type: "line"
+                      }.to_json)
 
     within "[data-testid=thread]" do
       find("[data-testid=reply-textarea]").set("Fixed in the next push.")

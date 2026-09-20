@@ -17,11 +17,15 @@ class ReviewThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to sign_in_path
   end
 
-  test "resolve calls resolveReviewThread and replaces the thread card" do
+  # Performance fix requested 2026-09-19 ("saving a comment feels slow"):
+  # resolveReviewThread/unresolveReviewThread already return the full thread
+  # (the same THREAD_FIELDS + COMMENT_FIELDS fragments a reviewThreads query
+  # would), so this renders that directly — no reviewThreads refetch, and no
+  # pull_request fetch either (`_thread.html.erb` never reads it). Only
+  # `GET .../reviews`, for the reply form's button label, remains.
+  test "resolve calls resolveReviewThread, renders its own payload, and fetches nothing else but pending_review" do
     sign_in_as(@user)
     stub_github_graphql(:ResolveThread, data: { resolveReviewThread: { thread: resolved_thread_data } })
-    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
-    stub_review_threads([ resolved_thread_data ])
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", body: [].to_json)
 
     post repo_pull_thread_resolve_path(owner: OWNER, repo: REPO, number: NUMBER, id: THREAD_ID), as: :turbo_stream
@@ -30,20 +34,23 @@ class ReviewThreadsControllerTest < ActionDispatch::IntegrationTest
     assert_github_graphql(:ResolveThread) { |variables| variables["input"]["threadId"] == THREAD_ID }
     assert_match(/turbo-stream action="replace" target="thread_#{THREAD_ID}"/, response.body)
     assert_match("Resolved", response.body)
+    refute github_graphql_requests.any? { |r| r[:operation] == "ReviewThreads" }
+    # No stub registered for either — a call would raise before this runs.
+    assert_github_not_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}"
   end
 
-  test "unresolve calls unresolveReviewThread" do
+  test "unresolve calls unresolveReviewThread and fetches nothing else but pending_review" do
     sign_in_as(@user)
     unresolved = resolved_thread_data.merge(isResolved: false, viewerCanResolve: true, viewerCanUnresolve: false)
     stub_github_graphql(:UnresolveThread, data: { unresolveReviewThread: { thread: unresolved } })
-    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
-    stub_review_threads([ unresolved ])
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", body: [].to_json)
 
     post repo_pull_thread_unresolve_path(owner: OWNER, repo: REPO, number: NUMBER, id: THREAD_ID), as: :turbo_stream
 
     assert_response :success
     assert_github_graphql(:UnresolveThread) { |variables| variables["input"]["threadId"] == THREAD_ID }
+    refute github_graphql_requests.any? { |r| r[:operation] == "ReviewThreads" }
+    assert_github_not_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}"
   end
 
   test "resolving a thread GitHub can no longer find replaces that thread, not the whole page" do
@@ -92,14 +99,5 @@ class ReviewThreadsControllerTest < ActionDispatch::IntegrationTest
           replyTo: nil, reactionGroups: [] }
       ] }
     }
-  end
-
-  def stub_review_threads(nodes)
-    stub_github_graphql(:ReviewThreads, data: {
-      repository: { pullRequest: {
-        id: "PR_kwDOABCD12MAAAABc9Vk",
-        reviewThreads: { pageInfo: { hasNextPage: false, endCursor: nil }, nodes: nodes }
-      } }
-    })
   end
 end

@@ -507,7 +507,36 @@ Rules for workstream D:
 | `.reaction-pill` / `.reaction-pill--on` | A reaction. The `--on` state is filled in brand, so the toggle reads without counting. |
 | `.reply-box` | The reply field at the foot of a thread. |
 | `.composer-textarea` | The comment textarea — serif, because you are writing prose about prose. |
-| `.tray` / `.tray-inner` | The sticky pending-review bar. `.tray-inner` is capped at `--measure-read` so it lines up with the document above it. Render it into `content_for :tray`, which the layout yields after `<main>`. |
+| `.tray` / `.tray-inner` | The pending-review bar. **Fixed**, not sticky — see below. `.tray-inner` is capped at `--measure-read` so it lines up with the document above it. Render it into `content_for :tray`, which the layout yields after `<main>`. |
+
+**The tray is `fixed`, and the page carries a floor to match.** Sticky pins an
+element only while its containing block is on screen, and the tray is the last
+child of `<body>`, so sticky pinned it exactly at the bottom of the page — the
+one place a reviewer does not need it. It is now `fixed inset-x-0 bottom-0`,
+with `body:has(.tray) main { padding-bottom: var(--tray-height) }` keeping the
+end of the document out from under it.
+
+`--tray-height` is **measured, not chosen**: 59px at laptop width, 61px at
+390px, set to 4.5rem with headroom. It only holds because `.btn` is
+`whitespace-nowrap` — while "Submit review" wrapped to two lines the bar grew
+to 77px at phone width and a 4.25rem floor hid the last 9px of the document.
+`test/system/tray_layout_test.rb` measures the real bar at both widths and
+fails with both numbers in the message if either drifts. Don't set it by eye,
+and don't let a button label wrap.
+
+`html:has(.tray)` also carries `scroll-padding-bottom`, so anything the browser
+scrolls to — a composer textarea taking focus near the bottom — stops clear of
+the bar. Only the bottom: `block_nav_controller` already offsets the top by
+measuring the pinned bars, and setting both would double it.
+
+**Threads and composers are not prose.** `.md-prose > *` caps every direct
+child at the reading measure, and a thread or composer rendered inside
+`.md-body` is a direct child — which left the comment box at 72ch inside an
+848px column. `.md-threads` and `.md-composer` are in the exception list beside
+`pre`/`table`/`img`, along with `ul:has(.md-composer:not(:empty))` and the `ol`
+and `.md-threads` equivalents, so a composer opened on a list item gets the
+same room. The prose beside them is still capped; the layout test asserts both
+halves, because widening everything would be just as wrong.
 
 Gate Edit / Delete / Resolve on `viewer_can_*` from the value object, never on
 comparing logins — GitHub already decided, and a repo admin can delete comments

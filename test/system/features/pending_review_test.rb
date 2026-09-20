@@ -59,11 +59,7 @@ class PendingReviewTest < ApplicationSystemTestCase
     block = find("[data-testid=md-block][data-commentable=true]", match: :first)
 
     draft1 = draft_thread("1", PATH)
-    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: draft1 } })
-    # Mutating `state` here, before the click, is what makes the *response*
-    # to that click's request (still a few lines away) see the new thread —
-    # the click itself is what triggers the HTTP round trip, not this line.
-    state[:threads] << draft1
+    stub_feature_add_thread_dynamic(state, draft1)
 
     block_id = open_composer_for(block)
     within "#composer_#{block_id}" do
@@ -80,10 +76,14 @@ class PendingReviewTest < ApplicationSystemTestCase
     end
     expect_github_received(:AddThread) { |vars| vars["input"]["pullRequestReviewId"] == REVIEW_NODE_ID }
 
-    # Switch files and add a second comment to the same pending review.
+    # Switch files and add a second comment to the same pending review. The
+    # file switch is a full Turbo Drive page load, so Page#load re-reads
+    # `state[:threads]` for real before the second comment is ever created —
+    # stub_feature_add_thread_dynamic only pushes draft2 in when its actual
+    # request arrives, so that intervening read (and the tray it renders)
+    # still sees just draft1.
     draft2 = draft_thread("2", OTHER_PATH)
-    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: draft2 } })
-    state[:threads] << draft2
+    stub_feature_add_thread_dynamic(state, draft2)
 
     find("[data-testid=file-switcher] summary").click
     within "[data-testid=file-switcher-menu]" do

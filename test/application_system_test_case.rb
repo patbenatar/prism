@@ -36,11 +36,27 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     assert_empty violations, "the browser blocked something:\n#{violations.join("\n")}"
   end
 
+  # The window size every test starts at. Laptop-shaped, because Prism is
+  # desktop-first and the reading column, gutter and side rail only exist
+  # above the `lg` breakpoint.
+  DEFAULT_WINDOW = [ 1440, 900 ].freeze
+
   # Enqueued jobs run synchronously so the browser observes their results
   # within the test.
   setup { ActiveJob::Base.queue_adapter = :inline }
 
-  # One browser is shared across the whole run, so a test that resized the
-  # window to check the phone layout must not leak that viewport into the next.
-  teardown { page.driver.browser.manage.window.resize_to(1440, 900) if page.driver.respond_to?(:browser) }
+  # One browser is shared across the whole suite (`parallelize(workers: 1)`),
+  # so a test that resizes to phone width leaks that width into whatever runs
+  # next — which shows up as an unrelated test failing on a layout it never
+  # asked for. Restore the default after every test rather than making each
+  # test defend itself in setup.
+  teardown { resize_window(*DEFAULT_WINDOW) }
+
+  def resize_window(width, height)
+    page.driver.browser.manage.window.resize_to(width, height)
+  rescue StandardError
+    # No browser was started (the test never visited a page), or it has already
+    # gone away. Nothing to restore either way.
+    nil
+  end
 end

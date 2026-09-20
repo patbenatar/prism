@@ -3,11 +3,22 @@
 # The write path for one review comment: post it immediately or add it to the
 # viewer's pending review, reply to a thread, edit or delete your own comment.
 #
-# GitHub is the only source of truth (PLAN.md principle 1), so every response
-# re-fetches `review_threads` rather than trusting the mutation's own payload
-# to still be correct once other threads and the pending-review tray are
-# folded in. See PLAN.md "Phase 2 seam: file view (D) <-> commenting (E)" for
-# the container ids this streams into.
+# GitHub is the only source of truth (PLAN.md principle 1) — but that does
+# not mean re-fetching everything on every write. `create` and `reply` both
+# render straight from their own mutation's returned payload rather than
+# re-querying `reviewThreads` for the whole pull request (up to 50 threads x
+# 100 comments) just to find or rebuild something they already have in hand;
+# the mutations build their payloads from the exact same GraphQL fragments
+# the query would use, so neither is a lesser copy, and the pending-review
+# tray after either one is rendered from what the page/composer already knew
+# (see pending_review_from_client) rather than a second `GET .../reviews`.
+# `reviewThreads` was the heaviest call in the request and its removal from
+# both actions is most of the round-trip-count fix requested 2026-09-19
+# ("saving a comment feels slow"). `update`/reactions were already free of
+# it (their own mutations return everything needed); `destroy` still
+# refetches, because deleting a comment tells you nothing about whether the
+# thread it was in still exists. See PLAN.md "Phase 2 seam: file view (D)
+# <-> commenting (E)" for the container ids this streams into.
 class ReviewCommentsController < ApplicationController
   include GithubErrorHandling
 
@@ -60,10 +71,10 @@ class ReviewCommentsController < ApplicationController
     pull_request = github.pull_request(@owner, @repo, @number)
     mode = ActiveModel::Type::Boolean.new.cast(params[:review]) ? "review" : "single"
 
-    writer.reply(pull_request: pull_request, root_comment_id: params[:id],
-                 thread_node_id: params[:thread_id], body: params[:body], mode: mode)
+    comment = writer.reply(pull_request: pull_request, root_comment_id: params[:id],
+                            thread_node_id: params[:thread_id], body: params[:body], mode: mode)
 
-    render_thread_replace(thread_node_id: params[:thread_id])
+    render_new_reply(comment: comment, thread_id: params[:thread_id], pull_request: pull_request, mode: mode)
   end
 
   # PATCH .../comments/:id — :id is the comment's GraphQL node id. Works on a
@@ -146,27 +157,24 @@ class ReviewCommentsController < ApplicationController
     { thread: thread, pull_request: pull_request, pending_review: current_pending_review, block_id: block_id }
   end
 
-  # `thread` is the mutation's own return value (create_thread/
-  # add_thread_to_review already built it from the same THREAD_FIELDS +
-  # COMMENT_FIELDS fragments the reviewThreads refetch uses), kept as a
-  # fallback for the read-after-write race the independent review flagged
-  # (M7, 2026-09-19): if the refetch does not yet contain the thread GitHub
-  # just told us it created, rendering nothing and clearing the composer
-  # anyway would make the reviewer's comment vanish with no explanation, even
-  # though it really did post. Render whichever copy exists — the fresh one
-  # when the refetch caught up, the mutation's own one otherwise — and only
-  # clear the composer in the first case; the second gets an inline notice
-  # instead, with the reviewer's text intact so nothing is lost from view.
+  # `thread` is the mutation's own return value — create_thread/
+  # add_thread_to_review already build it from the same THREAD_FIELDS +
+  # COMMENT_FIELDS fragments a reviewThreads query would use, so it is
+  # rendered directly with no refetch of any kind: no reviewThreads (was the
+  # heaviest call in the request) and no `GET .../reviews` either (the tray's
+  # two facts — whether a pending review exists, and how many comments are
+  # pending — come from `pending_review_from_client`/params, below). This also
+  # means there is no second fetch to lag behind the mutation, so the M7
+  # read-after-write race the independent review flagged (2026-09-19) cannot
+  # happen here any more; it was only ever a risk of refetching in the first
+  # place.
   def render_new_thread(pull_request:, thread:, block_id:)
-    fresh = fresh_threads.threads.find { |t| t.node_id == thread.node_id }
-    rendered_thread = fresh || thread
-
     respond_to do |format|
       format.turbo_stream do
         render turbo_stream: [
-          new_thread_stream(rendered_thread, pull_request, block_id: block_id),
-          composer_stream_after_create(pull_request, block_id: block_id, delivered: fresh.present?),
-          pending_tray_stream(pull_request)
+          new_thread_stream(thread, block_id: block_id),
+          turbo_stream.update("composer_#{block_id}", ""),
+          pending_tray_stream_from_client(pull_request, joined_review: review_mode?(params[:commit]))
         ]
       end
       format.html { redirect_to file_path, notice: "Comment posted." }
@@ -178,34 +186,74 @@ class ReviewCommentsController < ApplicationController
   # place it (Review::BlockMapper buckets subject_type FILE there, never
   # under a block) — appending it into `threads_<block_id>` instead would
   # make it jump to the top the next time the page loads.
-  def new_thread_stream(thread, pull_request, block_id:)
-    locals = thread_locals(thread, pull_request, block_id: block_id)
+  #
+  # `pull_request` is nil here on purpose: `_thread.html.erb` never reads it
+  # (every URL it builds comes from `params[:owner]`/`repo`/`number`), so
+  # there is nothing to fetch just to satisfy an unused local.
+  def new_thread_stream(thread, block_id:)
+    locals = { thread: thread, pull_request: nil, pending_review: pending_review_from_client, block_id: block_id }
     return turbo_stream.prepend("file_threads", partial: "review_comments/thread", locals: locals) if thread.file_level?
 
     turbo_stream.append("threads_#{block_id}", partial: "review_comments/thread", locals: locals)
   end
 
-  def composer_stream_after_create(pull_request, block_id:, delivered:)
-    return turbo_stream.update("composer_#{block_id}", "") if delivered
-
-    turbo_stream.replace(
-      "composer_#{block_id}", partial: "review_comments/composer_form",
-      locals: composer_error_locals(pull_request, current_pending_review,
-                                     "Posted to GitHub, but it hasn't appeared yet — reload to see it.")
-    )
-  end
-
-  def render_thread_replace(thread_node_id:)
-    pull_request = github.pull_request(@owner, @repo, @number)
-    thread = fresh_threads.threads.find { |t| t.node_id == thread_node_id }
-
+  # `comment` is reply/reply_in_review's own returned payload — the same
+  # COMMENT_FIELDS fragment a reviewThreads query would return for it — so
+  # this appends it straight into the thread's own comments container
+  # (`thread_comments_<id>`, see _thread.html.erb) instead of refetching
+  # reviewThreads to rebuild the whole thread just to add one comment to it.
+  def render_new_reply(comment:, thread_id:, pull_request:, mode:)
     respond_to do |format|
       format.turbo_stream do
-        render turbo_stream: [ thread_stream(thread_node_id, thread, pull_request), pending_tray_stream(pull_request) ]
+        render turbo_stream: [
+          turbo_stream.append("thread_comments_#{thread_id}",
+                               partial: "review_comments/comment",
+                               locals: { comment: comment, thread_id: thread_id }),
+          pending_tray_stream_from_client(pull_request, joined_review: review_mode?(mode))
+        ]
       end
       format.html { redirect_to file_path, notice: "Reply posted." }
     end
   end
+
+  # The pending review this request already knows about without asking
+  # GitHub again: `writer.resolved_review` if this very write found or opened
+  # one in review mode (ensure_pending_review's own `GET .../reviews` already
+  # paid for this), otherwise whatever the page already knew when its form
+  # was rendered (single mode, or review mode with no review touched —
+  # carried through as hidden fields on both the composer and every open
+  # reply form, kept current on both by `pending-review:changed`; see
+  # composer_controller.js). A reconstructed Review is enough:
+  # `_thread.html.erb`/`_reply_form.html.erb` only ever read
+  # `.node_id`/`.id`/`.present?` off it, never its body or author.
+  def pending_review_from_client
+    writer.resolved_review || pending_review_from_params
+  end
+
+  def pending_review_from_params
+    return nil if params[:pending_review_node_id].blank?
+
+    Github::Types::Review.new(
+      id: params[:pending_review_id], node_id: params[:pending_review_node_id],
+      state: "PENDING", body: nil, author: nil, submitted_at: nil, commit_id: nil, html_url: nil
+    )
+  end
+
+  # No refetch for the count either: the form carried the count it last knew
+  # (also kept current by pending-review:changed) as a hidden field, and the
+  # only way *this* request could have changed it is by adding a draft to the
+  # review itself — which only happens in review mode.
+  def pending_tray_stream_from_client(pull_request, joined_review:)
+    prior_count = params[:pending_count].to_i
+    count = joined_review ? prior_count + 1 : prior_count
+
+    turbo_stream.replace("pending_tray",
+                          partial: "reviews/pending_tray",
+                          locals: { pull_request: pull_request, pending_review: pending_review_from_client,
+                                    pending_count: count })
+  end
+
+  def review_mode?(mode) = mode.to_s == "review"
 
   def render_comment_replace(comment)
     respond_to do |format|
@@ -298,12 +346,22 @@ class ReviewCommentsController < ApplicationController
     end
   end
 
+  # `composer_<block_id>` is D's own empty slot div — its content, not itself,
+  # is what a successful open() or a server render fills in, so replacing it
+  # outright would discard the id the JS controller looks it up by on every
+  # later `document.getElementById` call, leaving the composer permanently
+  # unreachable at that block for the rest of the page's life. `thread_<id>`
+  # and `comment_<id>`, by contrast, are partials that declare that same id
+  # on their own root (`_thread.html.erb`, `shared/_comment_card.html.erb`
+  # via `_comment.html.erb`), so replacing them re-establishes it and is
+  # fine.
   def render_repo_error_stream(error)
     target = repo_error_target
     return redirect_to(file_path, alert: error.user_message) if target.nil?
 
-    render turbo_stream: turbo_stream.replace(
-      target, partial: "review_comments/inline_error", locals: { message: error.user_message }
+    action = target.start_with?("composer_") ? :update : :replace
+    render turbo_stream: turbo_stream.public_send(
+      action, target, partial: "review_comments/inline_error", locals: { message: error.user_message }
     ), status: error.is_a?(Github::Forbidden) ? :forbidden : :not_found
   end
 
@@ -321,15 +379,27 @@ class ReviewCommentsController < ApplicationController
     error.is_a?(Github::Forbidden) ? github_forbidden(error) : github_not_found(error)
   end
 
+  # Only ever reached from create's error branch (see handle_write_error), so
+  # this uses the same no-refetch pending_review_from_client the success path
+  # does, not current_pending_review.
+  #
+  # `update`, not `replace`: `composer_<block_id>` is D's own empty slot div,
+  # and `_composer_form.html.erb`'s root carries no id of its own (by
+  # design — the normal open() path inserts it as a *child* of that div, the
+  # same way `container.appendChild(fragment)` does in composer_controller.js).
+  # A `replace` here would swap the slot itself out for a div with no id,
+  # leaving the composer unreachable by `document.getElementById` for the
+  # rest of the page's life — caught by a system test exercising this exact
+  # path in a real browser (2026-09-19).
   def render_composer_error(error)
     pull_request = github.pull_request(@owner, @repo, @number)
 
     respond_to do |format|
       format.turbo_stream do
-        render turbo_stream: turbo_stream.replace(
+        render turbo_stream: turbo_stream.update(
           "composer_#{params[:block_id]}",
           partial: "review_comments/composer_form",
-          locals: composer_error_locals(pull_request, current_pending_review, user_message(error))
+          locals: composer_error_locals(pull_request, pending_review_from_client, user_message(error))
         ), status: :unprocessable_content
       end
       format.html { redirect_to file_path, alert: user_message(error) }
@@ -344,6 +414,10 @@ class ReviewCommentsController < ApplicationController
       uncommentable_reason: params[:uncommentable_reason],
       body: params[:body], block_text: params[:block_text],
       block_start_line: params[:block_start_line], block_end_line: params[:block_end_line],
+      # Preserved from the failed submission's own hidden field, not reset to
+      # 0 — otherwise a retry that succeeds after this error would increment
+      # from the wrong base and under-count the tray.
+      pending_count: params[:pending_count],
       error: message
     }
   end

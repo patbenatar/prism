@@ -142,58 +142,74 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/turbo-stream action="append" target="threads_block_9"/, response.body)
   end
 
-  # M7 (independent review, 2026-09-19): create_thread/add_thread_to_review's
-  # own returned thread must stand in when the reviewThreads refetch has not
-  # caught up yet (a read-after-write lag), so the comment does not
-  # disappear from view even though GitHub really did post it.
-  test "when the refetch has not caught up yet, the mutation's own thread renders and the composer explains why it stayed" do
+  # Performance fix requested 2026-09-19 ("saving a comment feels slow"): the
+  # heaviest call in a create request was re-fetching every thread on the
+  # pull request (reviewThreads, up to 50 threads x 100 comments) just to
+  # find the one thread this request already had from the mutation's own
+  # response. This also retired the M7 read-after-write race the independent
+  # review had flagged earlier the same day — there is no second fetch left
+  # to lag behind the mutation, so nothing to fall back from.
+  test "create does not refetch review_threads and streams the mutation's own thread verbatim" do
     sign_in_as(@user)
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
-    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
-    returned = new_thread_data(node_id: "PRRT_justposted", body: "Please don't disappear.")
-    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: returned } })
-    # The refetch is stale: it does not contain PRRT_justposted at all.
-    stub_review_threads([])
+    stub_github_graphql(:AddThread,
+                         data: { addPullRequestReviewThread: { thread: new_thread_data(node_id: "PRRT_verbatim", body: "Exactly this.") } })
 
     post repo_pull_comments_path(owner: OWNER, repo: REPO, number: NUMBER),
          params: { path: PATH, line: 3, side: "RIGHT", subject_type: "line",
-                   body: "Please don't disappear.", commit: "single", block_id: "block_1" },
+                   body: "Exactly this.", commit: "single", block_id: "block_1" },
          as: :turbo_stream
 
     assert_response :success
-    # The thread still renders, from the mutation's own payload. Its body
-    # comes through GraphQL bodyHTML via `raw`, unescaped, so the literal
-    # apostrophe is the right thing to assert here.
+    refute github_graphql_requests.any? { |r| r[:operation] == "ReviewThreads" },
+           "create must not query reviewThreads any more"
+    # No stub is registered for GET .../reviews at all — if create's success
+    # path called it, WebMock would raise before this assertion even runs.
+    assert_github_not_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews"
     assert_match(/turbo-stream action="append" target="threads_block_1"/, response.body)
-    assert_match("<p>Please don't disappear.</p>", response.body)
-    # The composer is replaced with a notice and the reviewer's text, not
-    # cleared. Its own text sits in a plain <%= body %> inside a <textarea>,
-    # which ERB escapes on the way out — assert the escaped form so this is
-    # actually checking the composer's own textarea, not just matching the
-    # thread's unescaped copy of the same words found anywhere else on the
-    # page. (Independent review 2026-09-19 / ws-d-fileview caught the same
-    # class of mistake on the "hasn't appeared yet" notice below.)
-    assert_match(/turbo-stream action="replace" target="composer_block_1"/, response.body)
-    assert_no_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
-    assert_match("hasn&#39;t appeared yet", response.body)
-    assert_match("Please don&#39;t disappear.", response.body)
+    assert_match('id="thread_PRRT_verbatim"', response.body)
+    assert_match("<p>Exactly this.</p>", response.body)
+    assert_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
   end
 
-  test "when the refetch does catch up, the composer is simply cleared with no notice" do
+  test "create in review mode increments the pending count from the composer's hidden field, with only the one necessary GET" do
     sign_in_as(@user)
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
-    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
-    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: new_thread_data } })
-    stub_review_threads([ new_thread_data ])
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews) # already has a PENDING review
+    draft = new_thread_data(node_id: "PRRT_draft", state: "PENDING")
+    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: draft } })
 
     post repo_pull_comments_path(owner: OWNER, repo: REPO, number: NUMBER),
          params: { path: PATH, line: 3, side: "RIGHT", subject_type: "line",
-                   body: "Normal path.", commit: "single", block_id: "block_1" },
+                   body: "Add to the review.", commit: "review", block_id: "block_1", pending_count: "1" },
          as: :turbo_stream
 
     assert_response :success
-    assert_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
-    assert_no_match(/hasn.{4}t appeared yet/, response.body)
+    refute github_graphql_requests.any? { |r| r[:operation] == "ReviewThreads" }
+    # Exactly once — from ensure_pending_review finding the existing draft,
+    # not once for that *and* a second time to render the tray.
+    assert_github_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", times: 1
+    assert_match("2 pending comments", response.body)
+  end
+
+  test "a single comment after a review was already started still shows the tray, from hidden fields alone" do
+    sign_in_as(@user)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
+    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: new_thread_data(node_id: "PRRT_single") } })
+
+    post repo_pull_comments_path(owner: OWNER, repo: REPO, number: NUMBER),
+         params: { path: PATH, line: 3, side: "RIGHT", subject_type: "line",
+                   body: "Just a note.", commit: "single", block_id: "block_1",
+                   pending_review_node_id: "PRR_kwDOABCD12MAAAABc9BB", pending_review_id: "80002",
+                   pending_count: "3" },
+         as: :turbo_stream
+
+    assert_response :success
+    assert_github_not_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews"
+    # Unchanged — a single comment does not join the pending review — and
+    # the tray still points at the review the client already knew about.
+    assert_match("3 pending comments", response.body)
+    assert_match(%r{action="/acme/docs-site/pulls/42/reviews/80002/submit"}, response.body)
   end
 
   # Test gap flagged by the independent review (2026-09-19): the multi-line
@@ -241,19 +257,22 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
          as: :turbo_stream
 
     assert_response :unprocessable_content
-    assert_match(/turbo-stream action="replace" target="composer_block_1"/, response.body)
+    assert_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
     assert_match("My careful comment", response.body)
     assert_match("GitHub only accepts comments on lines that appear in this pull request", response.body)
   end
 
   # ---------------------------------------------------------------- reply ---
 
-  test "reply posts immediately over REST using the thread's root comment id" do
+  # Performance fix requested 2026-09-19 ("saving a comment feels slow"):
+  # reply now renders straight from its own REST/GraphQL payload — appended
+  # into the thread's own comments container — instead of refetching
+  # reviewThreads to rebuild the whole thread. No stub is registered for
+  # either GET .../reviews or the ReviewThreads GraphQL query.
+  test "reply posts immediately over REST and appends the comment with no refetch" do
     sign_in_as(@user)
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
     stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/comments/900001/replies", fixture: :reply)
-    stub_review_threads(github_fixture(:review_threads).dig("data", "repository", "pullRequest", "reviewThreads", "nodes"))
-    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
 
     post repo_pull_comment_replies_path(owner: OWNER, repo: REPO, number: NUMBER, id: 900001),
          params: { thread_id: "PRRT_kwDOABCD12MAAAAAAA1", body: "Fixed in the next push.", review: "0" },
@@ -261,18 +280,23 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_github_requested :post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/comments/900001/replies"
-    assert_match(/turbo-stream action="replace" target="thread_PRRT_kwDOABCD12MAAAAAAA1"/, response.body)
+    refute github_graphql_requests.any? { |r| r[:operation] == "ReviewThreads" }
+    assert_github_not_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews"
+    assert_match(/turbo-stream action="append" target="thread_comments_PRRT_kwDOABCD12MAAAAAAA1"/, response.body)
+    # reply.json's own fixed body — the response is a stubbed fixture, not an
+    # echo of what this test posted.
+    assert_match("Good catch, fixed in the next push.", response.body)
   end
 
-  test "reply with review=1 adds a draft reply to the pending review over GraphQL" do
+  test "reply with review=1 adds a draft reply to the pending review over GraphQL, with only the one necessary GET" do
     sign_in_as(@user)
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
-    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews) # ensure_pending_review's own lookup
     stub_github_graphql(:AddThreadReply, data: { addPullRequestReviewThreadReply: { comment: comment_data(node_id: "PRRC_new") } })
-    stub_review_threads(github_fixture(:review_threads).dig("data", "repository", "pullRequest", "reviewThreads", "nodes"))
 
     post repo_pull_comment_replies_path(owner: OWNER, repo: REPO, number: NUMBER, id: 900001),
-         params: { thread_id: "PRRT_kwDOABCD12MAAAAAAA1", body: "Draft reply.", review: "1" },
+         params: { thread_id: "PRRT_kwDOABCD12MAAAAAAA1", body: "Draft reply.", review: "1",
+                   pending_count: "1" },
          as: :turbo_stream
 
     assert_response :success
@@ -281,6 +305,9 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
         variables["input"]["pullRequestReviewThreadId"] == "PRRT_kwDOABCD12MAAAAAAA1" &&
         variables["input"]["body"] == "Draft reply."
     end
+    refute github_graphql_requests.any? { |r| r[:operation] == "ReviewThreads" }
+    assert_github_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", times: 1
+    assert_match("2 pending comments", response.body)
   end
 
   # ---------------------------------------------------------------- update --
@@ -393,7 +420,7 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
          as: :turbo_stream
 
     assert_response :not_found
-    assert_match(/turbo-stream action="replace" target="composer_block_1"/, response.body)
+    assert_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
     assert_match(/not found|access to it/i, response.body)
   end
 
@@ -407,7 +434,7 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
          as: :turbo_stream
 
     assert_response :forbidden
-    assert_match(/turbo-stream action="replace" target="composer_block_1"/, response.body)
+    assert_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
   end
 
   test "create against a pull request GitHub 404s renders the full not-found page for a plain request" do
@@ -470,7 +497,7 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
          as: :turbo_stream
 
     assert_response :unprocessable_content
-    assert_match(/turbo-stream action="replace" target="composer_block_1"/, response.body)
+    assert_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
     assert_match("Hi", response.body) # the reviewer's text survives the error
   end
 
@@ -485,7 +512,7 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
          as: :turbo_stream
 
     assert_response :unprocessable_content
-    assert_match(/turbo-stream action="replace" target="composer_block_1"/, response.body)
+    assert_match(/turbo-stream action="update" target="composer_block_1"/, response.body)
   end
 
   private

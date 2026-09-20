@@ -41,7 +41,12 @@
      data-composer-pending-review-node-id="<%= @page.pending_review&.node_id %>"
      data-composer-pending-review-id="<%= @page.pending_review&.id %>"
      data-composer-file-comment-permalink-base="<%= @page.file_comment_permalink_base %>"
-     data-composer-side="<%= @result&.side || "right" %>">
+     data-composer-side="<%= @result&.side || "right" %>"
+     <%# For the provisional card the composer shows while a comment is in
+         flight. It is the signed-in user by definition — this screen requires
+         authentication — so it costs no GitHub call. %>
+     data-composer-viewer-login="<%= current_user.login %>"
+     data-composer-viewer-avatar="<%= current_user.avatar_url %>">
 
   <%= render "file_bar" %>
 

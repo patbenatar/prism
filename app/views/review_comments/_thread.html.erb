@@ -5,7 +5,12 @@
 
   Locals:
     thread:         (required) Github::Types::ReviewThread
-    pull_request:   (required) Github::Types::PullRequest
+    pull_request:    accepted for callers that already have one, but nothing
+                     below reads it — every URL here is built from
+                     params[:owner]/repo/number instead, so a caller with no
+                     pull_request to hand (resolve/unresolve, which resolve
+                     from the mutation's own returned thread rather than a
+                     refetch) can safely pass nil.
     pending_review:  Github::Types::Review or nil
     block_id:        the block this thread is rendered under, or nil when
                      re-rendering standalone (reply/resolve/delete) — only
@@ -25,9 +30,15 @@
        end %>
 
   <% body = capture do %>
-    <% thread.comments.each do |comment| %>
-      <%= render "review_comments/comment", comment: comment, thread_id: thread.node_id %>
-    <% end %>
+    <%# Its own id, separate from the reply box below it, so a new reply can
+        be appended here directly (ReviewCommentsController#reply) without
+        needing to rebuild the whole thread from a review_threads refetch —
+        performance fix requested 2026-09-19 ("saving a comment feels slow"). %>
+    <div id="thread_comments_<%= thread.node_id %>">
+      <% thread.comments.each do |comment| %>
+        <%= render "review_comments/comment", comment: comment, thread_id: thread.node_id %>
+      <% end %>
+    </div>
     <%= render "review_comments/reply_form", thread: thread, pending_review: pending_review %>
   <% end %>
 

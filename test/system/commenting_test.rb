@@ -122,6 +122,62 @@ class CommentingTest < ApplicationSystemTestCase
     assert_selector "[data-testid=flash]", text: /approved/i
   end
 
+  # Optimistic rendering (2026-09-19, "saving a comment feels slow"): the
+  # mutation response is stubbed with a deliberate delay so there is a real
+  # window to observe the provisional card before the round trip completes.
+  test "a provisional comment appears immediately and is replaced by the real thread" do
+    sign_in_as(@user)
+    visit repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    assert_selector "[data-testid=rendered-file]"
+
+    stub_add_thread_slowly(thread_data("single"))
+
+    block = first("[data-testid=md-block][data-commentable=true]")
+    block_id = block["data-block-id"]
+    block.hover
+    block.find(".md-add").click
+
+    within "#composer_#{block_id}" do
+      fill_in_body("Nice work @octocat")
+      click_on "Add single comment"
+    end
+
+    assert_selector "[data-testid=provisional-comment]", text: "Sending", wait: 1
+    assert_selector "[data-testid=provisional-comment]", text: "Nice work @octocat"
+    # ws-d-fileview added data-composer-viewer-login/-avatar to #file_view
+    # (2026-09-19) — confirms the provisional card reads the real viewer,
+    # not just degrading gracefully in their absence.
+    assert_selector "[data-testid=provisional-comment] .comment-author", text: @user.login
+    assert_selector "[data-testid=provisional-comment] img.avatar"
+
+    assert_selector "[data-testid=thread]", text: "Nice work @octocat", wait: 5
+    assert_no_selector "[data-testid=provisional-comment]"
+  end
+
+  test "a failed submit leaves no orphan provisional comment behind" do
+    sign_in_as(@user)
+    visit repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    assert_selector "[data-testid=rendered-file]"
+
+    stub_add_thread_error_slowly("Pull request review thread line must be part of the diff")
+
+    block = first("[data-testid=md-block][data-commentable=true]")
+    block_id = block["data-block-id"]
+    block.hover
+    block.find(".md-add").click
+
+    within "#composer_#{block_id}" do
+      fill_in_body("This will fail.")
+      click_on "Add single comment"
+    end
+
+    assert_selector "[data-testid=provisional-comment]", wait: 1
+
+    assert_selector "[data-testid=composer-error]", wait: 5
+    assert_no_selector "[data-testid=provisional-comment]"
+    assert_selector "#composer_#{block_id} textarea", text: "This will fail.", wait: 5
+  end
+
   private
 
   def fill_in_body(text)
@@ -174,6 +230,30 @@ class CommentingTest < ApplicationSystemTestCase
     stub_request(:post, "#{GithubStubs::API}/graphql")
       .with { |request| graphql_operation_name(request.body) == "ReviewThreads" }
       .to_return(*responses)
+  end
+
+  # A deliberate delay on the mutation response, so the optimistic card has a
+  # real window to be observed before the round trip completes. Runs in
+  # Puma's own request-handling thread (the app boots in-process for a
+  # Selenium system test), not the test's main thread, so it does not block
+  # Capybara's polling.
+  def stub_add_thread_slowly(thread)
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .with { |request| graphql_operation_name(request.body) == "AddThread" }
+      .to_return do |_request|
+        sleep 0.4
+        { status: 200, body: { data: { addPullRequestReviewThread: { thread: thread } } }.to_json,
+          headers: GithubStubs::JSON_HEADERS }
+      end
+  end
+
+  def stub_add_thread_error_slowly(message)
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .with { |request| graphql_operation_name(request.body) == "AddThread" }
+      .to_return do |_request|
+        sleep 0.4
+        { status: 200, body: { errors: [ { "message" => message } ] }.to_json, headers: GithubStubs::JSON_HEADERS }
+      end
   end
 
   def stub_reviews_sequence(*review_lists)

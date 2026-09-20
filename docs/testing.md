@@ -71,10 +71,20 @@ docker compose exec app bin/rails test test/system/features/pending_review_test.
   3rd call returns X" is fragile — off by one, and a later step silently
   reads the wrong snapshot. `stub_feature_reviews_dynamic` /
   `stub_feature_review_threads_dynamic` /
-  `stub_feature_create_pending_review_dynamic` always answer from `state`
-  as of whenever they're asked, and the test mutates `state` itself
-  (`state[:threads] << thread`) right where it knows a write just landed.
-  See `pending_review_test.rb`.
+  `stub_feature_create_pending_review_dynamic` /
+  `stub_feature_add_thread_dynamic` always answer from `state` as of whenever
+  they're asked. **Mutate `state` from inside a dynamic stub's own response
+  block (when the request actually arrives), never eagerly before the click
+  that triggers it.** An eager `state[:threads] << thread` right before the
+  click looks harmless, but if anything reads `state` between that line and
+  the click — a file switch is a full Turbo Drive page load, and
+  `Page#load_review_state` genuinely re-reads `reviewThreads` — that read
+  sees a comment the app hasn't actually created yet, one call too early. A
+  real instance of this shipped and was caught when the commenting
+  workstream sped up comment creation (no longer re-fetching `reviewThreads`
+  on every write) and the composer's own count+1 arithmetic exposed the
+  test's premature mutation as a genuine off-by-one. See
+  `stub_feature_add_thread_dynamic` and `pending_review_test.rb`.
 - **The "+" is `opacity-0` until hover** (DESIGN.md §7). Capybara/Selenium
   treat that as not-visible, so reading a gutter button's data attributes
   *before* hovering needs `visible: :all` (e.g.
