@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Give the dev app a public HTTPS URL so GitHub can deliver webhooks to it.
+#
+# Uses localhost.run, which needs no account and no install — just SSH. The
+# hostname is random and changes every run, which is exactly the case the
+# "Wrong address" state on /subscriptions exists to catch. For a hostname that
+# survives restarts, use ngrok's free static domain instead: see
+# docs/webhooks.md.
+#
+#   bin/tunnel            # prints the URL, then stays up until you Ctrl-C
+#
+# Put the URL it prints into PRISM_PUBLIC_URL in .env and restart:
+#   docker compose up -d app jobs
+set -euo pipefail
+
+PORT="${PORT:-3004}"
+
+if ! curl -sf -o /dev/null "http://localhost:${PORT}/up"; then
+  echo "Prism isn't answering on http://localhost:${PORT} — start it first:" >&2
+  echo "  docker compose up -d" >&2
+  exit 1
+fi
+
+echo "Opening a tunnel to localhost:${PORT}…"
+echo
+
+ssh -o StrictHostKeyChecking=no \
+    -o ServerAliveInterval=30 \
+    -o ExitOnForwardFailure=yes \
+    -R "80:localhost:${PORT}" nokey@localhost.run 2>&1 |
+  while IFS= read -r line; do
+    case "$line" in
+      *lhr.life*)
+        url=$(printf '%s\n' "$line" | grep -oE 'https://[a-z0-9-]+\.lhr\.life' | head -1)
+        if [ -n "$url" ]; then
+          echo "  Public URL: $url"
+          echo
+          echo "  Put this in .env and restart the app:"
+          echo "    PRISM_PUBLIC_URL=$url"
+          echo "    docker compose up -d app jobs"
+          echo
+          echo "  Leave this running. The URL dies when you stop it, and any"
+          echo "  repository you subscribed will show \"Wrong address\" until you"
+          echo "  re-register against the next one."
+          echo
+        fi
+        ;;
+    esac
+  done

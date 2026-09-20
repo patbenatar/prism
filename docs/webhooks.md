@@ -173,6 +173,28 @@ address that no longer exists.
 The tunnel refuses to start, with instructions, if `NGROK_AUTHTOKEN` is
 empty. It does not crash-loop, and nothing else in Prism needs the token.
 
+#### No account? `bin/tunnel`
+
+`bin/tunnel` opens a [localhost.run](https://localhost.run) tunnel over plain
+SSH. No account, no install, nothing to configure — it prints a public HTTPS
+URL and stays up until you stop it.
+
+```bash
+bin/tunnel      # prints e.g. https://fabf0f428750e7.lhr.life
+```
+
+The catch is the one ngrok's static domain solves: the hostname is **random
+every run**, so anything you subscribed against the previous one is pointing
+GitHub at an address that no longer resolves. That is precisely the
+"Wrong address" state on `/subscriptions`, and re-registering fixes it. Fine
+for a one-off test, painful as a daily habit — which is why ngrok is the
+documented default and this is the escape hatch.
+
+This path is verified end to end against real GitHub: a subscription
+registered through it received `pull_request.opened` for a real pull request,
+placed the link in the description, and correctly ignored the
+`pull_request.edited` event its own write produced.
+
 ### 2. Point Prism at it
 
 ```bash
