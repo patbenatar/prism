@@ -1,10 +1,18 @@
 <%# locals: repo:, pinned:, page: %>
+<%# The *form* is what gets positioned, not the button inside it.
+    `button_to` always wraps its button in a form, and a form left in the flow
+    is an empty inline-block: it generates a line box of its own — measured at
+    25px — under the row's link, which is exactly the gap between the row you
+    can hover and the hairline below it. Taking the form out of the flow makes
+    the wrapper's height the link's height again, so the hover fill and the
+    hairline describe one rectangle. The button then only has to be a button. %>
+<% form_class = "absolute right-2 top-1/2 -translate-y-1/2" %>
 <% if pinned %>
   <%= button_to pinned_repo_path(owner: repo.owner, repo: repo.name),
               method: :delete,
               params: { page: page },
-              class: "btn-ghost btn-sm absolute right-2 top-1/2 -translate-y-1/2 text-brand hover:text-brand-deep",
-              form_class: "inline-block",
+              class: "btn-ghost btn-sm text-brand hover:text-brand-deep",
+              form_class: form_class,
               data: { testid: "unpin-button" } do %>
     <svg viewBox="0 0 20 20" class="h-4 w-4" fill="currentColor" aria-hidden="true">
       <path d="M10 1.5l2.02 4.62 5.02.55-3.79 3.5 1.02 4.98L10 12.6l-4.27 2.55 1.02-4.98-3.79-3.5 5.02-.55L10 1.5Z" />
@@ -15,8 +23,8 @@
   <%= button_to pinned_repos_path,
               method: :post,
               params: { owner: repo.owner, repo: repo.name, page: page },
-              class: "btn-ghost btn-sm absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink",
-              form_class: "inline-block",
+              class: "btn-ghost btn-sm text-ink-faint hover:text-ink",
+              form_class: form_class,
               data: { testid: "pin-button" } do %>
     <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
       <path stroke-linecap="round" stroke-linejoin="round"

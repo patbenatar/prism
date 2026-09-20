@@ -5,12 +5,17 @@
     wrapper, not .row-link, is the thing filtering hides and the thing that
     is actually "the row" — so it carries the hairline (`last:border-b-0`)
     and the testid; `!border-b-0` cancels .row-link's own hairline so the
-    border isn't drawn twice. %>
-<div class="relative border-b border-line last:border-b-0"
+    border isn't drawn twice.
+    Two rules keep that split invisible. The toggle's form is positioned out
+    of the flow (see repos/_pin_toggle), so this wrapper is exactly as tall as
+    the link and the hairline sits against the bottom of the hover fill. And
+    `group` carries the hover through: the toggle is a sibling, so pointing at
+    the star would otherwise drop the row's highlight and its brand tick. %>
+<div class="group relative border-b border-line last:border-b-0"
      data-filter-target="item" data-filter-text="<%= "#{repo.full_name} #{repo.description}" %>"
      data-testid="repo-row">
   <%= link_to repo_pulls_path(owner: repo.owner, repo: repo.name),
-              class: "row-link !border-b-0 pr-12" do %>
+              class: "row-link !border-b-0 pr-12 group-hover:bg-brand-soft/45 group-hover:before:opacity-100" do %>
     <div class="flex items-start gap-3">
       <%= image_tag repo.owner_avatar_url, alt: "",
                     class: "#{repo.owner_type == 'Organization' ? 'avatar-sq' : 'avatar'} mt-0.5 h-6 w-6",

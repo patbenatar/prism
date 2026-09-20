@@ -1,0 +1,13 @@
+<%# locals: subscription:
+
+    The one word for what GitHub is doing with this hook right now. Extracted
+    because two screens say it — /subscriptions and the watch control on a
+    repository's own page — and a state whose wording differs between them is
+    a state the reader has to work out twice. %>
+<% if subscription.broken? %>
+  <span class="pill-removed" data-testid="subscription-broken">Not working</span>
+<% elsif subscription.callback_stale? %>
+  <span class="pill-modified" data-testid="subscription-stale">Wrong address</span>
+<% else %>
+  <span class="pill-added">Active</span>
+<% end %>

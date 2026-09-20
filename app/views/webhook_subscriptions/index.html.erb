@@ -74,31 +74,10 @@
                 <span class="row-title">
                   <span class="font-normal text-ink-soft"><%= subscription.owner %>/</span><%= subscription.name %>
                 </span>
-                <% if subscription.broken? %>
-                  <span class="pill-removed" data-testid="subscription-broken">Not working</span>
-                <% elsif subscription.callback_stale? %>
-                  <span class="pill-modified" data-testid="subscription-stale">Wrong address</span>
-                <% else %>
-                  <span class="pill-added">Active</span>
-                <% end %>
+                <%= render "webhook_subscriptions/status_pill", subscription: subscription %>
               </p>
 
-              <% if subscription.broken? %>
-                <p class="mt-1 text-sm text-removed" data-testid="broken-reason">
-                  <%= subscription.broken_reason %> Prism has stopped trying. Sign in again, or
-                  remove and re-add the repository once access is back.
-                </p>
-              <% elsif subscription.callback_stale? %>
-                <%# Silent failure otherwise: GitHub keeps POSTing to an address
-                    nothing answers on, and because the request never reaches
-                    Prism there is nothing in any log here to find. %>
-                <p class="mt-1 text-sm text-modified" data-testid="stale-reason">
-                  GitHub is still delivering to <code class="font-mono text-xs break-all"><%= subscription.callback_url %></code>,
-                  but Prism now answers on <code class="font-mono text-xs break-all"><%= Webhooks::CallbackUrl.current_or_nil %></code>.
-                  Nothing is arriving. Re-register to point the existing webhook at the new address —
-                  the secret and history are kept.
-                </p>
-              <% end %>
+              <%= render "webhook_subscriptions/status_reason", subscription: subscription %>
 
               <div class="row-meta">
                 <span>as @<%= subscription.user.login %></span>

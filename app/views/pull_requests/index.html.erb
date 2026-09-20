@@ -8,9 +8,19 @@
   <% repo_title = capture do %>
     <span class="font-normal text-ink-soft"><%= @repo.owner %>/</span><%= @repo.name %>
   <% end %>
+  <%# The actions get their own row inside the slot: the watch control is a
+      button with a line of copy under it, and `_page_header` lays its actions
+      out on one centred line. The cap is load-bearing rather than taste —
+      that slot is `shrink-0`, so whatever is in it claims its full max-content
+      width, and an uncapped line of explanatory copy claims the width of the
+      sentence and pushes the page sideways at 390. %>
   <% repo_actions = capture do %>
-    <%= link_to "Open on GitHub", @repo.html_url, class: "btn-secondary",
-                target: "_blank", rel: "noopener" %>
+    <div class="flex max-w-80 flex-wrap items-start justify-end gap-2 sm:max-w-md">
+      <%= link_to "Open on GitHub", @repo.html_url, class: "btn-secondary",
+                  target: "_blank", rel: "noopener" %>
+      <%= render "webhook_subscriptions/watch",
+                 owner: @repo.owner, name: @repo.name, subscription: @subscription %>
+    </div>
   <% end %>
 
   <%= render "shared/page_header",
