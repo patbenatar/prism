@@ -1,13 +1,20 @@
 <%#
-  D renders this once per file view:
+  D renders this once per file:
     render "review_comments/composer_template", pull_request:, path:, pending_review:
+    render "review_comments/composer_template", id: "composer_template_#{key}", …
 
   It wraps `_composer_form` in a <template> so composer_controller.js can
   clone a fresh, inert copy into `composer_<block_id>` on every gutter click
   rather than re-rendering from the server. Locals match PLAN.md "Phase 2
   seam".
+
+  `id:` defaults to the seam's `composer_template`. The Markdown tab holds
+  every file in the pull request on one page and the form's hidden `path`
+  differs per file, so that page renders one template per file and names each
+  one; `data-composer-template-id` on the file's own section tells the
+  controller which to clone.
 %>
-<template id="composer_template">
+<template id="<%= local_assigns[:id].presence || "composer_template" %>">
   <%= render "review_comments/composer_form", pull_request: pull_request, path: path,
                                                pending_review: local_assigns[:pending_review] %>
 </template>

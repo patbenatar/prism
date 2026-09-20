@@ -41,10 +41,16 @@ services:
       AR_ENCRYPTION_PRIMARY_KEY: ${AR_ENCRYPTION_PRIMARY_KEY:-}
       AR_ENCRYPTION_DETERMINISTIC_KEY: ${AR_ENCRYPTION_DETERMINISTIC_KEY:-}
       AR_ENCRYPTION_KEY_DERIVATION_SALT: ${AR_ENCRYPTION_KEY_DERIVATION_SALT:-}
-      # No background jobs yet, so the dev queue adapter is :async (in-process).
-      # When durable jobs land, run `bin/rails solid_queue:install`, configure
-      # the queue schema, then re-enable SOLID_QUEUE_IN_PUMA: "true" here to run
-      # the worker inside Puma.
+      # Jobs run in the `jobs` service below, not inside Puma: a worker in its
+      # own container has its own log, and restarting the web server doesn't
+      # take the queue with it. Production still runs Solid Queue inside Puma
+      # (SOLID_QUEUE_IN_PUMA) — one small instance, one process.
+      #
+      # The public origin GitHub delivers webhooks to and the "review in Prism"
+      # link points at. Blank in .env just means /subscriptions explains what
+      # is missing; see docs/webhooks.md.
+      PRISM_PUBLIC_URL: ${PRISM_PUBLIC_URL:-}
+      PRISM_ANNOUNCEMENT_TARGET: ${PRISM_ANNOUNCEMENT_TARGET:-description}
       HOME: /tmp
     volumes:
       # Bind-mount the working tree for live code reload. Gems live in
@@ -57,6 +63,43 @@ services:
       postgres:
         condition: service_healthy
     stdin_open: true
+    tty: true
+
+  # Solid Queue worker. Webhook deliveries are acknowledged by the web process
+  # in milliseconds and done here, so a slow GitHub call can never turn into a
+  # failed delivery (GitHub gives a webhook ten seconds and disables a hook
+  # that keeps missing it).
+  #
+  # Entrypoint overridden to skip db:prepare: the app service already did it,
+  # and two containers migrating the same database on boot is a race.
+  jobs:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    user: "1000:1000"
+    entrypoint: ["bin/jobs"]
+    environment:
+      RAILS_ENV: development
+      HOME: /tmp
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      # The worker acts on GitHub as the subscriber, so it needs the same
+      # encryption keys as the web process to read their token and the
+      # subscription's webhook secret.
+      AR_ENCRYPTION_PRIMARY_KEY: ${AR_ENCRYPTION_PRIMARY_KEY:-}
+      AR_ENCRYPTION_DETERMINISTIC_KEY: ${AR_ENCRYPTION_DETERMINISTIC_KEY:-}
+      AR_ENCRYPTION_KEY_DERIVATION_SALT: ${AR_ENCRYPTION_KEY_DERIVATION_SALT:-}
+      PRISM_PUBLIC_URL: ${PRISM_PUBLIC_URL:-}
+      PRISM_ANNOUNCEMENT_TARGET: ${PRISM_ANNOUNCEMENT_TARGET:-description}
+    volumes:
+      - .:/app
+    depends_on:
+      app:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     tty: true
 
   # Recompiles app/assets/builds/tailwind.css on change. Overrides the image
@@ -79,6 +122,64 @@ services:
     depends_on:
       - app
     tty: true
+
+  # A public HTTPS URL for the dev app, so GitHub can reach it. Off by default
+  # — it is only needed while working on webhooks, and it publishes localhost
+  # to the internet, which should always be a deliberate act:
+  #
+  #   docker compose --profile tunnel up -d tunnel
+  #   docker compose logs tunnel        # the URL, and every request as it lands
+  #
+  # ngrok, in a container, so there is nothing to install on the host. It
+  # points at `app:3000` (the container port), not localhost:3004.
+  #
+  # NGROK_AUTHTOKEN is required — ngrok needs a free account. NGROK_DOMAIN is
+  # optional and defaults to PRISM_PUBLIC_URL, which is almost always what you
+  # want: the free tier includes one static domain, so setting PRISM_PUBLIC_URL
+  # to it means the tunnel claims that exact URL every time and the hostname
+  # never changes. Leave both unset and ngrok assigns a random URL, which you
+  # then paste into PRISM_PUBLIC_URL yourself.
+  #
+  # Port 4040 is ngrok's request inspector: every webhook delivery with its
+  # headers and body, and a button to replay one. See docs/webhooks.md.
+  tunnel:
+    image: ngrok/ngrok:latest
+    profiles: ["tunnel"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+      NGROK_DOMAIN: ${NGROK_DOMAIN:-${PRISM_PUBLIC_URL:-}}
+    ports:
+      # Host 4040 -> container 4040. http://localhost:4040
+      - "4040:4040"
+    # A shell wrapper for two reasons: to fail with an explanation rather than
+    # an opaque crash when the authtoken is missing, and to write the tiny
+    # config that binds the inspector to 0.0.0.0 (it defaults to localhost,
+    # which in a container means nothing outside it can reach 4040).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -z "$$NGROK_AUTHTOKEN" ]; then
+          echo "" >&2
+          echo "The tunnel needs an ngrok authtoken, and NGROK_AUTHTOKEN is empty." >&2
+          echo "" >&2
+          echo "  1. Sign up free at https://dashboard.ngrok.com/signup" >&2
+          echo "  2. Copy the token from https://dashboard.ngrok.com/get-started/your-authtoken" >&2
+          echo "  3. Put it in .env as NGROK_AUTHTOKEN=..." >&2
+          echo "  4. docker compose --profile tunnel up -d tunnel" >&2
+          echo "" >&2
+          echo "Nothing else in Prism needs this. Without the tunnel the app runs" >&2
+          echo "normally; only webhook delivery from GitHub is unavailable." >&2
+          echo "See docs/webhooks.md." >&2
+          exit 1
+        fi
+        printf 'version: "3"\nagent:\n  web_addr: 0.0.0.0:4040\n' > /tmp/ngrok.yml
+        if [ -n "$$NGROK_DOMAIN" ]; then
+          exec ngrok http app:3000 --config /tmp/ngrok.yml --log stdout --url "$$NGROK_DOMAIN"
+        else
+          exec ngrok http app:3000 --config /tmp/ngrok.yml --log stdout
+        fi
+    depends_on:
+      - app
 
 volumes:
   postgres_data:

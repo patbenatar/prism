@@ -6,12 +6,19 @@
   comment about text nobody wrote. It shows the line they were left on and the
   diff hunk GitHub kept with them, and links out.
 
-  Locals: outdated, unplaced ([Github::Types::ReviewThread]), pull_request
+  It sits at the end of its own file's section rather than once at the foot of
+  the page: that is where it was when a page held one file, it keeps a thread
+  next to the document it is about instead of nine files away, and it keeps
+  its reply boxes inside that file's composer scope.
+
+  Locals: outdated, unplaced ([Github::Types::ReviewThread]), page
+          (Review::Page), pull_request
 %>
 <% threads = Array(outdated) + Array(unplaced) %>
 
 <% if threads.any? %>
-  <section id="outdated_threads" class="md-row mt-10" aria-labelledby="outdated-heading"
+  <section id="outdated_threads_<%= page.file_key %>" class="md-row mt-10"
+           aria-labelledby="outdated-heading-<%= page.file_key %>"
            data-testid="outdated-threads">
     <div class="md-gutter" aria-hidden="true"></div>
 
@@ -20,9 +27,9 @@
                data-controller="collapse">
         <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5">
           <span class="pill-modified">Outdated</span>
-          <h2 class="font-display text-sm font-medium text-ink" id="outdated-heading">
+          <h3 class="font-display text-sm font-medium text-ink" id="outdated-heading-<%= page.file_key %>">
             <%= count_of(threads.size, "thread") %> GitHub can no longer place
-          </h2>
+          </h3>
           <span class="flex-1"></span>
           <span class="text-xs text-ink-faint" data-collapse-target="label">Show</span>
         </summary>

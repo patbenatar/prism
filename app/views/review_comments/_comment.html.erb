@@ -1,7 +1,12 @@
 <%#
   One comment inside a thread. Builds on the shared `shared/comment_card`
-  (the styling reference — see DESIGN.md §8) and wires Edit / Delete / react
-  into its `actions:` slot rather than restyling it.
+  (the styling reference — see DESIGN.md §8) and wires its two slots:
+
+    tools:   Edit and Delete, as small icon buttons in the card's top right.
+             Equal weight — delete only takes the removed colour on hover and
+             focus, so the destructive action is reachable without being the
+             loudest thing on the card.
+    actions: the reaction control, the quietest row under the body.
 
   Locals:
     comment:   (required) Github::Types::ReviewComment
@@ -13,27 +18,40 @@
 <% thread_id = local_assigns.fetch(:thread_id) %>
 
 <div id="comment_<%= comment.node_id %>" data-controller="comment-actions" data-testid="comment-container">
-  <% actions = capture do %>
-    <%= render "review_comments/reaction_picker", comment: comment, thread_id: thread_id %>
-
+  <% tools = capture do %>
     <% if comment.viewer_can_update %>
-      <button type="button" class="btn btn-ghost btn-sm" data-action="comment-actions#edit" data-testid="comment-edit">Edit</button>
+      <button type="button" class="comment-icon" data-action="comment-actions#edit" data-testid="comment-edit">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+             stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
+          <path d="M11.2 2.6a1.7 1.7 0 0 1 2.4 2.4L6.1 12.5l-3.1.9.9-3.1 7.3-7.7Z" />
+          <path d="m10.3 3.6 2.4 2.4" />
+        </svg>
+        <span class="sr-only">Edit</span>
+      </button>
     <% end %>
 
     <% if comment.viewer_can_delete %>
-      <%= button_to "Delete",
-                     repo_pull_comment_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: comment.node_id),
+      <%= button_to repo_pull_comment_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: comment.node_id),
                      method: :delete, params: { thread_id: thread_id },
                      form: { data: { turbo: true, turbo_confirm: "Delete this comment?" } },
-                     class: "btn btn-danger btn-sm", data: { testid: "comment-delete" } %>
+                     class: "comment-icon comment-icon--danger", data: { testid: "comment-delete" } do %>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+             stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
+          <path d="M3 4.5h10" />
+          <path d="M6.3 4.5V3.2h3.4v1.3" />
+          <path d="m4.6 4.5.6 8.3h5.6l.6-8.3" />
+        </svg>
+        <span class="sr-only">Delete</span>
+      <% end %>
     <% end %>
   <% end %>
 
   <div data-comment-actions-target="viewPane">
-    <%= render "shared/comment_card", comment: comment, actions: actions %>
+    <%= render "shared/comment_card", comment: comment, tools: tools,
+                                       actions: render("review_comments/reaction_picker", comment: comment, thread_id: thread_id) %>
   </div>
 
-  <div data-comment-actions-target="editPane" hidden>
+  <div class="px-3.5 py-3" data-comment-actions-target="editPane" hidden>
     <%= render "review_comments/edit_form", comment: comment, thread_id: thread_id %>
   </div>
 </div>

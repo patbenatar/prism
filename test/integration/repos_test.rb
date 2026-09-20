@@ -102,6 +102,38 @@ class ReposTest < ActionDispatch::IntegrationTest
     assert_select "meta[name=turbo-prefetch][content=false]", 1
   end
 
+  test "pinned repos render first, under their own heading" do
+    stub_github_get("/user/repos", fixture: :repos)
+    @user.pinned_repos.create!(owner: "prism-dev", name: "scratchpad")
+    sign_in_as(@user)
+
+    get repos_path
+
+    assert_select "[data-testid=pinned-repo-list]"
+    assert_select "[data-testid=pinned-repo-list] [data-testid=repo-row]", text: /scratchpad/
+    # The pinned repo does not also appear in the plain list below.
+    assert_select "[data-testid=repo-list] [data-testid=repo-row]", text: /scratchpad/, count: 0
+  end
+
+  test "with nothing pinned, the heading is omitted entirely" do
+    stub_github_get("/user/repos", fixture: :repos)
+    sign_in_as(@user)
+
+    get repos_path
+
+    assert_select "[data-testid=pinned-repo-list]", false
+    assert_select "[data-testid=repo-list] [data-testid=repo-row]", minimum: 2
+  end
+
+  test "every row carries a pin toggle" do
+    stub_github_get("/user/repos", fixture: :repos)
+    sign_in_as(@user)
+
+    get repos_path
+
+    assert_select "[data-testid=pin-button]", minimum: 2
+  end
+
   test "GitHub rate-limiting the token renders an explanation rather than a 500" do
     stub_github_get("/user/repos", fixture: :repos)
     sign_in_as(@user)

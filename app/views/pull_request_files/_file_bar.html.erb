@@ -1,57 +1,31 @@
 <%#
-  The per-file bar, directly under the app's top bar: which file you're in,
-  how to get to the next one, how much of it changed, what the gutter colors
-  mean, and the two ways out to GitHub.
+  The review bar, directly under the app's top bar: where you are in the pull
+  request's Markdown, how to get to another file, how much changed, what the
+  gutter colors mean, and the way out to the source diff.
 
   It is its own bar rather than more content in `shared/_top_bar` because the
-  top bar belongs to the shell and this belongs to the file. It sticks under
-  the bar above it, at `--topbar-height`.
+  top bar belongs to the shell and this belongs to the review. It sticks under
+  the bar above it, at `--topbar-height`, and each file's own heading sticks
+  under *it* — so `file-nav` measures this bar and publishes its real height as
+  `--filebar-height` rather than anyone guessing at it.
 
-  Nothing here opts out of Turbo's hover prefetch individually: the layout
-  turns it off for the whole app (DESIGN.md §4). That matters most on this
-  screen, where prefetching a file means rendering it server-side — three
-  GitHub calls and two Markdown parses for a file the reviewer only glanced
-  at in the switcher.
+  Previous/next file links are gone: every file is on this page now, so the
+  jump menu scrolls and `n`/`p` walks the changed blocks straight across file
+  boundaries.
+
+  Locals: page (Review::PullRequestPage)
 %>
-<div class="filebar" data-testid="file-bar">
+<div class="filebar" data-testid="file-bar" data-file-nav-target="bar">
   <div class="filebar-inner">
 
-    <%= render "file_switcher", page: @page, owner: @owner, name: @name, number: @number %>
+    <%= render "file_switcher", page: page %>
 
-    <%# ── Previous / next Markdown file ───────────────────────────────── %>
-    <% if @page.files.size > 1 %>
-      <nav class="flex shrink-0 items-center gap-0.5" aria-label="Markdown files">
-        <% if @page.prev_file %>
-          <%= link_to repo_pull_file_path(owner: @owner, repo: @name, number: @number, path: @page.prev_file.path),
-                      class: "rounded-md p-1 text-ink-faint hover:bg-sunk hover:text-ink",
-                      title: "Previous file: #{@page.prev_file.path}",
-                      data: { testid: "prev-file" } do %>
-            <span class="sr-only">Previous file</span>
-            <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
-              <path fill-rule="evenodd" d="M12.78 5.22a.75.75 0 0 1 0 1.06L9.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
-            </svg>
-          <% end %>
-        <% end %>
-        <% if @page.next_file %>
-          <%= link_to repo_pull_file_path(owner: @owner, repo: @name, number: @number, path: @page.next_file.path),
-                      class: "rounded-md p-1 text-ink-faint hover:bg-sunk hover:text-ink",
-                      title: "Next file: #{@page.next_file.path}",
-                      data: { testid: "next-file" } do %>
-            <span class="sr-only">Next file</span>
-            <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
-              <path fill-rule="evenodd" d="M7.22 14.78a.75.75 0 0 1 0-1.06L10.94 10 7.22 6.28a.75.75 0 0 1 1.06-1.06l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0Z" clip-rule="evenodd" />
-            </svg>
-          <% end %>
-        <% end %>
-      </nav>
-    <% end %>
-
-    <%# ── How much of this file changed ───────────────────────────────── %>
+    <%# ── How much of this pull request's Markdown changed ────────────── %>
     <p class="shrink-0 text-xs text-ink-soft tnum" data-testid="changed-count">
-      <span data-block-nav-target="position"><%= count_of(@page.changed_block_count, "changed block") %></span>
+      <span data-block-nav-target="position"><%= count_of(page.changed_block_count, "changed block") %></span>
     </p>
 
-    <% if @page.changed_block_count.positive? %>
+    <% if page.changed_block_count.positive? %>
       <p class="hidden shrink-0 text-xs text-ink-faint lg:block">
         <kbd class="mono-tag">n</kbd> / <kbd class="mono-tag">p</kbd> to jump
       </p>
@@ -73,13 +47,8 @@
     </ul>
 
     <%# ── Out to GitHub ───────────────────────────────────────────────── %>
-    <div class="flex shrink-0 items-center gap-2">
-      <%= link_to "View on GitHub", @page.github_blob_url,
-                  class: "text-xs text-ink-faint hover:text-brand",
-                  target: "_blank", rel: "noopener", data: { testid: "view-on-github" } %>
-      <%= link_to "Source diff", @page.source_diff_url,
-                  class: "text-xs text-ink-faint hover:text-brand",
-                  target: "_blank", rel: "noopener", data: { testid: "source-diff-on-github" } %>
-    </div>
+    <%= link_to "Source diff", page.source_diff_url,
+                class: "shrink-0 text-xs text-ink-faint hover:text-brand",
+                target: "_blank", rel: "noopener", data: { testid: "source-diff-on-github" } %>
   </div>
 </div>

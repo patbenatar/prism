@@ -1,5 +1,10 @@
 <%#
-  The reply box at the foot of a thread.
+  The reply box at the foot of a thread — the same `.composer-card` the block
+  composer is built from (DESIGN.md §8), because a thread with its reply box
+  open is the composer's next state and the two must read as one component.
+  It rests collapsed — one line saying "Reply…" — and unfolds into the full
+  card on `:focus-within`, so a page holding a dozen threads is not a wall of
+  editors. See `.composer-card--compact` in application.css.
 
   GitHub's own reply endpoint takes the thread's root comment's REST id
   (docs/research/github-api.md §3.3), so that is what the route's :id carries
@@ -29,29 +34,34 @@
 <% pending_review = local_assigns[:pending_review] %>
 <% root = thread.root_comment %>
 
-<div class="reply-box" data-testid="reply-form">
+<div class="composer-card composer-card--compact" data-testid="reply-form">
   <% if local_assigns[:error].present? %>
-    <p class="mb-2 text-xs text-removed" role="alert"><%= local_assigns[:error] %></p>
+    <p class="composer-note composer-note--error" role="alert"><%= local_assigns[:error] %></p>
   <% end %>
 
   <%= form_with url: repo_pull_comment_replies_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: root.id),
                 method: :post, data: { turbo: true } do |f| %>
-    <%= f.hidden_field :thread_id, value: thread.node_id %>
-    <%= f.hidden_field :pending_review_node_id, value: pending_review&.node_id, data: { composer_target: "pendingReviewNodeId" } %>
-    <%= f.hidden_field :pending_review_id, value: pending_review&.id, data: { composer_target: "pendingReviewId" } %>
-    <%= f.hidden_field :pending_count, value: local_assigns[:pending_count] || 0, data: { composer_target: "pendingCount" } %>
+    <%# `id: nil` throughout: one of these forms renders per thread, so the
+        auto-generated `id="thread_id"` and friends would repeat down the
+        page. See the note in `_composer_form`. %>
+    <%= f.hidden_field :thread_id, value: thread.node_id, id: nil %>
+    <%= f.hidden_field :pending_review_node_id, value: pending_review&.node_id, id: nil, data: { composer_target: "pendingReviewNodeId" } %>
+    <%= f.hidden_field :pending_review_id, value: pending_review&.id, id: nil, data: { composer_target: "pendingReviewId" } %>
+    <%= f.hidden_field :pending_count, value: local_assigns[:pending_count] || 0, id: nil, data: { composer_target: "pendingCount" } %>
 
     <div data-controller="markdown-preview mention"
          data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
          data-mention-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
          data-mention-target="container">
-      <div class="mb-1.5 flex items-center gap-1">
-        <button type="button" class="tab tab-active text-xs" data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab">Write</button>
-        <button type="button" class="tab text-xs" data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab">Preview</button>
+      <div class="composer-head" role="tablist" aria-label="Reply editor">
+        <button type="button" role="tab" aria-selected="true" class="composer-tab tab-active"
+                data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab">Write</button>
+        <button type="button" role="tab" aria-selected="false" class="composer-tab"
+                data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab">Preview</button>
       </div>
 
-      <div data-markdown-preview-target="writePane">
-        <%= f.text_area :body, value: local_assigns[:body], rows: 2, class: "composer-textarea w-full",
+      <div data-markdown-preview-target="writePane" role="tabpanel">
+        <%= f.text_area :body, value: local_assigns[:body], rows: 1, id: nil, class: "composer-textarea w-full",
                          placeholder: (thread.resolved? ? "Reply (this will not reopen the thread)" : "Reply…"),
                          data: { testid: "reply-textarea", markdown_preview_target: "textarea", mention_target: "textarea",
                                   action: "input->composer#autosize keydown->mention#keydown input->mention#input input->markdown-preview#dirty" },
@@ -61,12 +71,13 @@
              hidden role="listbox" aria-label="Mention someone"></div>
       </div>
 
-      <div data-markdown-preview-target="previewPane" hidden class="md-prose md-prose-compact min-h-[2rem] rounded-lg border border-line bg-surface px-3 py-2">
+      <div data-markdown-preview-target="previewPane" hidden role="tabpanel"
+           class="composer-preview md-prose md-prose-compact">
         <p class="text-ink-faint" data-markdown-preview-target="previewBody">Nothing to preview yet.</p>
       </div>
     </div>
 
-    <div class="mt-2 flex items-center justify-end gap-2">
+    <div class="composer-foot">
       <%= f.button "Reply", type: :submit, name: :review, value: "0",
                     class: "btn btn-secondary btn-sm", data: { testid: "reply-submit" } %>
       <% if thread.viewer_can_reply %>

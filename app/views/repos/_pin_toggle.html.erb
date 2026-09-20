@@ -1,0 +1,27 @@
+<%# locals: repo:, pinned:, page: %>
+<% if pinned %>
+  <%= button_to pinned_repo_path(owner: repo.owner, repo: repo.name),
+              method: :delete,
+              params: { page: page },
+              class: "btn-ghost btn-sm absolute right-2 top-1/2 -translate-y-1/2 text-brand hover:text-brand-deep",
+              form_class: "inline-block",
+              data: { testid: "unpin-button" } do %>
+    <svg viewBox="0 0 20 20" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+      <path d="M10 1.5l2.02 4.62 5.02.55-3.79 3.5 1.02 4.98L10 12.6l-4.27 2.55 1.02-4.98-3.79-3.5 5.02-.55L10 1.5Z" />
+    </svg>
+    <span class="sr-only">Unpin <%= repo.full_name %></span>
+  <% end %>
+<% else %>
+  <%= button_to pinned_repos_path,
+              method: :post,
+              params: { owner: repo.owner, repo: repo.name, page: page },
+              class: "btn-ghost btn-sm absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink",
+              form_class: "inline-block",
+              data: { testid: "pin-button" } do %>
+    <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M10 1.5l2.02 4.62 5.02.55-3.79 3.5 1.02 4.98L10 12.6l-4.27 2.55 1.02-4.98-3.79-3.5 5.02-.55L10 1.5Z" />
+    </svg>
+    <span class="sr-only">Pin <%= repo.full_name %></span>
+  <% end %>
+<% end %>

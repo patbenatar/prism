@@ -26,6 +26,29 @@ Rails.application.routes.draw do
   # ── Browsing ───────────────────────────────────────────────────────────
   get "/repos", to: "repos#index", as: :repos
 
+  # Keyed by owner+name, not a PinnedRepo id: the client only ever knows a
+  # repo's owner/name (from GitHub), never one of our row ids. Placed ahead of
+  # the generic "/:owner/:repo" scope below, which would otherwise treat
+  # "pins" as an :owner segment.
+  post   "/repos/pins",              to: "pinned_repos#create",  as: :pinned_repos
+  delete "/repos/pins/:owner/:repo", to: "pinned_repos#destroy", as: :pinned_repo,
+         constraints: { owner: /[^\/]+/, repo: /[^\/]+/ }
+
+  # ── Webhooks (W5) ──────────────────────────────────────────────────────
+  # The one unauthenticated route in the app. GitHub posts a delivery here and
+  # it is authenticated by its X-Hub-Signature-256 HMAC, not by a session —
+  # see app/controllers/webhooks_controller.rb for why that is enough.
+  post "/webhooks/github", to: "webhooks#create", as: :github_webhook
+
+  # Which repositories Prism watches, and as whom. Single-segment, so above
+  # the "/:owner/:repo" scope.
+  get    "/subscriptions",     to: "webhook_subscriptions#index",   as: :webhook_subscriptions
+  post   "/subscriptions",     to: "webhook_subscriptions#create"
+  # Re-points an existing hook at the current PRISM_PUBLIC_URL, which a dev
+  # tunnel changes on every restart.
+  patch  "/subscriptions/:id", to: "webhook_subscriptions#update",  as: :webhook_subscription
+  delete "/subscriptions/:id", to: "webhook_subscriptions#destroy"
+
   # There is no dashboard: the first useful screen is the repository list.
   root to: redirect("/repos", status: 302)
 
@@ -37,8 +60,14 @@ Rails.application.routes.draw do
     get "pulls",         to: "pull_requests#index"                  # ?state=open|closed|all
     get "pulls/:number", to: "pull_requests#show", as: :pull
 
-    # The rendered Markdown file view. `format: false` keeps ".md" as part of
-    # the path instead of being parsed as a response format.
+    # The Markdown tab (W3): every renderable .md file in the pull request on
+    # one page. `PullRequestFilesController#index`.
+    get "pulls/:number/markdown", to: "pull_request_files#index", as: :pull_markdown
+
+    # The old per-file screen's URL. Kept alive as a redirect into the
+    # Markdown tab's anchor for that file, so links from before the tab
+    # existed still land on the right place. `format: false` keeps ".md" as
+    # part of the path instead of being parsed as a response format.
     get "pulls/:number/files/*path", to: "pull_request_files#show", as: :pull_file, format: false
 
     # ── Commenting (Phase 2, workstream E) ───────────────────────────────

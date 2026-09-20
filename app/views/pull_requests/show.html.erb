@@ -11,7 +11,7 @@
 <% _decision_key, decision_word, decision_class = review_decision(@reviews) %>
 
 <div class="shell pb-16">
-  <header class="pb-6 pt-6">
+  <header class="pb-4 pt-6">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
@@ -62,7 +62,11 @@
     </div>
   </header>
 
-  <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+  <%= render "tabs", owner: @owner, repo: @name, number: @number, active: :overview,
+                     changed_files: @markdown_files.size + @other_files.size,
+                     markdown_count: @markdown_files.size %>
+
+  <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
     <div class="min-w-0 space-y-6">
       <%# ── Description ───────────────────────────────────────────────── %>
       <section aria-labelledby="description-heading">
@@ -92,7 +96,10 @@
             <% @markdown_files.each do |file| %>
               <% status_word, status_class = file_status_label(file.status) %>
               <% directory, basename = split_path(file.path) %>
-              <%= link_to repo_pull_file_path(owner: @owner, repo: @name, number: @number, path: file.path),
+              <%# Into the Markdown tab, scrolled to this file. Every file is
+                  on that one page now, so there is nothing to navigate to. %>
+              <%= link_to repo_pull_markdown_path(owner: @owner, repo: @name, number: @number,
+                                                   anchor: Review::Page.file_key(file.path)),
                           class: "row-link", data: { testid: "markdown-file" } do %>
                 <div class="flex items-start gap-3">
                   <span class="<%= status_class %> mt-0.5"><%= status_word %></span>
@@ -186,8 +193,11 @@
         <div class="rounded-xl border border-pending/40 bg-pending-soft/50 p-4" data-testid="pending-review">
           <p class="font-display text-sm font-semibold text-pending">You have a pending review</p>
           <p class="mt-1 text-sm text-ink-soft">
-            Your unsubmitted comments live on GitHub. Open a Markdown file to add
-            to them or submit the review.
+            Your unsubmitted comments live on GitHub.
+            <%= link_to "Open the Markdown tab",
+                        repo_pull_markdown_path(owner: @owner, repo: @name, number: @number),
+                        class: "font-medium text-brand hover:text-brand-deep" %>
+            to add to them or submit the review.
           </p>
         </div>
       <% end %>

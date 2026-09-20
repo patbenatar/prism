@@ -24,17 +24,25 @@ export default class extends Controller {
     event?.preventDefault?.()
     this.writePaneTarget.hidden = false
     this.previewPaneTarget.hidden = true
-    this.writeTabTarget.classList.add("tab-active")
-    this.previewTabTarget.classList.remove("tab-active")
+    this.select(this.writeTabTarget, this.previewTabTarget)
   }
 
   showPreview(event) {
     event?.preventDefault?.()
     this.writePaneTarget.hidden = true
     this.previewPaneTarget.hidden = false
-    this.previewTabTarget.classList.add("tab-active")
-    this.writeTabTarget.classList.remove("tab-active")
+    this.select(this.previewTabTarget, this.writeTabTarget)
     this.schedule()
+  }
+
+  // The pair are real `role="tab"` buttons, so the selected one is announced
+  // as well as drawn: `tab-active` carries the underline, `aria-selected`
+  // carries the same fact to a screen reader.
+  select(chosen, other) {
+    chosen.classList.add("tab-active")
+    chosen.setAttribute("aria-selected", "true")
+    other.classList.remove("tab-active")
+    other.setAttribute("aria-selected", "false")
   }
 
   schedule() {

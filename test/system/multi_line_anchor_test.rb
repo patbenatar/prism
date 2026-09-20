@@ -55,6 +55,12 @@ class MultiLineAnchorTest < ApplicationSystemTestCase
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/files", fixture: :pull_files)
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
+    # The review screen holds every Markdown file in the pull request; the
+    # other three are not this test's concern, but they still need answers.
+    stub_request(:get, %r{\Ahttps://api\.github\.com/repos/#{OWNER}/#{REPO}/contents/})
+      .with(query: hash_including({}))
+      .to_return(status: 200, body: "# Another file\n\nProse.\n",
+                 headers: { "Content-Type" => "text/plain; charset=utf-8" })
     stub_github_raw_get("/repos/#{OWNER}/#{REPO}/contents/#{PATH}", body: github_fixture_raw("guide.md"),
                         query: hash_including({ "ref" => HEAD_SHA }))
     stub_github_raw_get("/repos/#{OWNER}/#{REPO}/contents/#{PATH}", body: BASE_GUIDE,
@@ -64,10 +70,11 @@ class MultiLineAnchorTest < ApplicationSystemTestCase
 
   test "the multi-line block shows the full range in the composer, not just its last line" do
     sign_in_as(@user)
-    visit repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
-    assert_selector "[data-testid=rendered-file]"
+    visit repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER,
+                                  anchor: Review::Page.file_key(PATH))
+    assert_selector "[data-testid=rendered-file]", minimum: 1
 
-    block = find("[data-testid=md-block][data-start-line='15']")
+    block = find("##{Review::Page.file_key(PATH)} [data-testid=md-block][data-start-line='15']")
     assert_equal "18", block["data-end-line"], "docs/guide.md's second hunk should still make this one paragraph block"
     assert_equal "true", block["data-commentable"]
 
@@ -75,8 +82,12 @@ class MultiLineAnchorTest < ApplicationSystemTestCase
     block.hover
     block.find(".md-add").click
 
+    # The composer does not narrate the range any more (W4: the reviewer chose
+    # the block by clicking it). What has to be true is that the whole range
+    # reached the form, because that is what gets sent to GitHub.
     within "#composer_#{block_id}" do
-      assert_text "Lines 15–18"
+      assert_equal "15", find("[data-composer-target=startLine]", visible: false).value
+      assert_equal "18", find("[data-composer-target=line]", visible: false).value
     end
   end
 end

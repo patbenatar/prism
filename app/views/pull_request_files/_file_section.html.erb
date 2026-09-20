@@ -1,0 +1,132 @@
+<%#
+  One file on the Markdown tab: its sticky heading, its file-level comments,
+  its document, and the comments GitHub can no longer place in it.
+
+  **Everything a comment needs is scoped here, not to the page.** The composer
+  controller lives on this <section> and carries this file's `path`, side and
+  permalink base, and its `<template>` is this file's own — a single page-wide
+  composer could not know which file a "+" belonged to, and nesting a second
+  composer scope inside a page-wide one would fire every action twice (an
+  element inside two scopes of the same identifier gets one binding per
+  scope). Block ids are prefixed with the file key for the same reason: the
+  renderer numbers blocks from zero per document, so without the prefix two
+  files sharing a first heading share an id.
+
+  Outdated and file-level threads sit inside the file rather than once at the
+  foot of the page. That is where they were when a page held one file — at the
+  top of and after *their* document — and it keeps every thread next to the
+  text it is about instead of nine files away. It also keeps their reply boxes
+  inside a composer scope, which a page-level section at the bottom would not
+  have.
+
+  Locals: page (Review::Page), pull_request
+%>
+<% key = page.file_key %>
+<% file = page.file %>
+<% status_word, status_class = file_status_label(file.status) %>
+<% directory, basename = split_path(file.path) %>
+
+<%# `.file-section` carries the scroll offset that clears both pinned bars,
+    and `.filehead` below carries the matching `top`. They are one sum written
+    once in the stylesheet rather than twice here, 30 lines apart, where the
+    two copies would drift. %>
+<section id="<%= key %>"
+         class="file-section mb-12"
+         aria-labelledby="filehead-<%= key %>"
+         data-testid="file-section"
+         data-file-key="<%= key %>"
+         data-file-path="<%= page.path %>"
+         data-controller="composer"
+         data-composer-template-id="composer_template_<%= key %>"
+         data-composer-owner="<%= @owner %>"
+         data-composer-repo="<%= @name %>"
+         data-composer-number="<%= @number %>"
+         data-composer-path="<%= page.path %>"
+         data-composer-head-sha="<%= pull_request.head_sha %>"
+         data-composer-pull-request-node-id="<%= page.pull_request_node_id %>"
+         data-composer-pending-review-node-id="<%= page.pending_review&.node_id %>"
+         data-composer-pending-review-id="<%= page.pending_review&.id %>"
+         data-composer-file-comment-permalink-base="<%= page.file_comment_permalink_base %>"
+         data-composer-side="<%= page.result&.side || "right" %>"
+         <%# For the provisional card the composer shows while a comment is in
+             flight. It is the signed-in user by definition — this screen
+             requires authentication — so it costs no GitHub call. %>
+         data-composer-viewer-login="<%= current_user.login %>"
+         data-composer-viewer-avatar="<%= current_user.avatar_url %>">
+
+  <%# ── The file's own bar, pinned under the page's ────────────────────── %>
+  <div class="filehead" data-testid="file-head">
+    <span class="<%= status_class %> shrink-0"><%= status_word %></span>
+
+    <h2 class="min-w-0 flex-1 font-mono text-sm break-all" id="filehead-<%= key %>">
+      <% if directory %><span class="text-ink-faint"><%= directory %></span><% end %><span class="font-medium text-ink"><%= basename %></span>
+    </h2>
+
+    <% if file.renamed? %>
+      <span class="hidden shrink-0 font-mono text-xs text-ink-faint sm:inline"
+            title="Renamed from <%= file.previous_path %>">was <%= file.previous_path %></span>
+    <% end %>
+
+    <span class="shrink-0"><%= diffstat(file.additions, file.deletions) %></span>
+
+    <%= link_to "GitHub", page.github_blob_url,
+                class: "shrink-0 text-xs text-ink-faint hover:text-brand",
+                target: "_blank", rel: "noopener", data: { testid: "view-on-github" } %>
+  </div>
+
+  <div class="pt-4">
+    <%# ── Why part or all of this file can't take a line comment ───────── %>
+    <div class="empty:hidden">
+      <% if page.missing_content? %>
+        <%= render "uncommentable_notice", kind: page.content_problem, page: page %>
+      <% elsif page.no_patch? %>
+        <%= render "uncommentable_notice", kind: :no_patch, page: page %>
+      <% elsif file.removed? %>
+        <%= render "uncommentable_notice", kind: :file_removed, page: page %>
+      <% end %>
+    </div>
+
+    <% if page.missing_content? %>
+      <%= render "shared/empty_state",
+                 icon: :file,
+                 title: missing_content_title(page),
+                 body: missing_content_body(page),
+                 cta_label: "View on GitHub",
+                 cta_to: page.github_blob_url %>
+    <% else %>
+      <%# ── File-level threads ───────────────────────────────────────── %>
+      <%= render "file_threads", threads: page.result.file_threads, page: page,
+                                 pull_request: pull_request %>
+
+      <%# ── The document ─────────────────────────────────────────────── %>
+      <article data-testid="rendered-file" data-file-path="<%= page.path %>"
+               aria-label="<%= page.path %>, rendered">
+        <% page.result.blocks.each do |annotated| %>
+          <%= render "block", annotated: annotated, pull_request: pull_request, page: page %>
+        <% end %>
+
+        <%# Content deleted from the end of the file has no following block to
+            sit before, so it goes here. Dropping it would tell the reviewer
+            the content is still there. %>
+        <% if page.result.trailing_removed.any? %>
+          <%= render "removed_strip", blocks: page.result.trailing_removed,
+                                      page: page, pull_request: pull_request %>
+        <% end %>
+      </article>
+
+      <%# ── Outdated, and anything we couldn't place ─────────────────── %>
+      <%= render "outdated_threads",
+                 outdated: page.result.outdated_threads,
+                 unplaced: page.unattached_threads,
+                 page: page,
+                 pull_request: pull_request %>
+    <% end %>
+  </div>
+
+  <%# The composer form for this file, cloned into `composer_<block_id>` on
+      demand. One per file because its hidden `path` field is per file. %>
+  <% if review_partial?("review_comments/composer_template") %>
+    <%= render "review_comments/composer_template", id: "composer_template_#{key}",
+               pull_request: pull_request, path: page.path, pending_review: page.pending_review %>
+  <% end %>
+</section>

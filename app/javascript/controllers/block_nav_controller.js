@@ -4,6 +4,12 @@ import { Controller } from "@hotwired/stimulus"
 // moves through a diff. The count in the file bar becomes "3 of 12 changed
 // blocks" while you're moving, so the keys say where they put you.
 //
+// The Markdown tab holds every file in the pull request, and the walk crosses
+// file boundaries without noticing them: blocks are collected in document
+// order from the whole page, so "n" off the end of one file lands on the
+// first change in the next. That is the point of the one-page screen — a
+// reviewer walks the review, not a file.
+//
 // Focus follows the jump onto that block's "+", which means the next key after
 // a jump can be Enter to comment, and a screen reader announces the block
 // rather than leaving the caret at the top of the page.
@@ -58,7 +64,7 @@ export default class extends Controller {
   }
 
   goTo(block, index, total) {
-    block.style.scrollMarginTop = `${this.stickyHeight() + 12}px`
+    block.style.scrollMarginTop = `${this.stickyHeight(block) + 12}px`
     block.scrollIntoView({ behavior: "smooth", block: "start" })
     block.querySelector(".md-add")?.focus({ preventScroll: true })
 
@@ -67,10 +73,16 @@ export default class extends Controller {
     }
   }
 
-  // Two bars are pinned above the document; a block scrolled to the very top
-  // would land underneath them.
-  stickyHeight() {
-    const bars = [document.querySelector(".topbar"), this.element.querySelector(".filebar")]
+  // Three bars are pinned above a block now, not two: the app's top bar, the
+  // review bar, and the heading of the file the block is in. Measured rather
+  // than assumed, because all three wrap at phone width.
+  stickyHeight(block) {
+    const section = block?.closest("[data-file-key]")
+    const bars = [
+      document.querySelector(".topbar"),
+      this.element.querySelector(".filebar"),
+      section?.querySelector('[data-testid="file-head"]')
+    ]
     return bars.reduce((total, bar) => total + (bar?.offsetHeight ?? 0), 0)
   }
 

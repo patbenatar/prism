@@ -67,6 +67,21 @@ module FeatureHelpers
     else
       stub_github_get("/repos/#{owner}/#{repo}/pulls/#{number}/reviews", fixture: reviews_fixture)
     end
+
+    stub_feature_other_contents(owner: owner, repo: repo)
+  end
+
+  # The review screen renders *every* Markdown file in the pull request on one
+  # page, so every Markdown file needs an answer from the contents endpoint —
+  # including the ones a given journey does not care about. This is the floor.
+  # A journey's own `stub_feature_contents` is registered after it and WebMock
+  # prefers the most recently declared match, so naming a file still wins.
+  def stub_feature_other_contents(owner: FEATURE_OWNER, repo: FEATURE_REPO, body: nil)
+    stub_request(:get, %r{\Ahttps://api\.github\.com/repos/#{owner}/#{repo}/contents/})
+      .with(query: hash_including({}))
+      .to_return(status: 200,
+                 body: body || "# Another file\n\nA paragraph of prose.\n\nAnd another one.\n",
+                 headers: { "Content-Type" => "text/plain; charset=utf-8" })
   end
 
   # Raw file contents on a given ref. `ref` is required, matching the actual
@@ -228,11 +243,29 @@ module FeatureHelpers
 
   # ------------------------------------------------------------------ DOM ---
 
-  # Visits the rendered file view and waits for the document to be there.
+  # Visits the Markdown tab, scrolled to `path`, and waits for that file's
+  # section to be there. Returns the section, so a journey that needs to be
+  # unambiguous about which file it is acting on can scope to it:
+  #
+  #   within(open_pull_file(path: PATH)) { ... }
+  #
+  # Every Markdown file in the pull request is on this one page now, so a bare
+  # `find(".md-add")` is a page-wide search — fine when the text is unique,
+  # wrong when it is a count or a `first`.
   def open_pull_file(owner: FEATURE_OWNER, repo: FEATURE_REPO, number: FEATURE_NUMBER, path:)
-    visit repo_pull_file_path(owner: owner, repo: repo, number: number, path: path)
+    visit repo_pull_markdown_path(owner: owner, repo: repo, number: number,
+                                  anchor: Review::Page.file_key(path))
     assert_selector "[data-testid=rendered-file]"
+    file_section(path)
   end
+
+  # One file's section on the Markdown tab.
+  def file_section(path)
+    find("##{Review::Page.file_key(path)}")
+  end
+
+  # The container a file's file-level threads render into.
+  def file_threads_id(path) = "file_threads_#{Review::Page.file_key(path)}"
 
   # Hovers a block and clicks its "+", the way a reviewer reaches the composer.
   def open_composer_for(block)

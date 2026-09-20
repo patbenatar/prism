@@ -4,9 +4,9 @@
   <!-- One beam in, a spectrum out: a pull request split into readable light. -->
   <g stroke-linecap="round" stroke-width="4" fill="none">
     <path d="M3 30 H21.5" stroke="#ffffff"/>
-    <path d="M42.8 30 L61 21.5" stroke="#a394ff"/>
-    <path d="M44.4 33 L61 33" stroke="#5fd3a6"/>
-    <path d="M46 36 L61 44.5" stroke="#f0899a"/>
+    <path d="M42.8 30 L61 21.5" stroke="#9a89f7"/>
+    <path d="M44.4 33 L61 33" stroke="#45c79a"/>
+    <path d="M46 36 L61 44.5" stroke="#ec8092"/>
   </g>
   <path d="M32 11 L52 47 H12 Z" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round"/>
 </svg>

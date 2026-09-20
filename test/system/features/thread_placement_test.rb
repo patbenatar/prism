@@ -70,13 +70,13 @@ class ThreadPlacementTest < ApplicationSystemTestCase
   end
 
   test "an outdated thread collapses into the bottom section with its original line and hunk" do
-    assert_selector "#outdated_threads"
+    assert_selector "##{outdated_id}"
     # The section is a closed <details> by default (DESIGN.md screen 5:
     # "Outdated section at the bottom"), so its content has no layout box
     # until opened.
-    find("#outdated_threads summary").click
+    find("##{outdated_id} summary").click
 
-    within "#outdated_threads" do
+    within "##{outdated_id}" do
       assert_selector "[data-testid=outdated-thread]", text: /Left on line\s*42/
       assert_selector "[data-testid=diff-hunk]", text: /old example/
       assert_text "This example no longer compiles."
@@ -84,9 +84,10 @@ class ThreadPlacementTest < ApplicationSystemTestCase
   end
 
   test "a FILE-level thread renders at the top of the file, in the file threads section" do
-    within ".file-threads" do
+    within "[data-testid=file-threads-section]" do
       assert_text "Comments on this file"
-      assert_selector "#file_threads [data-testid=thread]", text: "This whole section sits outside the diff"
+      assert_selector "##{file_threads_id(PATH)} [data-testid=thread]",
+                      text: "This whole section sits outside the diff"
     end
   end
 
@@ -97,4 +98,10 @@ class ThreadPlacementTest < ApplicationSystemTestCase
 
     assert_selector "#pending_tray [data-testid=pending-count]", text: "1 pending comment"
   end
+
+  private
+
+  # Outdated threads sit at the end of their own file's section now that the
+  # review screen holds every Markdown file at once.
+  def outdated_id = "outdated_threads_#{Review::Page.file_key(PATH)}"
 end

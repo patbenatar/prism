@@ -8,10 +8,13 @@
 
   Locals: thread (Github::Types::ReviewThread), pull_request, block_id
 %>
+<%# `@pending_review` rather than a local: GitHub allows exactly one pending
+    review per user per pull request, so it is a fact about the page, not
+    about the file a thread happens to be in. %>
 <% if review_partial?("review_comments/thread") %>
   <%= render "review_comments/thread", thread: thread, pull_request: pull_request,
                                        block_id: block_id,
-                                       pending_review: @page&.pending_review %>
+                                       pending_review: @pending_review %>
 <% else %>
   <% pending = thread.comments.any?(&:pending?) %>
   <article class="thread <%= class_names("thread--pending" => pending,

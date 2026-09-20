@@ -30,12 +30,27 @@ module Review
                 :base_source, :threads, :rate_limited_at, :rate_limit_retry_in,
                 :threads_error_message
 
+    # A stable, DOM-safe key for this file's section of the review page.
+    #
+    # Derived from the path, not from its position in the file list, because it
+    # is also the URL fragment a link to a file uses: an anchor keyed by index
+    # would point at a different document the moment the pull request gains or
+    # loses a file. Ten hex characters of SHA-256 over the path is the same
+    # trick GitHub's own `#diff-<sha>` fragments use.
+    def self.file_key(path) = "f-#{Digest::SHA256.hexdigest(path.to_s)[0, 10]}"
+
     def self.load(github:, owner:, repo:, number:, path:)
       new(github: github, owner: owner, repo: repo, number: number, path: path)
     end
 
-    def initialize(github:, owner:, repo:, number:, path:)
+    # `bundle` is a Review::PullRequestPage when this file is one of many on
+    # the Markdown tab: the pull request, the file list, the threads and every
+    # file's source have already been loaded once and shared, so this makes no
+    # GitHub calls of its own. Without one it loads its own file, which is what
+    # the single-file path and most of the unit tests still do.
+    def initialize(github:, owner:, repo:, number:, path:, bundle: nil)
       @github = github
+      @bundle = bundle
       @owner = owner
       @repo = repo
       @number = number
@@ -57,6 +72,17 @@ module Review
 
     def markdown? = file.markdown?
 
+    # This file's anchor on the Markdown tab, and the prefix that makes every
+    # block id on the page unique. Markdown::Renderer numbers blocks from zero
+    # per document, so two files whose first block is the same heading produce
+    # the same block id — harmless when a page held one file, an id collision
+    # now that it holds all of them.
+    def file_key = self.class.file_key(file.path)
+
+    # The page spent its rendering budget before reaching this file, so it is
+    # listed but not rendered. See Review::PullRequestPage::RENDER_BUDGET_BYTES.
+    def deferred? = @bundle&.deferred?(file) || false
+
     # The side we render. v1 shows HEAD plus strips of deleted content; a file
     # the pull request deletes has no head side at all, so it renders from BASE.
     def source = file.removed? ? base_source : head_source
@@ -69,10 +95,25 @@ module Review
     # the same fallback — a link to GitHub — but they are different sentences,
     # and Prism says which one applies.
     def content_problem
+      return :unavailable if content_error
+      return :deferred if deferred?
       return :too_large if too_large?
       return :missing_content if source.blank? || binary?(source)
 
       nil
+    end
+
+    # GitHub answered the content request with something other than the file.
+    # A 404 is not this — Github::Client turns that into nil, which is the
+    # ordinary "no such side" case and reads as :missing_content. This is a
+    # rate limit, a 500, a repository mid-transfer: the file is missing from
+    # the page for a reason that has nothing to do with the file.
+    attr_reader :content_error
+
+    # GitHub's own sentence for why, so the notice says something true rather
+    # than something generic.
+    def content_error_message
+      content_error.respond_to?(:user_message) ? content_error.user_message : content_error&.message
     end
 
     def missing_content? = content_problem.present?
@@ -156,11 +197,18 @@ module Review
     # --- loading -------------------------------------------------------------
 
     def load_pull_request
-      @pull_request = github.pull_request(owner, repo, number)
-      all_files = github.pull_request_files(owner, repo, number, head_sha: @pull_request.head_sha)
+      if @bundle
+        @pull_request = @bundle.pull_request
+        @files = @bundle.markdown_files
+        @file = @bundle.file(path)
+      else
+        @pull_request = github.pull_request(owner, repo, number)
+        all_files = github.pull_request_files(owner, repo, number, head_sha: @pull_request.head_sha)
 
-      @files = all_files.select(&:markdown?)
-      @file = all_files.find { |candidate| candidate.path == path }
+        @files = all_files.select(&:markdown?)
+        @file = all_files.find { |candidate| candidate.path == path }
+      end
+
       raise FileNotFound, "#{path} is not part of pull request ##{number}" if @file.nil?
     end
 
@@ -170,10 +218,23 @@ module Review
     # costs one GitHub call and one Markdown parse instead of two — which on a
     # 2000-line document is most of the page's render time.
     def load_sources
-      @line_sets = Diff::Patch.parse(file.patch)
+      @line_sets = @bundle&.line_sets(file.path) || Diff::Patch.parse(file.patch)
 
       @head_source = read(file.path, pull_request.head_sha) unless file.removed?
       @base_source = read(file.base_path, pull_request.base_sha) if base_side_needed?
+      @content_error = rendering_side_error
+    end
+
+    # Only the side this file renders from counts as "the document is not
+    # here". A base fetch that failed costs the reviewer the removed strips,
+    # not the document, and blanking a readable page over it would be worse
+    # than losing them — when the cause is a rate limit or an outage, which it
+    # almost always is, the page-level banner says so anyway.
+    def rendering_side_error
+      return nil if @bundle.nil?
+
+      file.removed? ? @bundle.source_error(file.base_path, pull_request.base_sha)
+                    : @bundle.source_error(file.path, pull_request.head_sha)
     end
 
     def base_side_needed?
@@ -184,6 +245,8 @@ module Review
 
     def read(at_path, ref)
       return nil if ref.blank?
+
+      return @bundle.source(at_path, ref) if @bundle
 
       github.file_content(owner, repo, at_path, ref: ref)
     end
@@ -199,6 +262,8 @@ module Review
     # already loaded by this point, so a 404 here is about the comments, not
     # about the file, and 404ing the whole screen over it would be wrong.
     def load_review_state
+      return copy_review_state_from_bundle if @bundle
+
       all_threads = github.review_threads(owner, repo, number)
       @pull_request_node_id = all_threads.pull_request_node_id
       @threads = all_threads.threads.select { |thread| paths.include?(thread.path) }
@@ -217,6 +282,21 @@ module Review
       @threads_error_message = error.user_message
     end
 
+    # One reviewThreads call served the whole page, so this is a filter, not a
+    # fetch. The pending count is deliberately the page's, not this file's:
+    # the tray counts every unsubmitted draft in the pull request.
+    def copy_review_state_from_bundle
+      @pull_request_node_id = @bundle.pull_request_node_id
+      @threads = @bundle.threads.select { |thread| paths.include?(thread.path) }
+      @pending_count = @bundle.pending_count
+      @pending_review = @bundle.pending_review
+      @rate_limited = @bundle.rate_limited?
+      @threads_unavailable = @bundle.threads_unavailable?
+      @rate_limited_at = @bundle.rate_limited_at
+      @rate_limit_retry_in = @bundle.rate_limit_retry_in
+      @threads_error_message = @bundle.threads_error_message
+    end
+
     # A rename moves the path, and GitHub keeps older threads on the old one.
     def paths = [ file.path, file.previous_path ].compact
 
@@ -233,11 +313,15 @@ module Review
       )
     end
 
-    def parse(text)
-      return [] if text.blank?
+    # Through ParsedSource rather than straight to Markdown::Document: the
+    # parse is the page's largest single cost and a pure function of the bytes
+    # at a sha, so it is cached alongside the content it came from.
+    def parse(text) = ParsedSource.blocks(text, user_id: cache_scope)
 
-      Markdown::Document.parse(text).blocks
-    end
+    # A test may hand us a double instead of a real client; an unscoped cache
+    # is still correct (the key is the content's own digest), so this shrugs
+    # rather than raising.
+    def cache_scope = github.respond_to?(:user) ? github.user&.id : nil
 
     def blob_ref = file.removed? ? pull_request.base_sha : pull_request.head_sha
 

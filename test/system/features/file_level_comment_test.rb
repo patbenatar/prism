@@ -78,9 +78,10 @@ class FileLevelCommentTest < ApplicationSystemTestCase
       click_on "Add single comment"
     end
 
-    # A file-level comment appears at the top of the file (#file_threads),
+    # A file-level comment appears at the top of its own file's section,
     # not under the block whose composer happened to create it.
-    assert_selector "#file_threads [data-testid=thread]", text: "Worth expanding this.", wait: 5
+    assert_selector "##{file_threads_id(PATH)} [data-testid=thread]",
+                    text: "Worth expanding this.", wait: 5
 
     expect_github_received(:AddThread) do |vars|
       input = vars["input"]

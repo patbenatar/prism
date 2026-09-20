@@ -106,7 +106,7 @@ class PullRequestsTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=markdown-files]"
   end
 
-  test "Markdown files link into the rendered file view and other files link out to GitHub" do
+  test "Markdown files anchor into the Markdown tab and other files link out to GitHub" do
     sign_in_and_stub_show
 
     get repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
@@ -117,10 +117,29 @@ class PullRequestsTest < ActionDispatch::IntegrationTest
 
     assert markdown_paths.any?, "the fixture needs at least one Markdown file"
     markdown_paths.each do |path|
-      assert_select "a[href=?]", repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: path)
+      assert_select "a[href=?]",
+                    repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER,
+                                            anchor: Review::Page.file_key(path))
     end
 
     assert_select "[data-testid=other-files] a[href^=?]", "https://github.com/"
+  end
+
+  test "the tab strip names both screens, marks this one, and counts what is free" do
+    sign_in_and_stub_show
+
+    get repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
+
+    assert_select "[data-testid=pr-tabs]"
+    assert_select "[data-testid=tab-overview].tab-active"
+    assert_select "[data-testid=tab-overview][aria-current=page]"
+    assert_select "[data-testid=tab-markdown][href=?]",
+                  repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER)
+    assert_select "[data-testid=tab-markdown]", text: /Markdown\s*4/
+    assert_select "[data-testid=tab-overview]", text: /Overview\s*5/
+    # A comment count on the tabs would cost the overview a GraphQL call it
+    # otherwise never makes, so the tabs carry only the two free counts.
+    assert_github_not_requested(:post, "/graphql")
   end
 
   test "the Markdown file count is computed here, where the files are already loaded" do

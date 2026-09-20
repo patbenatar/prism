@@ -5,17 +5,27 @@
   pills toggle based on viewer_has_reacted" (PLAN.md) holds even though the
   shared card's own pills carry no behavior.
 
+  The trigger is a bare icon rather than a bordered box: reacting is an
+  invitation, not a control with standing, and it sits in the quietest row on
+  the card (DESIGN.md §8).
+
   Locals: comment: (required), thread_id:
 %>
 <% comment = local_assigns.fetch(:comment) %>
 <% groups = comment.reaction_groups.index_by(&:content) %>
 <% owner = params[:owner]; repo = params[:repo]; number = params[:number] %>
 
-<details class="relative inline-block" data-testid="reaction-picker">
-  <summary class="reaction-pill cursor-pointer list-none" aria-label="Add a reaction">
-    <span aria-hidden="true">🙂+</span>
+<details class="reaction-picker relative inline-block" data-testid="reaction-picker">
+  <summary class="reaction-add" aria-label="Add a reaction">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
+      <path d="M13.4 7.3a5.7 5.7 0 1 1-4.7-4.7" />
+      <path d="M5.6 9.4a3 3 0 0 0 4.3 0" />
+      <path d="M5.9 6.4h.01M9.7 6.4h.01" />
+      <path d="M12.4 1.9v3.2M14 3.5h-3.2" />
+    </svg>
   </summary>
-  <div class="absolute z-20 mt-1 flex flex-wrap gap-1 rounded-lg border border-line bg-surface p-1.5 shadow-lg shadow-ink/5">
+  <div class="reaction-menu">
     <% Github::Client::REACTIONS.each_key do |content| %>
       <% group = groups[content] %>
       <% on = group&.viewer_has_reacted? %>

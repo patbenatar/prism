@@ -1,0 +1,137 @@
+<% content_for :title, "Watched repositories" %>
+
+<div class="shell pb-16">
+  <%= render "shared/page_header",
+             title: "Watched repositories",
+             subtitle: "Prism adds a link to its rendered review on every pull request that changes Markdown." %>
+
+  <%# The identity notice is not decoration. Prism edits a pull request
+      description on GitHub using this person's OAuth token, so the edit
+      carries their name and their avatar, and anyone reading the pull request
+      will believe they wrote it. Saying so plainly, before the button rather
+      than after it, is the whole of the consent here. %>
+  <div class="mb-6 flex items-start gap-3 rounded-xl border border-line bg-brand-soft/45 px-4 py-3"
+       data-testid="acting-as-notice">
+    <%= image_tag current_user.avatar_url, alt: "", class: "avatar mt-0.5 h-8 w-8", loading: "lazy" %>
+    <div class="min-w-0 text-sm text-ink">
+      <p class="font-medium">Prism acts as <span class="text-brand">@<%= current_user.login %></span>.</p>
+      <p class="mt-1 text-ink-soft">
+        The link is appended to the pull request description, inside HTML comment markers,
+        using your GitHub token — so the edit shows up under your account, exactly as if you
+        had typed it. Nothing outside those markers is ever changed, and deleting the block
+        by hand tells Prism to leave that pull request alone.
+      </p>
+    </div>
+  </div>
+
+  <% unless @public_url_configured %>
+    <p role="alert" class="flash-alert mb-6" data-testid="public-url-warning">
+      Prism has no public URL, so GitHub has nowhere to deliver webhooks. Set
+      <code class="font-mono text-xs">PRISM_PUBLIC_URL</code> and restart — see
+      <code class="font-mono text-xs">docs/webhooks.md</code>.
+    </p>
+  <% end %>
+
+  <section class="mb-8">
+    <div class="section-head">
+      <h2 class="section-title">Watch a repository</h2>
+      <p class="section-note">Needs admin access on GitHub</p>
+    </div>
+
+    <%= form_with url: webhook_subscriptions_path, method: :post,
+                  class: "flex flex-wrap items-end gap-3", data: { testid: "subscribe-form" } do |form| %>
+      <div class="min-w-0 flex-1 sm:max-w-sm">
+        <%= form.label :full_name, "Repository", class: "field-label" %>
+        <% if @repos.any? %>
+          <%= form.select :full_name,
+                          @repos.map { |repo| [ repo.full_name, repo.full_name ] },
+                          { include_blank: "Choose a repository…" },
+                          class: "field-input", data: { testid: "repo-select" } %>
+        <% else %>
+          <%= form.text_field :full_name, placeholder: "owner/repository",
+                              class: "field-input", autocomplete: "off",
+                              data: { testid: "repo-input" } %>
+        <% end %>
+        <p class="field-hint">Prism registers a <code class="font-mono">pull_request</code> webhook with its own secret.</p>
+      </div>
+
+      <%= form.submit "Watch repository", class: "btn-primary", data: { testid: "subscribe-button" } %>
+    <% end %>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2 class="section-title">Watching</h2>
+      <p class="section-note tnum"><%= @subscriptions.size %></p>
+    </div>
+
+    <% if @subscriptions.any? %>
+      <div class="panel" data-testid="subscription-list">
+        <% @subscriptions.each do |subscription| %>
+          <div class="row" data-testid="subscription-row">
+            <div class="min-w-0 flex-1">
+              <p class="flex flex-wrap items-center gap-2">
+                <span class="row-title">
+                  <span class="font-normal text-ink-soft"><%= subscription.owner %>/</span><%= subscription.name %>
+                </span>
+                <% if subscription.broken? %>
+                  <span class="pill-removed" data-testid="subscription-broken">Not working</span>
+                <% elsif subscription.callback_stale? %>
+                  <span class="pill-modified" data-testid="subscription-stale">Wrong address</span>
+                <% else %>
+                  <span class="pill-added">Active</span>
+                <% end %>
+              </p>
+
+              <% if subscription.broken? %>
+                <p class="mt-1 text-sm text-removed" data-testid="broken-reason">
+                  <%= subscription.broken_reason %> Prism has stopped trying. Sign in again, or
+                  remove and re-add the repository once access is back.
+                </p>
+              <% elsif subscription.callback_stale? %>
+                <%# Silent failure otherwise: GitHub keeps POSTing to an address
+                    nothing answers on, and because the request never reaches
+                    Prism there is nothing in any log here to find. %>
+                <p class="mt-1 text-sm text-modified" data-testid="stale-reason">
+                  GitHub is still delivering to <code class="font-mono text-xs break-all"><%= subscription.callback_url %></code>,
+                  but Prism now answers on <code class="font-mono text-xs break-all"><%= Webhooks::CallbackUrl.current_or_nil %></code>.
+                  Nothing is arriving. Re-register to point the existing webhook at the new address —
+                  the secret and history are kept.
+                </p>
+              <% end %>
+
+              <div class="row-meta">
+                <span>as @<%= subscription.user.login %></span>
+                <span>
+                  <%= subscription.last_delivery_at ? relative_time(subscription.last_delivery_at, prefix: "last delivery") : "no deliveries yet" %>
+                </span>
+              </div>
+            </div>
+
+            <div class="flex shrink-0 items-center gap-2">
+              <% if subscription.callback_stale? %>
+                <%= button_to "Re-register", webhook_subscription_path(subscription),
+                              method: :patch,
+                              class: "btn-secondary btn-sm",
+                              data: { testid: "re-register-button" } %>
+              <% end %>
+
+              <%= button_to "Stop watching", webhook_subscription_path(subscription),
+                            method: :delete,
+                            class: "btn-danger btn-sm",
+                            form: { data: { turbo_confirm: "Stop watching #{subscription.full_name}? Prism will delete the webhook on GitHub. Links already added to pull requests stay where they are." } },
+                            data: { testid: "unsubscribe-button" } %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="panel">
+        <%= render "shared/empty_state",
+                   icon: :repo,
+                   title: "Not watching anything yet",
+                   body: "Pick a repository above. Prism will add a link to its rendered review on every pull request that changes a Markdown file, and take it away again when the last one goes." %>
+      </div>
+    <% end %>
+  </section>
+</div>

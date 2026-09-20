@@ -122,9 +122,10 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
 
   # L1 (independent review, 2026-09-19): a file-level thread must land where
   # a full page load would put it (Review::BlockMapper buckets subject_type
-  # FILE into #file_threads, never under a block) — otherwise it jumps to
-  # the top the next time the page loads.
-  test "a file-level comment streams into #file_threads, not the block's own container" do
+  # FILE into the file's own thread container, never under a block) —
+  # otherwise it jumps the next time the page loads. The container is keyed
+  # by path now that the review screen holds every Markdown file at once.
+  test "a file-level comment streams into its own file's thread container, not the block's" do
     sign_in_as(@user)
     stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
     draft = new_thread_data(subject_type: "FILE", line: nil)
@@ -138,7 +139,8 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
          as: :turbo_stream
 
     assert_response :success
-    assert_match(/turbo-stream action="prepend" target="file_threads"/, response.body)
+    assert_match(/turbo-stream action="prepend" target="file_threads_#{Review::Page.file_key(PATH)}"/,
+                 response.body)
     assert_no_match(/turbo-stream action="append" target="threads_block_9"/, response.body)
   end
 

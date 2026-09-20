@@ -9,6 +9,14 @@ require "test_helper"
 class PullRequestFilesHelperTest < ActionView::TestCase
   tests PullRequestFilesHelper
 
+  PATH = "docs/list.md"
+  KEY = Review::Page.file_key(PATH)
+
+  # Every id on the page is prefixed with the file's key, because the review
+  # screen holds every Markdown file in the pull request at once and the
+  # renderer numbers blocks from zero per document.
+  def dom_id(child) = "#{KEY}-#{child.block.id}"
+
   # ----------------------------------------------------------- collisions --
 
   test "an outer and an inner list item on one line each keep their own block" do
@@ -18,8 +26,8 @@ class PullRequestFilesHelperTest < ActionView::TestCase
     items = woven("- - a\n").css("li")
 
     assert_equal 2, items.size
-    assert_equal outer.block.id, items[0]["data-block-id"], "the outer <li> takes the outer block"
-    assert_equal inner.block.id, items[1]["data-block-id"], "the inner <li> takes the inner block"
+    assert_equal dom_id(outer), items[0]["data-block-id"], "the outer <li> takes the outer block"
+    assert_equal dom_id(inner), items[1]["data-block-id"], "the inner <li> takes the inner block"
   end
 
   test "a list item whose first line already holds a nested item still gets a gutter" do
@@ -27,7 +35,7 @@ class PullRequestFilesHelperTest < ActionView::TestCase
     items = fragment.css("li")
 
     assert_equal 3, items.size
-    assert_equal children_of("1. - a\n   - b\n").map { |child| child.block.id },
+    assert_equal children_of("1. - a\n   - b\n").map { |child| dom_id(child) },
                  items.map { |item| item["data-block-id"] }
     assert_equal 3, fragment.css("li > .md-add--child").size,
                  "every item offers its own +, including the one sharing line 1"
@@ -45,8 +53,8 @@ class PullRequestFilesHelperTest < ActionView::TestCase
     outer, inner = children_of("- outer\n  - inner\n")
     items = woven("- outer\n  - inner\n").css("li")
 
-    assert_equal outer.block.id, items[0]["data-block-id"]
-    assert_equal inner.block.id, items[1]["data-block-id"]
+    assert_equal dom_id(outer), items[0]["data-block-id"]
+    assert_equal dom_id(inner), items[1]["data-block-id"]
     assert_equal "outer", items[0].at_css("> .md-add--child")&.next_sibling&.text&.strip
   end
 
@@ -54,9 +62,9 @@ class PullRequestFilesHelperTest < ActionView::TestCase
     fragment = woven("- one\n- two\n")
 
     children_of("- one\n- two\n").each do |child|
-      assert fragment.at_css("li##{"block_#{child.block.id}"}"), "the item is addressable by id"
-      assert fragment.at_css("##{"threads_#{child.block.id}"}"), "threads container"
-      assert fragment.at_css("##{"composer_#{child.block.id}"}"), "composer slot"
+      assert fragment.at_css("li#block_#{dom_id(child)}"), "the item is addressable by id"
+      assert fragment.at_css("#threads_#{dom_id(child)}"), "threads container"
+      assert fragment.at_css("#composer_#{dom_id(child)}"), "composer slot"
     end
   end
 
@@ -85,7 +93,20 @@ class PullRequestFilesHelperTest < ActionView::TestCase
   test "a block with no children is passed through untouched" do
     blocks = annotated("Just a paragraph.\n")
 
-    assert_equal blocks.first.block.html, block_body(blocks.first, pull_request: nil)
+    assert_equal blocks.first.block.html, block_body(blocks.first, pull_request: nil, path: PATH)
+  end
+
+  test "two files whose blocks collide still get distinct ids" do
+    source = "- one\n"
+    child = children_of(source).first
+    here = woven(source).at_css("li")["data-block-id"]
+    there = Nokogiri::HTML5.fragment(
+      block_body(annotated(source).first, pull_request: nil, path: "elsewhere/list.md")
+    ).at_css("li")["data-block-id"]
+
+    assert_equal "#{KEY}-#{child.block.id}", here
+    assert_not_equal here, there, "the same block in two files must not share an id"
+    assert_equal child.block.id, here.delete_prefix("#{KEY}-")
   end
 
   # -------------------------------------------------------------- the "+" --
@@ -107,7 +128,7 @@ class PullRequestFilesHelperTest < ActionView::TestCase
     anchor = JSON.parse(button["data-anchor"])
 
     assert_equal "true", button["data-commentable"]
-    assert_equal "docs/list.md", anchor["path"]
+    assert_equal PATH, anchor["path"]
     assert_equal "RIGHT", anchor["side"]
     assert_equal 1, anchor["line"]
   end
@@ -119,7 +140,7 @@ class PullRequestFilesHelperTest < ActionView::TestCase
 
     Review::BlockMapper.call(
       head_blocks: blocks, base_blocks: [], line_sets: Diff::Patch.parse(patch),
-      threads: [], path: "docs/list.md", file_status: "modified"
+      threads: [], path: PATH, file_status: "modified"
     ).blocks
   end
 
@@ -130,7 +151,8 @@ class PullRequestFilesHelperTest < ActionView::TestCase
   end
 
   def woven(source, patch: nil)
-    Nokogiri::HTML5.fragment(block_body(annotated(source, patch: patch).first, pull_request: nil))
+    Nokogiri::HTML5.fragment(block_body(annotated(source, patch: patch).first,
+                                         pull_request: nil, path: PATH))
   end
 
   def assert_unique_ids(fragment)

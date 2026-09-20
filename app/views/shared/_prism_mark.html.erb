@@ -7,17 +7,25 @@
     class: extra classes on the <svg>
     tile:  draw the dark rounded tile behind the mark (default false — on a
            light surface the mark reads better unboxed)
+
+  Colour: every stroke is a token, so the mark follows the theme with the rest
+  of the page — unboxed, the beam is the page's own ink. The tile is the one
+  exception: it is a fixed dark chip in both modes (the same chip as
+  public/icon.svg, which a browser draws on chrome we don't control), so it
+  takes the theme-independent `on-light` / `on-dark` pair rather than ink and
+  surface, which would invert it on a dark screen and leave the pale spectrum
+  strokes sitting on a pale tile.
 %>
 <% size       = local_assigns.fetch(:size, 24) %>
 <% tile       = local_assigns.fetch(:tile, false) %>
 <% extra      = local_assigns.fetch(:class, "") %>
-<% beam_color = tile ? "#ffffff" : "var(--color-ink)" %>
+<% beam_color = tile ? "var(--color-on-dark)" : "var(--color-ink)" %>
 
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"
      width="<%= size %>" height="<%= size %>"
      class="<%= extra %>" aria-hidden="true" focusable="false">
   <% if tile %>
-    <rect width="64" height="64" rx="14" fill="#16182b" />
+    <rect width="64" height="64" rx="14" fill="var(--color-on-light)" />
   <% end %>
   <g stroke-linecap="round" stroke-width="4" fill="none">
     <path d="M3 30 H21.5" stroke="<%= beam_color %>" />

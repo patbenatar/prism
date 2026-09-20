@@ -16,7 +16,7 @@ compose project are all named "prism".
 Everything is dockerized — there's no host Ruby/Rails dependency.
 
 ```bash
-docker compose up -d          # app + postgres + css watcher
+docker compose up -d          # app + postgres + css watcher + jobs
 docker compose down           # stop everything
 docker compose logs app -f    # follow app logs
 ```
@@ -26,9 +26,16 @@ docker compose logs app -f    # follow app logs
 | `app` | http://localhost:**3004** | Rails web (container 3000 → host 3004) |
 | `postgres` | localhost:**5436** | Postgres 16 |
 | `css` | (none) | `bin/rails tailwindcss:watch` — rebuilds `app/assets/builds/tailwind.css` |
+| `jobs` | (none) | `bin/jobs` — Solid Queue worker. Webhook deliveries run here. |
+| `tunnel` | http://localhost:**4040** | ngrok, **off by default**: `docker compose --profile tunnel up -d tunnel` gives the dev app a public HTTPS URL so GitHub can deliver webhooks to it, plus a request inspector on 4040. Needs a free `NGROK_AUTHTOKEN`. See `docs/webhooks.md`. |
 
 There is no mailpit/email service — Prism sends no email. Sign-in is GitHub
 OAuth only.
+
+Solid Queue's tables live in the **primary** database, so `bin/rails db:prepare`
+is the whole setup. Production runs the worker inside Puma
+(`SOLID_QUEUE_IN_PUMA`); development runs it as its own container so a web
+restart doesn't take the queue with it.
 
 **Containers run as uid `1000:1000`** so bind-mounted files stay owned by the
 host user. **Gems are baked into the image** at `/usr/local/bundle` (outside
@@ -56,6 +63,7 @@ dev values for everything except the two OAuth credentials.
 | `AR_ENCRYPTION_PRIMARY_KEY` | `users.access_token` | Dev values are in `.env.example`. |
 | `AR_ENCRYPTION_DETERMINISTIC_KEY` | same | Generate a real set with `docker compose exec app bin/rails db:encryption:init`. |
 | `AR_ENCRYPTION_KEY_DERIVATION_SALT` | same | Read from ENV first, falling back to credentials, so CI and Docker work without sharing `config/master.key`. |
+| `PRISM_PUBLIC_URL` | Webhooks | The origin GitHub delivers to, and the origin the "review in Prism" link in a pull request description points at. Blank is fine — subscribing is simply unavailable. See `docs/webhooks.md`. |
 
 The GitHub OAuth token is encrypted at rest. Without the three encryption keys
 the app still boots, but signing in raises when it tries to store the token.
@@ -148,7 +156,11 @@ version:
   views, and tests; do not edit `config/routes.rb`, the shared layout, the
   Tailwind theme, migrations, or another slice's files without flagging it —
   those are shared surfaces.
-- **Commit only when asked.** Scope commits to one logical change.
+- **Ship through a pull request.** Branch, commit, push, open a PR with `gh`,
+  wait for CI to pass, then merge. Never commit straight to `main`. CI is where
+  the things a local run cannot see get caught — a missing encryption key, a
+  race that only shows on a slower machine — so merging before it is green
+  throws away the point of having it. Scope commits to one logical change.
 
 ---
 

@@ -15,11 +15,28 @@ class ReposController < ApplicationController
   MAX_PAGES = 5
 
   def index
-    @page = params[:page].to_i.clamp(1, MAX_PAGES)
-    @page = 1 if @page.zero?
-
-    pages = (1..@page).map { |page| github.repos(page: page) }
-    @repos = pages.flatten
-    @next_page = (@page + 1 if pages.last.size >= Github::Client::PER_PAGE && @page < MAX_PAGES)
+    @page = clamp_page(params[:page])
+    @repos, @next_page = self.class.fetch_repos(github, @page)
+    @pinned, @unpinned = PinnedRepo.partition(@repos, current_user)
   end
+
+  # Pulled out as a class method so PinnedReposController can rebuild the same
+  # two panels after a pin toggle without duplicating the pagination rules —
+  # "load everything up to the page the visitor already had open" is one idea
+  # and should have one implementation.
+  def self.fetch_repos(github, page)
+    pages = (1..page).map { |p| github.repos(page: p) }
+    repos = pages.flatten
+    next_page = (page + 1 if pages.last.size >= Github::Client::PER_PAGE && page < MAX_PAGES)
+    [ repos, next_page ]
+  end
+
+  def self.clamp_page(raw)
+    page = raw.to_i.clamp(1, MAX_PAGES)
+    page.zero? ? 1 : page
+  end
+
+  private
+
+  def clamp_page(raw) = self.class.clamp_page(raw)
 end

@@ -1,7 +1,9 @@
 <%#
   Swapped in for a comment's body by comment_actions_controller.js when its
   Edit button is clicked — no round trip needed to show the form, since both
-  panes are rendered up front and toggled client-side.
+  panes are rendered up front and toggled client-side. Same `.composer-card`
+  as the composer and the reply box, so editing looks like the thing you are
+  editing (DESIGN.md §8).
 
   Locals:
     comment:   (required)
@@ -16,19 +18,24 @@
 <% thread_id = local_assigns.fetch(:thread_id) %>
 
 <%= form_with url: repo_pull_comment_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: comment.node_id),
-              method: :patch, data: { turbo: true, testid: "comment-edit-form" } do |f| %>
-  <%= f.hidden_field :thread_id, value: thread_id %>
+              method: :patch, class: "composer-card block",
+              data: { turbo: true, testid: "comment-edit-form" } do |f| %>
+  <%# `id: nil`: both panes of every comment on the page render up front,
+      so this form exists once per comment. See `_composer_form`. %>
+  <%= f.hidden_field :thread_id, value: thread_id, id: nil %>
   <div data-controller="markdown-preview mention"
        data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
        data-mention-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
        data-mention-target="container">
-    <div class="mb-1.5 flex items-center gap-1">
-      <button type="button" class="tab tab-active text-xs" data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab">Write</button>
-      <button type="button" class="tab text-xs" data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab">Preview</button>
+    <div class="composer-head" role="tablist" aria-label="Comment editor">
+      <button type="button" role="tab" aria-selected="true" class="composer-tab tab-active"
+              data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab">Write</button>
+      <button type="button" role="tab" aria-selected="false" class="composer-tab"
+              data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab">Preview</button>
     </div>
 
-    <div data-markdown-preview-target="writePane">
-      <%= f.text_area :body, value: comment.body, rows: 3, class: "composer-textarea w-full",
+    <div data-markdown-preview-target="writePane" role="tabpanel">
+      <%= f.text_area :body, value: comment.body, rows: 3, id: nil, class: "composer-textarea w-full",
                        data: { testid: "comment-edit-textarea", markdown_preview_target: "textarea", mention_target: "textarea",
                                 action: "input->composer#autosize keydown->mention#keydown input->mention#input input->markdown-preview#dirty" },
                        aria: { label: "Edit comment" } %>
@@ -37,12 +44,13 @@
            hidden role="listbox" aria-label="Mention someone"></div>
     </div>
 
-    <div data-markdown-preview-target="previewPane" hidden class="md-prose md-prose-compact min-h-[2rem] rounded-lg border border-line bg-surface px-3 py-2">
+    <div data-markdown-preview-target="previewPane" hidden role="tabpanel"
+         class="composer-preview md-prose md-prose-compact">
       <p class="text-ink-faint" data-markdown-preview-target="previewBody">Nothing to preview yet.</p>
     </div>
   </div>
 
-  <div class="mt-2 flex items-center justify-end gap-2">
+  <div class="composer-foot">
     <button type="button" class="btn btn-ghost btn-sm" data-action="comment-actions#cancelEdit" data-testid="comment-edit-cancel">Cancel</button>
     <%= f.submit "Save", class: "btn btn-primary btn-sm", data: { testid: "comment-edit-save" } %>
   </div>

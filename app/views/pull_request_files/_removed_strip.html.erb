@@ -29,13 +29,14 @@
 
       <div class="md-removed-body">
         <% blocks.each do |block| %>
-          <div class="md-prose" data-block-id="<%= block.id %>"
+          <% dom_id = block_dom_id(block, page.file_key) %>
+          <div class="md-prose" data-block-id="<%= dom_id %>"
                data-removed-lines="<%= block.start_line %>–<%= block.end_line %>">
             <%= block.html %>
           </div>
 
           <% page.removed_strip_threads(block).each do |thread| %>
-            <%= render "thread", thread: thread, pull_request: pull_request, block_id: block.id %>
+            <%= render "thread", thread: thread, pull_request: pull_request, block_id: dom_id %>
           <% end %>
         <% end %>
 
