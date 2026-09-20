@@ -181,18 +181,23 @@ class ReviewCommentsController < ApplicationController
     end
   end
 
-  # A file-level thread (L1, independent review 2026-09-19) belongs in
-  # `#file_threads` at the top of the page, same as a full page load would
-  # place it (Review::BlockMapper buckets subject_type FILE there, never
-  # under a block) — appending it into `threads_<block_id>` instead would
-  # make it jump to the top the next time the page loads.
+  # A file-level thread (L1, independent review 2026-09-19) belongs at the top
+  # of its own file's section, same as a full page load would place it
+  # (Review::BlockMapper buckets subject_type FILE there, never under a
+  # block) — appending it into `threads_<block_id>` instead would make it jump
+  # the next time the page loads. The container is per file now that the
+  # Markdown tab holds every file at once, so the target is keyed by path.
   #
   # `pull_request` is nil here on purpose: `_thread.html.erb` never reads it
   # (every URL it builds comes from `params[:owner]`/`repo`/`number`), so
   # there is nothing to fetch just to satisfy an unused local.
   def new_thread_stream(thread, block_id:)
     locals = { thread: thread, pull_request: nil, pending_review: pending_review_from_client, block_id: block_id }
-    return turbo_stream.prepend("file_threads", partial: "review_comments/thread", locals: locals) if thread.file_level?
+
+    if thread.file_level?
+      return turbo_stream.prepend(helpers.file_threads_dom_id(params[:path]),
+                                   partial: "review_comments/thread", locals: locals)
+    end
 
     turbo_stream.append("threads_#{block_id}", partial: "review_comments/thread", locals: locals)
   end
@@ -298,8 +303,12 @@ class ReviewCommentsController < ApplicationController
                                     pending_count: pending_count })
   end
 
+  # Where a plain HTML (no-JS, or failed-Turbo) write goes back to. The review
+  # screen is one page per pull request now, so this is that page anchored at
+  # the file the comment was on rather than a screen of its own.
   def file_path
-    repo_pull_file_path(owner: @owner, repo: @repo, number: @number, path: params[:path])
+    repo_pull_markdown_path(owner: @owner, repo: @repo, number: @number,
+                            anchor: Review::Page.file_key(params[:path]))
   end
 
   # ---------------------------------------------------------------- errors ---

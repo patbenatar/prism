@@ -64,8 +64,12 @@ class ReactionsController < ApplicationController
     end
   end
 
+  # The Markdown tab, anchored at the file this reaction lives in. The old
+  # per-file route still 302s here, but pointing at the destination directly
+  # saves the no-JS reviewer a redirect.
   def file_path
-    repo_pull_file_path(owner: @owner, repo: @repo, number: @number, path: params[:path])
+    repo_pull_markdown_path(owner: @owner, repo: @repo, number: @number,
+                            anchor: Review::Page.file_key(params[:path]))
   end
 
   def handle_error(error)

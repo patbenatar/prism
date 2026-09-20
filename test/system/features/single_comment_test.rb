@@ -70,8 +70,14 @@ class SingleCommentTest < ApplicationSystemTestCase
 
     block_id = open_composer_for(paragraph)
 
+    # The composer no longer narrates the line it will anchor to (W4) — the
+    # reviewer picked the block by clicking it. What has to be true is that
+    # the anchor itself made it into the form, which the AddThread assertion
+    # at the end of this test checks end to end.
     within "#composer_#{block_id}" do
-      assert_selector "[data-composer-target=anchorNote]", text: /Lines? \d+/i
+      assert_no_selector "[data-composer-target=anchorNote]", text: /Lines? \d+/i
+      assert_equal "4", find("[data-composer-target=line]", visible: false).value
+      assert_equal "3", find("[data-composer-target=startLine]", visible: false).value
     end
 
     thread = feature_thread(

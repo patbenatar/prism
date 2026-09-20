@@ -3,16 +3,18 @@
 
   Workstream D/E: this is the design-system reference for comment styling.
   Stack several inside a `.thread` wrapper (add `.thread--pending`,
-  `--resolved` or `--outdated` as the thread's state requires) and append your
-  own `.reply-box` at the foot. The actions row here is deliberately empty of
-  behavior — wire Edit / Delete / Resolve / react into `actions:` rather than
-  restyling the card.
+  `--resolved` or `--outdated` as the thread's state requires) and put a
+  `.composer-card` reply box in its `.thread-foot`. The two slots here are
+  deliberately empty of behavior — wire Edit / Delete into `tools:` and the
+  reaction control into `actions:` rather than restyling the card.
 
   Locals:
     comment: (required) Github::Types::ReviewComment
-    actions: (optional) safe HTML appended to the actions row
+    tools:   (optional) safe HTML for the icon row in the head's top right
+    actions: (optional) safe HTML appended to the actions row under the body
 %>
 <% comment = local_assigns.fetch(:comment) %>
+<% tools = local_assigns.fetch(:tools, nil) %>
 <% actions = local_assigns.fetch(:actions, nil) %>
 
 <article class="comment-card" data-testid="comment" data-comment-id="<%= comment.id %>">
@@ -34,12 +36,21 @@
       <span class="pill-modified">Outdated</span>
     <% end %>
 
-    <span class="flex-1"></span>
+    <div class="comment-tools">
+      <%= tools %>
 
-    <% if comment.url.present? %>
-      <%= link_to "On GitHub", comment.url, class: "text-xs text-ink-faint hover:text-brand",
-                  target: "_blank", rel: "noopener" %>
-    <% end %>
+      <% if comment.url.present? %>
+        <%= link_to comment.url, class: "comment-icon", target: "_blank", rel: "noopener" do %>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
+            <path d="M9.5 3h3.5v3.5" />
+            <path d="M13 3 7.8 8.2" />
+            <path d="M11.5 9.8V13H3V4.5h3.2" />
+          </svg>
+          <span class="sr-only">On GitHub</span>
+        <% end %>
+      <% end %>
+    </div>
   </div>
 
   <div class="comment-body md-prose md-prose-compact">

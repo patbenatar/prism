@@ -65,7 +65,8 @@ class ReviewThreadsController < ApplicationController
   def fallback_path(thread)
     return repo_pull_path(owner: @owner, repo: @repo, number: @number) if thread.nil?
 
-    repo_pull_file_path(owner: @owner, repo: @repo, number: @number, path: thread.path)
+    repo_pull_markdown_path(owner: @owner, repo: @repo, number: @number,
+                            anchor: Review::Page.file_key(thread.path))
   end
 
   def handle_error(error)

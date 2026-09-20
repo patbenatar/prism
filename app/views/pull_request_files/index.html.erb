@@ -1,0 +1,116 @@
+<%#
+  The Markdown tab — the screen Prism exists for.
+
+  Every renderable `.md` file in the pull request, in the file list's order,
+  each under its own sticky heading. One page, so `n`/`p` walks the whole
+  review and the pending tray counts the whole review, and one `reviewThreads`
+  call behind it rather than one per file.
+
+  Layout is DESIGN §4's `.reading-shell`: a plain column at the reading width.
+  The gutter grid belongs to each row — `.md-block` for a block of the
+  document, `.md-row` for page furniture that still wants to line up with it —
+  so every change bar sits in the same channel all the way down.
+
+  The seam with the commenting workstream (PLAN.md "Phase 2 seam") lives on
+  each file's <section>, not here: `data-controller="composer"` and every
+  `data-composer-*` value is per file, because `path` and the permalink base
+  differ per file and a composer nested inside a second composer scope would
+  fire every action twice. `#file_view` keeps the two page-wide controllers.
+%>
+<% content_for :title, "Markdown · #{@owner}/#{@name}##{@number}" %>
+
+<% content_for :breadcrumb do %>
+  <%= link_to "#{@owner}/#{@name}", repo_pulls_path(owner: @owner, repo: @name),
+              class: "shrink-0 hover:text-brand" %>
+  <span class="text-ink-faint" aria-hidden="true">/</span>
+  <%= link_to "##{@number}", repo_pull_path(owner: @owner, repo: @name, number: @number),
+              class: "shrink-0 tnum hover:text-brand" %>
+  <span class="hidden text-ink-faint sm:inline" aria-hidden="true">/</span>
+  <span class="hidden text-xs text-ink sm:inline">Markdown</span>
+<% end %>
+
+<div id="file_view" data-controller="gutter block-nav file-nav">
+
+  <%# ── Pull request header and tabs ───────────────────────────────────── %>
+  <div class="reading-shell pt-5">
+    <% _state_key, state_word, state_class = pull_request_state(@pull_request) %>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <span class="pill-solid <%= state_class %>" data-testid="pr-state"><%= state_word %></span>
+      <h1 class="min-w-0 flex-1 truncate font-display text-base font-semibold tracking-tight text-ink"
+          title="<%= @pull_request.title %>">
+        <%= @pull_request.title %>
+        <span class="font-normal text-ink-faint tnum">#<%= @pull_request.number %></span>
+      </h1>
+      <%= link_to "Open on GitHub", @pull_request.html_url,
+                  class: "shrink-0 text-xs text-ink-faint hover:text-brand",
+                  target: "_blank", rel: "noopener", data: { testid: "open-on-github" } %>
+    </div>
+
+    <div class="mt-3">
+      <%= render "pull_requests/tabs", owner: @owner, repo: @name, number: @number,
+                                       active: :markdown,
+                                       changed_files: @page.files.size,
+                                       markdown_count: @page.markdown_files.size %>
+    </div>
+  </div>
+
+  <%= render "file_bar", page: @page %>
+
+  <div class="reading-shell pt-5">
+    <%# ── Notices that belong to the whole page ────────────────────────── %>
+    <div class="empty:hidden">
+      <% if @page.rate_limited? %>
+        <%= render "shared/rate_limit_banner",
+                   retry_in: @page.rate_limit_retry_in, reset_at: @page.rate_limited_at %>
+      <% elsif @page.threads_unavailable? %>
+        <div class="banner mb-4" role="status" data-testid="threads-unavailable">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.25 6a.75.75 0 0 1 1.5 0v4.5a.75.75 0 0 1-1.5 0V6Zm.75 7a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" clip-rule="evenodd" />
+          </svg>
+          <p>
+            <%= @page.threads_error_message %>
+            The documents are here, but the comments on them are not.
+          </p>
+        </div>
+      <% end %>
+    </div>
+
+    <% if @pages.empty? %>
+      <%= render "shared/empty_state",
+                 icon: :file,
+                 title: "No Markdown in this pull request",
+                 body: "Prism renders .md, .markdown and .mdx files. This pull request changes none, so there is nothing to read here — the other files are on GitHub.",
+                 cta_label: "Open on GitHub",
+                 cta_to: @pull_request.html_url %>
+    <% else %>
+      <% @pages.each do |file_page| %>
+        <%= render "file_section", page: file_page, pull_request: @pull_request %>
+      <% end %>
+    <% end %>
+  </div>
+</div>
+
+<%# The sticky pending-review tray. The layout yields :tray after <main>.
+    One per page, counting every unsubmitted draft in the pull request — which
+    is what it always counted, and is now also what is on screen. %>
+<% if review_partial?("reviews/pending_tray") %>
+  <% content_for :tray do %>
+    <%= render "reviews/pending_tray",
+               pull_request: @pull_request,
+               pending_review: @page.pending_review,
+               pending_count: @page.pending_count %>
+  <% end %>
+<% elsif @page.pending_count.positive? %>
+  <% content_for :tray do %>
+    <div class="tray" id="pending_tray" data-testid="pending-tray">
+      <div class="tray-inner">
+        <span class="pill-pending"><%= count_of(@page.pending_count, "pending comment") %></span>
+        <span class="flex-1 text-sm text-ink-soft">
+          Your unsubmitted review lives on GitHub.
+        </span>
+        <%= link_to "Open on GitHub", @pull_request.html_url, class: "btn-secondary btn-sm",
+                    target: "_blank", rel: "noopener" %>
+      </div>
+    </div>
+  <% end %>
+<% end %>

@@ -1,11 +1,16 @@
 <%#
   One top-level block of the document: its change bar, its "+", its rendered
   HTML (with child markers woven in), the threads already on it, and the empty
-  slot workstream E opens the composer into.
+  slot the composer opens into.
 
-  Locals: annotated (Review::AnnotatedBlock), pull_request, page
+  Every id here is prefixed with the file's key, because the page holds every
+  Markdown file in the pull request and Markdown::Renderer numbers blocks from
+  zero per document. See PullRequestFilesHelper#block_dom_id.
+
+  Locals: annotated (Review::AnnotatedBlock), pull_request, page (Review::Page)
 %>
 <% block = annotated.block %>
+<% dom_id = block_dom_id(block, page.file_key) %>
 <% removed_file = page.result.removed_file? %>
 <% change = removed_file ? "removed" : annotated.change.to_s %>
 
@@ -16,8 +21,8 @@
 <% end %>
 
 <div class="md-block <%= "md-block--#{change}" unless change == "unchanged" %>"
-     id="block_<%= block.id %>"
-     data-block-id="<%= block.id %>"
+     id="block_<%= dom_id %>"
+     data-block-id="<%= dom_id %>"
      data-change="<%= change %>"
      data-commentable="<%= annotated.commentable? %>"
      data-start-line="<%= block.start_line %>"
@@ -26,18 +31,18 @@
      data-testid="md-block">
   <div class="md-gutter">
     <span class="md-gutter-bar" aria-hidden="true"></span>
-    <%= gutter_button(annotated) %>
+    <%= gutter_button(annotated, path: page.path) %>
   </div>
 
   <div class="md-body md-prose">
-    <%= block_body(annotated, pull_request: pull_request) %>
+    <%= block_body(annotated, pull_request: pull_request, path: page.path) %>
 
-    <div id="threads_<%= block.id %>" class="md-threads">
+    <div id="threads_<%= dom_id %>" class="md-threads">
       <% annotated.threads.each do |thread| %>
-        <%= render "thread", thread: thread, pull_request: pull_request, block_id: block.id %>
+        <%= render "thread", thread: thread, pull_request: pull_request, block_id: dom_id %>
       <% end %>
     </div>
 
-    <div id="composer_<%= block.id %>" class="md-composer"></div>
+    <div id="composer_<%= dom_id %>" class="md-composer"></div>
   </div>
 </div>

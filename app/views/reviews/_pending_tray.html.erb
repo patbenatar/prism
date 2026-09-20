@@ -32,19 +32,22 @@
         </span>
         <span class="flex-1"></span>
 
+        <%# Discard is quiet until you reach for it, the same way a comment's
+            delete icon is: a red button standing beside the primary one made
+            throwing the review away look like an expected move. %>
+        <%= button_to "Discard", repo_pull_review_path(owner: params[:owner], repo: params[:repo], number: pull_request.number, id: pending_review.id),
+                       method: :delete, class: "btn btn-ghost btn-sm hover:bg-removed-soft hover:text-removed",
+                       form: { data: { turbo_confirm: "Discard this pending review and every draft comment on it?" } },
+                       data: { testid: "review-discard" } %>
+
         <details class="relative">
-          <summary class="btn btn-primary btn-sm cursor-pointer list-none" data-testid="review-submit-open">
+          <summary class="btn btn-primary btn-sm list-none" data-testid="review-submit-open">
             Submit review
           </summary>
           <div class="absolute bottom-full right-0 z-30 mb-2 w-80 rounded-xl border border-line bg-surface p-3 shadow-lg shadow-ink/5">
             <%= render "reviews/submit_panel", pull_request: pull_request, pending_review: pending_review %>
           </div>
         </details>
-
-        <%= button_to "Discard", repo_pull_review_path(owner: params[:owner], repo: params[:repo], number: pull_request.number, id: pending_review.id),
-                       method: :delete, class: "btn btn-danger btn-sm",
-                       form: { data: { turbo_confirm: "Discard this pending review and every draft comment on it?" } },
-                       data: { testid: "review-discard" } %>
       </div>
     </div>
   <% end %>

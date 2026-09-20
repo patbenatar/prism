@@ -58,13 +58,15 @@ class EdgeFilesTest < ApplicationSystemTestCase
   end
 
   test "a removed file renders the base side, marked removed, commenting only on the LEFT" do
-    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: REMOVED_PATH)
+    section = open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: REMOVED_PATH)
 
-    assert_selector "[data-testid=uncommentable-notice][data-kind=file_removed]"
-    assert_selector "[data-testid=md-block][data-change=removed]", minimum: 2
-    assert_text "This page is gone"
+    within(section) do
+      assert_selector "[data-testid=uncommentable-notice][data-kind=file_removed]"
+      assert_selector "[data-testid=md-block][data-change=removed]", minimum: 2
+      assert_text "This page is gone"
+    end
 
-    block = find("[data-testid=md-block][data-commentable=true]", match: :first)
+    block = section.find("[data-testid=md-block][data-commentable=true]", match: :first)
     # The "+" is opacity-0 until hover (DESIGN §7); Capybara/Selenium treat
     # that as not-visible, so read its data attributes with visible: :all.
     anchor = JSON.parse(block.find(".md-add", visible: :all)["data-anchor"])
@@ -86,21 +88,24 @@ class EdgeFilesTest < ApplicationSystemTestCase
     end
   end
 
+  # Every Markdown file in the pull request is on one page now, so a claim
+  # about *this* file has to be scoped to its own section — the counts below
+  # would otherwise be counting the other three files too.
   test "a renamed file with no patch offers nothing commentable" do
-    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: RENAMED_PATH)
-
-    assert_selector "[data-testid=uncommentable-notice][data-kind=no_patch]"
-    assert_selector "[data-testid=md-block]", minimum: 1
-    assert_selector "[data-testid=md-block][data-commentable=true]", count: 0
-    assert_selector ".md-add--muted", minimum: 1, visible: :all
+    within(open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: RENAMED_PATH)) do
+      assert_selector "[data-testid=uncommentable-notice][data-kind=no_patch]"
+      assert_selector "[data-testid=md-block]", minimum: 1
+      assert_selector "[data-testid=md-block][data-commentable=true]", count: 0
+      assert_selector ".md-add--muted", minimum: 1, visible: :all
+    end
   end
 
   test "an added file is all added blocks, every one commentable" do
-    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: ADDED_PATH)
-
-    assert_selector "[data-testid=md-block][data-change=added]", minimum: 2
-    assert_selector "[data-testid=md-block][data-change=unchanged]", count: 0
-    assert_selector "[data-testid=md-block][data-commentable=false]", count: 0
+    within(open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: ADDED_PATH)) do
+      assert_selector "[data-testid=md-block][data-change=added]", minimum: 2
+      assert_selector "[data-testid=md-block][data-change=unchanged]", count: 0
+      assert_selector "[data-testid=md-block][data-commentable=false]", count: 0
+    end
   end
 
   test "a non-Markdown path redirects out to GitHub instead of rendering" do

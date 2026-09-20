@@ -12,6 +12,13 @@ class User < ApplicationRecord
   # encryption (the default) is right because we never query by it.
   encrypts :access_token
 
+  has_many :pinned_repos, dependent: :destroy
+
+  # Repositories this person asked Prism to watch. Prism acts on GitHub as
+  # them when a webhook fires, so the token above is what makes a subscription
+  # work — and what makes it stop working when it is revoked.
+  has_many :webhook_subscriptions, dependent: :destroy
+
   normalizes :login, with: ->(value) { value.to_s.strip }
   normalizes :token_scopes, with: ->(value) { normalize_scopes(value) }
 

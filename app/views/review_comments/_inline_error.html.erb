@@ -6,8 +6,11 @@
   D's own GithubErrorHandling and show the full explanation; this just says
   enough to explain why nothing happened.
 
+  It borrows the composer's own card so the explanation lands in the shape of
+  the thing that was about to be there.
+
   Locals: message: (required) String
 %>
-<div class="reply-box" data-testid="inline-error" role="alert">
-  <p class="text-xs text-removed"><%= local_assigns.fetch(:message) %></p>
+<div class="composer-card mt-3" data-testid="inline-error" role="alert">
+  <p class="composer-note composer-note--error pb-2.5"><%= local_assigns.fetch(:message) %></p>
 </div>

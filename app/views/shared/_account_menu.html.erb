@@ -23,6 +23,12 @@
       <% end %>
     </div>
 
+    <%# Added by W5 (webhooks): /subscriptions is otherwise unreachable
+        without typing the URL. %>
+    <%= link_to "Watched repositories", webhook_subscriptions_path,
+                class: "block px-3 py-2 text-sm text-ink-soft hover:bg-sunk hover:text-ink",
+                role: "menuitem", data: { testid: "watched-repositories-link" } %>
+
     <%= link_to current_user.html_url,
                 class: "block px-3 py-2 text-sm text-ink-soft hover:bg-sunk hover:text-ink",
                 role: "menuitem", target: "_blank", rel: "noopener" do %>

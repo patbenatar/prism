@@ -3,7 +3,12 @@
   <head>
     <title><%= content_for(:title) ? "#{content_for(:title)} · Prism" : "Prism" %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f2f3f8">
+    <%# The browser chrome follows the page. Two tags rather than one, because
+        `theme-color` takes no CSS variable and Prism has two canvases — the
+        values are `--color-canvas`'s light-dark() pair, so change them
+        together with the token. %>
+    <meta name="theme-color" content="#f2f3f8" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0e1020" media="(prefers-color-scheme: dark)">
     <meta name="application-name" content="Prism">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>

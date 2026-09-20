@@ -3,6 +3,12 @@
   DESIGN.md §8. D renders these into `threads_<block.id>` on page load; E
   appends/replaces them by `thread_<thread.node_id>` afterward.
 
+  The card sits on the base surface in every state — what a thread's state
+  changes is the 3px band down its left edge and the words in its badges, not
+  a tint across the whole panel. The head row exists only when it has
+  something to carry (a badge, or the resolve toggle), so an ordinary thread
+  opens straight onto its first comment with no strip above it.
+
   Locals:
     thread:         (required) Github::Types::ReviewThread
     pull_request:    accepted for callers that already have one, but nothing
@@ -29,52 +35,63 @@
          "thread--pending"
        end %>
 
+  <% head = capture do %>
+    <% if thread.outdated? %>
+      <span class="pill-modified">Outdated</span>
+    <% end %>
+    <% if thread.left_side? %>
+      <span class="pill-neutral">On removed content</span>
+    <% end %>
+    <% if thread.resolved? %>
+      <span class="pill-resolved" data-testid="thread-resolved-badge">
+        Resolved<% if thread.resolved_by %> by <%= thread.resolved_by.login %><% end %>
+      </span>
+    <% end %>
+
+    <% if thread.viewer_can_resolve %>
+      <%= button_to "Resolve",
+                     repo_pull_thread_resolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
+                     method: :post, class: "btn btn-ghost btn-sm", form_class: "ml-auto",
+                     form: { data: { turbo: true } }, data: { testid: "thread-resolve" } %>
+    <% elsif thread.viewer_can_unresolve %>
+      <%= button_to "Unresolve",
+                     repo_pull_thread_unresolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
+                     method: :post, class: "btn btn-ghost btn-sm", form_class: "ml-auto",
+                     form: { data: { turbo: true } }, data: { testid: "thread-unresolve" } %>
+    <% end %>
+  <% end %>
+
   <% body = capture do %>
     <%# Its own id, separate from the reply box below it, so a new reply can
         be appended here directly (ReviewCommentsController#reply) without
         needing to rebuild the whole thread from a review_threads refetch —
-        performance fix requested 2026-09-19 ("saving a comment feels slow"). %>
-    <div id="thread_comments_<%= thread.node_id %>">
+        performance fix requested 2026-09-19 ("saving a comment feels slow").
+        `.thread-comments` draws the hairline between one comment and the
+        next: each comment renders inside its own wrapper, so the card itself
+        can never see its siblings. %>
+    <div id="thread_comments_<%= thread.node_id %>" class="thread-comments">
       <% thread.comments.each do |comment| %>
         <%= render "review_comments/comment", comment: comment, thread_id: thread.node_id %>
       <% end %>
     </div>
-    <%= render "review_comments/reply_form", thread: thread, pending_review: pending_review %>
+    <div class="thread-foot">
+      <%= render "review_comments/reply_form", thread: thread, pending_review: pending_review %>
+    </div>
   <% end %>
 
   <div id="thread_<%= thread.node_id %>" class="thread <%= modifier %>" data-testid="thread"
        data-thread-id="<%= thread.node_id %>">
-    <div class="flex items-center gap-2 border-b border-line bg-sunk/40 px-4 py-1.5 text-xs text-ink-faint">
-      <% if thread.outdated? %>
-        <span class="pill-modified">Outdated</span>
-      <% end %>
-      <% if thread.left_side? %>
-        <span class="pill-neutral">On removed content</span>
-      <% end %>
-      <% if thread.resolved? %>
-        <span class="pill-resolved" data-testid="thread-resolved-badge">
-          Resolved<% if thread.resolved_by %> by <%= thread.resolved_by.login %><% end %>
-        </span>
-      <% end %>
-
-      <span class="flex-1"></span>
-
-      <% if thread.viewer_can_resolve %>
-        <%= button_to "Resolve",
-                       repo_pull_thread_resolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
-                       method: :post, class: "btn btn-ghost btn-sm", form: { data: { turbo: true } }, data: { testid: "thread-resolve" } %>
-      <% elsif thread.viewer_can_unresolve %>
-        <%= button_to "Unresolve",
-                       repo_pull_thread_unresolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
-                       method: :post, class: "btn btn-ghost btn-sm", form: { data: { turbo: true } }, data: { testid: "thread-unresolve" } %>
-      <% end %>
-    </div>
+    <%# `capture` answers nil, not "", when the block wrote nothing at all —
+        a thread with no badge and no resolve affordance. %>
+    <% if head.to_s.strip.present? %>
+      <div class="thread-head"><%= head %></div>
+    <% end %>
 
     <% if thread.resolved? %>
       <%# Collapsed by default; native <details> so it works with JS off, and
           collapse_controller.js only swaps the Show/Hide word. %>
-      <details data-controller="collapse" data-testid="thread-body">
-        <summary class="cursor-pointer px-4 py-1.5 text-xs text-ink-faint hover:text-ink">
+      <details class="thread-collapse" data-controller="collapse" data-testid="thread-body">
+        <summary class="thread-summary">
           <span data-collapse-target="label">Show</span> the resolved conversation
         </summary>
         <%= body %>

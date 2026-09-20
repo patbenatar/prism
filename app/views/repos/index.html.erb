@@ -27,43 +27,7 @@
   </div>
 
   <% if @repos.any? %>
-    <div class="panel" data-testid="repo-list">
-      <% @repos.each do |repo| %>
-        <%= link_to repo_pulls_path(owner: repo.owner, repo: repo.name),
-                    class: "row-link",
-                    data: { filter_target: "item",
-                            filter_text: "#{repo.full_name} #{repo.description}",
-                            testid: "repo-row" } do %>
-          <div class="flex items-start gap-3">
-            <%= image_tag repo.owner_avatar_url, alt: "",
-                          class: "#{repo.owner_type == 'Organization' ? 'avatar-sq' : 'avatar'} mt-0.5 h-6 w-6",
-                          loading: "lazy" %>
-
-            <div class="min-w-0 flex-1">
-              <p class="flex flex-wrap items-center gap-2">
-                <span class="row-title">
-                  <span class="font-normal text-ink-soft"><%= repo.owner %>/</span><%= repo.name %>
-                </span>
-                <% if repo.private? %>
-                  <span class="pill-neutral">Private</span>
-                <% end %>
-              </p>
-
-              <% if repo.description.present? %>
-                <p class="mt-1 line-clamp-2 text-sm text-ink-soft"><%= repo.description %></p>
-              <% end %>
-
-              <div class="row-meta">
-                <% if repo.open_issues_count.to_i.positive? %>
-                  <span><%= count_of(repo.open_issues_count, "open issue or pull request", "open issues and pull requests") %></span>
-                <% end %>
-                <span><%= relative_time(repo.pushed_at, prefix: "pushed") %></span>
-              </div>
-            </div>
-          </div>
-        <% end %>
-      <% end %>
-    </div>
+    <%= render "repos/lists", pinned: @pinned, unpinned: @unpinned, next_page: @next_page, page: @page %>
 
     <div class="empty-state" data-filter-target="empty" hidden data-testid="filter-empty">
       <p class="empty-title">No repository matches that</p>
@@ -72,13 +36,6 @@
         searched<%= @next_page ? ". Clear the filter and load more to widen it." : "." %>
       </p>
     </div>
-
-    <% if @next_page %>
-      <div class="mt-4 flex justify-center" data-filter-target="hideWhenFiltering">
-        <%= link_to "Load more repositories", repos_path(page: @next_page),
-                    class: "btn-secondary", data: { testid: "load-more" } %>
-      </div>
-    <% end %>
   <% else %>
     <div class="panel">
       <%= render "shared/empty_state",

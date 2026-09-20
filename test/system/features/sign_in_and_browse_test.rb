@@ -111,7 +111,9 @@ class SignInAndBrowseTest < ApplicationSystemTestCase
     mock_github_auth(@user)
     click_on "Continue with GitHub"
 
-    assert_selector "[data-testid=rendered-file]"
-    assert_current_path repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    # The stored return-to is still the old per-file URL, which now redirects
+    # into the Markdown tab — so this also proves an old bookmark survives.
+    assert_selector "[data-testid=rendered-file]", minimum: 1
+    assert_current_path repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER)
   end
 end

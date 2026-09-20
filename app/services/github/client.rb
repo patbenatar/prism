@@ -92,10 +92,20 @@ module Github
       data.map { |pull| build_pull_request(pull) }
     end
 
-    def pull_request(owner, name, number)
-      data = cached(:pull_request, owner, name, number, ttl: TTL[:pull_request]) do
-        attrs(get("#{repo_path(owner, name)}/pulls/#{number}"))
-      end
+    # Pass fresh: true to bypass the 15-second cache. A background job that is
+    # about to rewrite the pull request body has to read the body it is
+    # splicing into; a cached copy from up to fifteen seconds ago would let it
+    # overwrite an edit the author made inside that window.
+    def pull_request(owner, name, number, fresh: false)
+      fetch = -> { attrs(get("#{repo_path(owner, name)}/pulls/#{number}")) }
+
+      data =
+        if fresh
+          fetch.call.tap { |fresh_data| write_cache(:pull_request, owner, name, number, value: fresh_data, ttl: TTL[:pull_request]) }
+        else
+          cached(:pull_request, owner, name, number, ttl: TTL[:pull_request]) { fetch.call }
+        end
+
       build_pull_request(data)
     end
 
@@ -199,7 +209,57 @@ module Github
       end
     end
 
+    # Repository webhooks. Never cached: there are few of them, they change
+    # only when we change them, and a stale list would make us register a
+    # duplicate hook.
+    #
+    # GitHub answers 404 rather than 403 when the token can see the repository
+    # but is not an administrator of it, so a NotFound here means "not an
+    # admin" at least as often as it means "no such repository". Callers must
+    # say both.
+    def hooks(owner, name)
+      get("#{repo_path(owner, name)}/hooks", per_page: PER_PAGE).map { |hook| build_hook(attrs(hook)) }
+    end
+
+    # `secret` is write-only: GitHub stores it and never returns it, which is
+    # why WebhookSubscription keeps the only readable copy.
+    def create_hook(owner, name, url:, secret:, events: [ "pull_request" ])
+      data = post("#{repo_path(owner, name)}/hooks",
+                  name: "web",
+                  active: true,
+                  events: events,
+                  config: hook_config(url, secret))
+      build_hook(attrs(data))
+    end
+
+    # Used when a hook already points at our callback URL. We cannot read its
+    # secret back, so adopting one means replacing its config with a secret we
+    # do know.
+    def update_hook(owner, name, hook_id, url:, secret:, events: [ "pull_request" ])
+      data = patch("#{repo_path(owner, name)}/hooks/#{hook_id}",
+                   active: true,
+                   events: events,
+                   config: hook_config(url, secret))
+      build_hook(attrs(data))
+    end
+
+    def delete_hook(owner, name, hook_id)
+      delete("#{repo_path(owner, name)}/hooks/#{hook_id}")
+      true
+    end
+
     # --------------------------------------------------------------- writes ---
+
+    # Rewrites a pull request's description.
+    #
+    # There is no conditional form of this endpoint — no If-Match, no expected
+    # revision — so the caller is responsible for reading the body it is about
+    # to replace immediately beforehand (see `pull_request(fresh: true)`) and
+    # for changing only the part of it that it owns.
+    def update_pull_request_body(owner, name, number, body:)
+      data = patch("#{repo_path(owner, name)}/pulls/#{number}", body: body)
+      build_pull_request(attrs(data))
+    end
 
     # Posts a comment immediately, as its own one-comment review.
     def create_thread(pull_request_node_id:, anchor:, body:)
@@ -317,6 +377,8 @@ module Github
 
     def post(path, **body) = translate_errors { octokit.post(path, body) }
 
+    def patch(path, **body) = translate_errors { octokit.patch(path, body) }
+
     def delete(path, **body) = translate_errors { octokit.delete(path, body) }
 
     def paginate(path, **params)
@@ -345,6 +407,12 @@ module Github
       Rails.cache.fetch([ "github", user.id, *key_parts ], expires_in: ttl) { yield }
     end
 
+    # Write through after a deliberate cache bypass, so the fresh read still
+    # benefits whatever asks next.
+    def write_cache(*key_parts, value:, ttl:)
+      Rails.cache.write([ "github", user.id, *key_parts ], value, expires_in: ttl)
+    end
+
     # --------------------------------------------------------------- errors ---
 
     # Normalizes Octokit and Faraday failures into the Github::Error hierarchy so
@@ -361,6 +429,16 @@ module Github
       raise NotFound.new(github_message(error), **error_details(error))
     rescue Octokit::UnprocessableEntity => error
       raise unprocessable(error)
+    rescue Octokit::ClientError => error
+      # Octokit only recognizes a rate limit when GitHub answers 403 with the
+      # right words in the body; a bare 429 — which GitHub does send for
+      # secondary limits — arrives as a generic client error. That is the
+      # difference between "wait and try again" and "give up", which matters
+      # most in a background job, where giving up is silent. Everything else
+      # keeps its existing behaviour.
+      raise rate_limited(error) if error.response_status == 429
+
+      raise
     rescue Octokit::ServerError => error
       raise Unavailable.new(github_message(error), **error_details(error))
     rescue Faraday::ConnectionFailed, Faraday::TimeoutError, Faraday::SSLError => error
@@ -484,6 +562,24 @@ module Github
         deletions: data[:deletions],
         patch: data[:patch],
         blob_url: data[:blob_url]
+      )
+    end
+
+    # content_type "json" so the payload arrives as a JSON body rather than a
+    # form-encoded `payload=` parameter; insecure_ssl "0" so GitHub refuses to
+    # deliver to a callback whose certificate doesn't verify.
+    def hook_config(url, secret)
+      { url: url, content_type: "json", secret: secret, insecure_ssl: "0" }
+    end
+
+    def build_hook(data)
+      config = data[:config] || {}
+
+      Types::Hook.new(
+        id: data[:id],
+        url: config[:url],
+        events: Array(data[:events]).map(&:to_s),
+        active: data[:active]
       )
     end
 

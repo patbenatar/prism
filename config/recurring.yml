@@ -1,0 +1,19 @@
+# Solid Queue's scheduler. One task, and it exists so that the only table in
+# Prism that would otherwise grow without bound does not.
+#
+# Development runs it too, so a scheduler that fails to boot shows up here
+# rather than in production.
+default: &default
+  prune_webhook_deliveries:
+    class: Webhooks::PruneDeliveriesJob
+    schedule: every day at 4am
+    description: Drops webhook deliveries older than WebhookDelivery::RETENTION.
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+
+production:
+  <<: *default

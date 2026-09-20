@@ -22,6 +22,10 @@ module ActiveSupport
     # helpers, and those are mixed into the case classes that can use them.
     include GithubStubs
 
+    # Building and signing GitHub webhook deliveries. Harmless everywhere
+    # else; only the webhook tests call any of it.
+    include WebhookHelpers
+
     # OmniAuth's mock is global state. Leaving it set would leak a signed-in
     # identity into the next test.
     teardown { reset_github_auth if respond_to?(:reset_github_auth) }

@@ -1,0 +1,35 @@
+<%#
+  The pull request's tabs, GitHub-shaped: the same strip on both screens, so
+  switching is one click either way.
+
+  The counts are the two that are free. `changed_files` comes off the pull
+  request payload itself and the Markdown count off the file list, and both
+  screens already load both. A comment count is deliberately absent: it lives
+  only in the `reviewThreads` GraphQL query, which the overview does not make
+  and should not start making — 240-350ms and a rate-limit unit, spent on a
+  number, on a screen nobody came to for comments. The Markdown tab shows the
+  count where it is free, in its own pending-review tray.
+
+  Locals: owner, repo, number, active (:overview or :markdown),
+          changed_files, markdown_count
+%>
+<%# The count chip is inline rather than a component class: it exists here
+    and nowhere else, and it is only tokens. %>
+<% chip = "ml-1.5 rounded-full bg-sunk px-1.5 py-0.5 text-[0.7rem] font-normal text-ink-soft tnum" %>
+<nav class="tabs" aria-label="Pull request" data-testid="pr-tabs">
+  <%= link_to repo_pull_path(owner: owner, repo: repo, number: number),
+              class: class_names("tab", "tab-active" => active == :overview),
+              aria: { current: ("page" if active == :overview) },
+              data: { testid: "tab-overview" } do %>
+    Overview
+    <span class="<%= chip %>" title="<%= count_of(changed_files, "changed file") %>"><%= changed_files %></span>
+  <% end %>
+
+  <%= link_to repo_pull_markdown_path(owner: owner, repo: repo, number: number),
+              class: class_names("tab", "tab-active" => active == :markdown),
+              aria: { current: ("page" if active == :markdown) },
+              data: { testid: "tab-markdown" } do %>
+    Markdown
+    <span class="<%= chip %>" title="<%= count_of(markdown_count, "Markdown file") %> Prism can render"><%= markdown_count %></span>
+  <% end %>
+</nav>

@@ -1,0 +1,31 @@
+<%# locals: pinned:, unpinned:, next_page:, page:
+    Rendered on first load by repos/index and replaced whole by
+    PinnedReposController on every pin/unpin, so pinning always reflects a
+    fresh GitHub fetch rather than a client-side reorder of stale data. %>
+<div id="repo-lists">
+  <% if pinned.any? %>
+    <div class="section-head">
+      <h2 class="section-title">Pinned</h2>
+    </div>
+    <div class="panel mb-6" data-testid="pinned-repo-list">
+      <% pinned.each do |repo| %>
+        <%= render "repos/repo_row", repo: repo, pinned: true, page: page %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if unpinned.any? %>
+    <div class="panel" data-testid="repo-list">
+      <% unpinned.each do |repo| %>
+        <%= render "repos/repo_row", repo: repo, pinned: false, page: page %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if next_page %>
+    <div class="mt-4 flex justify-center" data-filter-target="hideWhenFiltering">
+      <%= link_to "Load more repositories", repos_path(page: next_page),
+                  class: "btn-secondary", data: { testid: "load-more" } %>
+    </div>
+  <% end %>
+</div>

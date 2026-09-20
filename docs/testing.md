@@ -124,6 +124,83 @@ covers the sequence directly again now that it's fixed.
 
 ---
 
+## Testing dark mode
+
+Prism's theme is the **device's** preference, not a class the app toggles
+(DESIGN.md §2, "Light and dark"). `color-scheme: light dark` on `:root`
+resolves every `light-dark()` token, so there is nothing in the DOM that says
+which theme is on and nothing for a test to click. The only honest check is to
+make the browser actually prefer dark and read back what the page computed.
+
+### How to emulate `prefers-color-scheme` in headless Chromium
+
+**There is no Capybara or Selenium API for this, and no Chromium flag that
+does it.** What works — and what `test/support/color_scheme_helpers.rb` does —
+is the Chrome DevTools Protocol:
+
+```ruby
+page.driver.browser.execute_cdp(
+  "Emulation.setEmulatedMedia",
+  features: [ { name: "prefers-color-scheme", value: "dark" } ]
+)
+```
+
+Verified against the Chromium in `Dockerfile.dev` (151) driven by
+selenium-webdriver. Notes, each of which cost something to find out:
+
+- **`execute_cdp` exists on the Chrome/Chromium driver only.** Selenium has
+  also called it `send_cmd`; the helper tries both and raises if neither is
+  there, because an emulation call that is silently ignored makes a dark-mode
+  test pass against the light page — the worst possible failure mode here.
+- **The override is sticky.** It stays in force for the whole browser session
+  until it is cleared with `features: []`, and the suite shares one browser
+  (`parallelize(workers: 1)`), so a leaked dark preference shows up later as an
+  unrelated test failing on colours it never asked about. `with_color_scheme`
+  always restores, and `ColorSchemeHelpers` also installs a teardown on
+  `ActionDispatch::SystemTestCase` so no test has to remember.
+- **Emulate, then navigate.** The media query is re-evaluated live, but
+  anything the page decided at load time (a `<meta name="theme-color">` pick,
+  say) is not, so a `visit` inside the block is the reliable order.
+- **Things that do *not* work:** `--force-dark-mode` and
+  `--enable-features=WebContentsForceDark` turn on Chrome's *auto-darkening*
+  of a light page, which is a completely different feature and would have
+  tested Chrome rather than Prism. There is no `--force-prefers-color-scheme`.
+- **A custom property reads back unresolved.** `getPropertyValue("--color-canvas")`
+  returns the literal `light-dark(#f2f3f8,#0e1020)`, because substitution
+  happens where the variable is *used*. To assert a token, paint it onto an
+  element and read the computed style — `DarkModeTest#token_color` does exactly
+  that. The same trick reads which side of `color-scheme` the browser picked,
+  since `color-scheme` itself computes to whatever was declared.
+
+### What to use
+
+```ruby
+with_color_scheme(:dark) do
+  visit repos_path
+  assert_equal "rgb(14, 16, 32)", computed_style("body", "background-color")
+end
+```
+
+`ColorSchemeHelpers` also gives you `page_prefers_dark?`, `computed_style`,
+`root_css_variable` and `reset_color_scheme`. It lives in `test/support`, so
+the glob in `test_helper.rb` loads it and it mixes itself into
+`ActionDispatch::SystemTestCase` — nothing shared had to change.
+
+### The two files
+
+| File | What |
+| --- | --- |
+| `test/system/dark_mode_test.rb` | The mechanism. That the canvas and ink really change, that `color-scheme` follows the device, that `data-theme` wins in both directions, that the six spectrum bands stay six colours and AA on the dark canvas and on their own soft fills, that every token changes, and that no screen paints a pale neutral panel in dark mode. |
+| `test/system/theme_screenshots_test.rb` | The design check. Every screen in both themes at 1440, written to `tmp/screenshots/theme-<screen>-<light\|dark>.png` so the pair sorts together. It asserts each screen rendered, but the point is the PNGs: a contrast table says a colour is legible and tells you nothing about whether the page is pleasant to read at 11pm. |
+
+The "no pale panel" test is the one that catches a hardcoded colour. It walks
+every element on the page, skips images, SVGs and GitHub's own label colours
+(those are content, not theme), skips saturated fills (`bg-brand` is a pale
+violet in dark mode on purpose), and fails on anything left that is a light
+neutral.
+
+---
+
 ## Tier 2 — live GitHub e2e (`test/e2e/`)
 
 Everything above stubs GitHub. This tier is the deliberate exception: it runs

@@ -48,12 +48,14 @@ class BrowsingTest < ApplicationSystemTestCase
     assert_selector "[data-testid=markdown-files]"
     assert_selector "[data-testid=markdown-file]", minimum: 1
 
-    # And those files link into the rendered view rather than out to GitHub.
+    # And those files anchor into the Markdown tab rather than out to GitHub.
     markdown_path = github_fixture(:pull_files)
       .map { |file| file["filename"] }
       .find { |path| path.match?(/\.md\z/i) }
+    target = repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER,
+                                     anchor: Review::Page.file_key(markdown_path))
 
-    assert_selector "a[href='#{repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: markdown_path)}']"
+    assert_selector "a[href='#{target}']"
   end
 
   test "the repository filter narrows the list without a round trip" do

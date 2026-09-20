@@ -10,6 +10,13 @@
      write fails, replacing `composer_<block_id>` with the same form carrying
      the error and the reviewer's own text back.
 
+  It is one self-contained component (`.composer-card`, DESIGN.md §8): the
+  Write/Preview tabs, the textarea and the buttons in a single frame that
+  takes the focus ring as a whole. There is no line-number note — the
+  reviewer chose the block by clicking it, and the source line is plumbing we
+  still send to GitHub but no longer narrate. `anchorNote` survives for the
+  one thing worth saying: why a block cannot be anchored at all.
+
   Locals:
     pull_request:        (required) Github::Types::PullRequest
     path:                (required) String
@@ -39,16 +46,24 @@
 <% body                = local_assigns[:body] %>
 <% error               = local_assigns[:error] %>
 
-<div class="reply-box" data-testid="composer" data-composer-target="form">
+<%# On the error-rerender path nothing runs composer#open, so the explanation
+    for an unanchorable block has to come from the server or it would be lost
+    on the way back. In the cloned-template path this starts empty and hidden,
+    and composer#fillAnchorNote fills and unhides it only when it applies. %>
+<%# `.to_sym` on a param that a stale page or a tampered form could have set to
+    anything, so the reason is checked against the known list rather than
+    handed to NotCommentable, which raises on one it doesn't know. %>
+<% reason = uncommentable_reason.presence&.to_sym %>
+<% anchor_note = Review::NotCommentable.new(reason: reason).explanation if
+                 Review::NotCommentable::REASONS.include?(reason) %>
+
+<div class="composer-card mt-3" data-testid="composer" data-composer-target="form">
   <% if error.present? %>
-    <p class="mb-2 text-xs text-removed" data-testid="composer-error" role="alert"><%= error %></p>
+    <p class="composer-note composer-note--error" data-testid="composer-error" role="alert"><%= error %></p>
   <% end %>
 
-  <p class="mb-2 text-xs text-ink-faint" data-composer-target="anchorNote">
-    <%# Filled by composer#open from the gutter button's data attributes;
-        the reasons below are exposed as data so the JS never has to
-        duplicate Review::NotCommentable#explanation's wording. %>
-  </p>
+  <%= tag.p anchor_note, class: "composer-note composer-note--warn", hidden: anchor_note.blank?,
+             data: { composer_target: "anchorNote" } %>
 
   <div hidden data-composer-target="explanations"
        data-outside-diff="<%= Review::NotCommentable.new(reason: :outside_diff).explanation %>"
@@ -59,36 +74,51 @@
                 method: :post,
                 data: { turbo: true, testid: "composer-form",
                         action: "turbo:submit-start->composer#showProvisional turbo:submit-end->composer#removeProvisional" } do |f| %>
-    <%= f.hidden_field :path, value: path %>
-    <%= f.hidden_field :subject_type, value: subject_type, data: { composer_target: "subjectType" } %>
-    <%= f.hidden_field :line, value: local_assigns[:line], data: { composer_target: "line" } %>
-    <%= f.hidden_field :side, value: local_assigns[:side], data: { composer_target: "side" } %>
-    <%= f.hidden_field :start_line, value: local_assigns[:start_line], data: { composer_target: "startLine" } %>
-    <%= f.hidden_field :start_side, value: local_assigns[:start_side], data: { composer_target: "startSide" } %>
-    <%= f.hidden_field :block_id, value: block_id, data: { composer_target: "blockId" } %>
-    <%= f.hidden_field :uncommentable_reason, value: uncommentable_reason, data: { composer_target: "uncommentableReason" } %>
-    <%= f.hidden_field :block_text, value: local_assigns[:block_text], data: { composer_target: "blockText" } %>
-    <%= f.hidden_field :block_start_line, value: local_assigns[:block_start_line], data: { composer_target: "blockStartLine" } %>
-    <%= f.hidden_field :block_end_line, value: local_assigns[:block_end_line], data: { composer_target: "blockEndLine" } %>
+    <%# Every field below carries `id: nil`. `form_with` would name them
+        `id="path"`, `id="block_id"` and so on, and this form exists many
+        times over on a page: once per file's <template>, plus one clone per
+        open composer, plus the reply and edit forms that reuse these target
+        names. Nothing reads them by id — the controller reads
+        `data-composer-target` — so the ids were only duplicates waiting for
+        someone to trust `getElementById`.
+
+        `path` is a composer target as well as a field: the optimistic card
+        for a file-level comment has to find *this file's* thread container
+        on a page that holds several files. %>
+    <%= f.hidden_field :path, value: path, id: nil, data: { composer_target: "path" } %>
+    <%= f.hidden_field :subject_type, value: subject_type, id: nil, data: { composer_target: "subjectType" } %>
+    <%= f.hidden_field :line, value: local_assigns[:line], id: nil, data: { composer_target: "line" } %>
+    <%= f.hidden_field :side, value: local_assigns[:side], id: nil, data: { composer_target: "side" } %>
+    <%= f.hidden_field :start_line, value: local_assigns[:start_line], id: nil, data: { composer_target: "startLine" } %>
+    <%= f.hidden_field :start_side, value: local_assigns[:start_side], id: nil, data: { composer_target: "startSide" } %>
+    <%= f.hidden_field :block_id, value: block_id, id: nil, data: { composer_target: "blockId" } %>
+    <%= f.hidden_field :uncommentable_reason, value: uncommentable_reason, id: nil, data: { composer_target: "uncommentableReason" } %>
+    <%= f.hidden_field :block_text, value: local_assigns[:block_text], id: nil, data: { composer_target: "blockText" } %>
+    <%= f.hidden_field :block_start_line, value: local_assigns[:block_start_line], id: nil, data: { composer_target: "blockStartLine" } %>
+    <%= f.hidden_field :block_end_line, value: local_assigns[:block_end_line], id: nil, data: { composer_target: "blockEndLine" } %>
     <%# Carries the composer's own knowledge of the pending review through to
         the server, so ReviewCommentsController#create can render the tray
         without a refetch — see its pending_review_for_create. Kept current
         by composer_controller.js's pending-review:changed listener. %>
-    <%= f.hidden_field :pending_review_node_id, value: pending_review&.node_id, data: { composer_target: "pendingReviewNodeId" } %>
-    <%= f.hidden_field :pending_review_id, value: pending_review&.id, data: { composer_target: "pendingReviewId" } %>
-    <%= f.hidden_field :pending_count, value: local_assigns[:pending_count] || 0, data: { composer_target: "pendingCount" } %>
+    <%= f.hidden_field :pending_review_node_id, value: pending_review&.node_id, id: nil, data: { composer_target: "pendingReviewNodeId" } %>
+    <%= f.hidden_field :pending_review_id, value: pending_review&.id, id: nil, data: { composer_target: "pendingReviewId" } %>
+    <%= f.hidden_field :pending_count, value: local_assigns[:pending_count] || 0, id: nil, data: { composer_target: "pendingCount" } %>
 
     <div data-controller="markdown-preview mention"
          data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
          data-mention-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
          data-mention-target="container">
-      <div class="mb-2 flex items-center gap-1">
-        <button type="button" class="tab tab-active" data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab" data-testid="composer-write-tab">Write</button>
-        <button type="button" class="tab" data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab" data-testid="composer-preview-tab">Preview</button>
+      <div class="composer-head" role="tablist" aria-label="Comment editor">
+        <button type="button" role="tab" aria-selected="true" class="composer-tab tab-active"
+                data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab"
+                data-testid="composer-write-tab">Write</button>
+        <button type="button" role="tab" aria-selected="false" class="composer-tab"
+                data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab"
+                data-testid="composer-preview-tab">Preview</button>
       </div>
 
-      <div data-markdown-preview-target="writePane">
-        <%= f.text_area :body, value: body, rows: 4, class: "composer-textarea w-full",
+      <div data-markdown-preview-target="writePane" role="tabpanel">
+        <%= f.text_area :body, value: body, rows: 2, id: nil, class: "composer-textarea w-full",
                          placeholder: "Leave a comment", data: { composer_target: "textarea", mention_target: "textarea", markdown_preview_target: "textarea",
                                                                   action: "input->composer#autosize keydown->mention#keydown keydown->composer#keydown input->mention#input input->markdown-preview#dirty" },
                          aria: { label: "Comment body" } %>
@@ -97,16 +127,17 @@
              hidden role="listbox" aria-label="Mention someone"></div>
       </div>
 
-      <div data-markdown-preview-target="previewPane" hidden class="md-prose md-prose-compact min-h-[3rem] rounded-lg border border-line bg-surface px-3 py-2">
+      <div data-markdown-preview-target="previewPane" hidden role="tabpanel"
+           class="composer-preview md-prose md-prose-compact">
         <p class="text-ink-faint" data-markdown-preview-target="previewBody">Nothing to preview yet.</p>
       </div>
     </div>
 
-    <p class="mt-1 text-[0.8rem] text-ink-faint" data-composer-target="filePreviewNote" hidden>
+    <p class="composer-note" data-composer-target="filePreviewNote" hidden>
       Will be posted as a file-level comment quoting this block; it appears at the top of the file, not here.
     </p>
 
-    <div class="mt-2 flex items-center justify-end gap-2">
+    <div class="composer-foot">
       <button type="button" class="btn btn-ghost btn-sm" data-action="composer#close" data-testid="composer-cancel">Cancel</button>
       <%= f.button "Add single comment", type: :submit, name: :commit, value: "single",
                     class: "btn btn-secondary btn-sm", data: { testid: "composer-submit-single", composer_target: "singleButton" } %>

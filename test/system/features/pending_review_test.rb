@@ -85,18 +85,17 @@ class PendingReviewTest < ApplicationSystemTestCase
     draft2 = draft_thread("2", OTHER_PATH)
     stub_feature_add_thread_dynamic(state, draft2)
 
+    # The switcher is a jump menu now: both files are already on this page, so
+    # this scrolls rather than navigating, and the summary follows the scroll.
     find("[data-testid=file-switcher] summary").click
     within "[data-testid=file-switcher-menu]" do
       click_on "appendix.md", match: :first
     end
-    # `rendered-file` is on both pages, so waiting for it can match the old one
-    # while Turbo is still swapping, and the block found next goes stale. Wait
-    # for something only the new file has.
-    assert_current_path repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: OTHER_PATH)
-    assert_selector "[data-testid=file-switcher] summary", text: "appendix.md"
-    assert_selector "[data-testid=rendered-file]"
+    assert_current_path repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER)
+    assert_selector "[data-testid=file-switcher] summary", text: "appendix.md", wait: 5
 
-    other_block = find("[data-testid=md-block][data-commentable=true]", match: :first)
+    other_block = file_section(OTHER_PATH)
+      .find("[data-testid=md-block][data-commentable=true]", match: :first)
     other_block_id = open_composer_for(other_block)
 
     within "#composer_#{other_block_id}" do
@@ -112,7 +111,8 @@ class PendingReviewTest < ApplicationSystemTestCase
     expect_github_received(:AddThread) { |vars| vars["input"]["pullRequestReviewId"] == REVIEW_NODE_ID }
 
     # Reload: the tray survives, rehydrated purely from PENDING comments.
-    visit repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: OTHER_PATH)
+    visit repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER,
+                                  anchor: Review::Page.file_key(OTHER_PATH))
     assert_selector "[data-testid=pending-count]", text: "2", wait: 5
 
     # Submit as Approve.

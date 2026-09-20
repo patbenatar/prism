@@ -127,6 +127,17 @@ module Github
     # A person who can be @-mentioned in this repository.
     Mentionable = Data.define(:login, :name, :avatar_url)
 
+    # A repository webhook Prism registered. `url` is the callback we asked
+    # GitHub to POST to, and is how we recognize our own hook among any others
+    # the repository already has. The secret is write-only on GitHub's side —
+    # it never comes back in a response — which is why WebhookSubscription
+    # keeps its own copy.
+    Hook = Data.define(:id, :url, :events, :active) do
+      def active? = !!active
+
+      def pull_request? = Array(events).include?("pull_request")
+    end
+
     # `review_threads` returns the pull request's node id alongside the threads,
     # because every write mutation needs that id and this saves a second call.
     ReviewThreadsResult = Data.define(:pull_request_node_id, :threads)

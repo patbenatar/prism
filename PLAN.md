@@ -651,3 +651,102 @@ Recorded here so nobody rediscovers them as bugs (see `docs/review-2026-09-19.md
   real one replaces it when GitHub answers, so perceived latency is zero. The
   provisional card is removed on `turbo:submit-end` whatever the outcome, and a
   failed write re-renders the composer with the text intact.
+
+---
+
+# Round 2 — plan
+
+Feature 1 shipped. Round 2 is five workstreams, run in parallel with the same
+strict file ownership as before.
+
+## W1 — Dark mode (owner: design)
+
+Mirror the device. `@media (prefers-color-scheme: dark)` drives it; the
+existing `:root[data-theme="dark"]` scaffold becomes the manual override hook,
+not the mechanism. Every token gets a reviewed dark value, including the
+spectrum (added / modified / removed / pending / resolved must stay
+distinguishable and AA-legible on the dark canvas, not just inverted), the
+Rouge code theme, and the `.md-prose` reading colours. No screen may hardcode
+a colour: if one does, that is the bug. Ship screenshots of every screen in
+both modes.
+
+## W2 — Longer sessions, and pinned repositories (owner: auth)
+
+**Sessions.** The cookie session currently dies with the browser. Give it a
+real lifetime (30 days, sliding) and make sure a revoked GitHub token still
+signs the user out immediately, so a longer session never means a stale grant.
+
+**Pinned repositories.** The first thing Prism persists that is not a user or
+a token, and it does not break principle 1: a pin is *our* preference data
+about a repo, not a copy of GitHub's data. `pinned_repos` (user, owner, name,
+unique per user, position). Pinned repos sort to the top of `/repos` under a
+small heading, with a pin toggle on every row that works over Turbo.
+
+**Session decision.** Kept the cookie store and gave it `expire_after: 30.days`
+(`config/initializers/session_store.rb`) rather than adding a `sessions`
+table. Rack recomputes the cookie's `expires` as `Time.now + expire_after` on
+every response, and — because `expire_after` is set at all — it does this on
+every request that carries a non-empty session, not only the ones that
+actually write to it (see `Rack::Session::Abstract::Persisted#commit_session`
+/ `#forced_session_update?`). So one setting buys both halves of the ask for
+free: a real 30-day lifetime, and a sliding one, with no per-request "touch
+the session" code to keep in sync with it. A `sessions` table would earn its
+keep the day Prism needs to *revoke* a session Prism itself decided to kill
+(an admin "sign out everywhere", a device list) — nothing in this round needs
+that, and the one revocation case that does exist (GitHub itself killing the
+token) is already handled the same way it always was: `Authentication`
+rescues `Github::Unauthorized` on the very next request, drops the token, and
+calls `sign_out`, regardless of how long the cookie had left to live. Every
+other security property is unchanged: `reset_session` still runs on sign-in,
+`httponly` was never off, `secure` still comes from `config.force_ssl` in
+production, and `same_site` is still Rails' default `:lax`.
+
+## W3 — Pull request tabs, and one screen for all Markdown files (owner: file view)
+
+GitHub-shaped tabs at the top of the pull request: **Overview** (today's
+screen) and **Markdown** (the review screen). The Markdown tab renders *every*
+renderable `.md` file in the pull request on one page, in the file list's
+order, each under a sticky file heading.
+
+The file switcher stays in the top left but becomes a jump menu: it scrolls to
+a file on the same page rather than navigating. Every existing link to a file
+becomes an anchor into this page and scrolls there. The per-file route stays
+alive and redirects to the anchor, so old links keep working. Watch the cost:
+rendering ten files must not mean ten sequential GitHub round trips blocking
+the first paint.
+
+## W4 — Redesign the commenting components (owner: a designer, with a real visual loop)
+
+The composer and the comment card are one design problem: a comment card with
+a reply box *is* the next state of the composer, and they must read as one
+component family.
+
+- **Composer**: make it one self-contained component holding the tabs, the
+  textarea and the buttons. Drop the tinted panel and the rule above it, and
+  drop the line-number note (the reviewer picked the block by clicking it; the
+  line number is our plumbing, not their concern).
+- **Comment card**: remove the grey strip inside the top of the rounded
+  border. Move edit and delete to small icon buttons in the top right, and
+  demote delete so it no longer outweighs edit. Make the reaction control much
+  smaller and take it out of its white bordered box.
+- **Background**: comments should sit on the base surface, not the blue tint.
+- Every button and tab gets `cursor: pointer`.
+
+Use tokens only, so W1's dark mode applies for free.
+
+## W5 — Webhooks: advertise Prism on the pull request (owner: backend)
+
+When a pull request is opened, Prism scans it and, if it contains Markdown we
+can render, appends a link to the pull request description that opens that
+review in Prism. When a later push adds or removes the last renderable
+Markdown file, the link is added or removed to match.
+
+Design constraints:
+
+- Edit the description **idempotently**, inside HTML comment markers, and
+  never touch a byte outside them.
+- Verify `X-Hub-Signature-256` on every delivery, and ignore replays.
+- Webhook handling is a background job; the endpoint acknowledges immediately.
+- Prism acts as the user who subscribed the repo, using their stored token, so
+  the edit is attributable. Say so in the UI when they subscribe.
+- Dev needs a public URL; use a tunnel, and document it.

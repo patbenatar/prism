@@ -159,7 +159,7 @@ export default class extends Controller {
     if (!blockId || !body) return
 
     const container =
-      subjectType === "file" ? document.getElementById("file_threads") : document.getElementById(`threads_${blockId}`)
+      subjectType === "file" ? this.fileThreadsContainer(form) : document.getElementById(`threads_${blockId}`)
     if (!container) return
 
     const card = this.buildProvisionalCard(body)
@@ -191,6 +191,17 @@ export default class extends Controller {
 
   get templateId() {
     return this.element.dataset.composerTemplateId || "composer_template"
+  }
+
+  // Where a file-level comment lands. The review screen holds every Markdown
+  // file in the pull request, so there is one threads container per file,
+  // keyed by path (`data-file-threads-for`) rather than the single
+  // `#file_threads` the seam started with — which is kept as the fallback for
+  // a page that still renders one file on its own.
+  fileThreadsContainer(form) {
+    const path = form.querySelector('[data-composer-target="path"]')?.value
+    const forPath = path && document.querySelector(`[data-file-threads-for="${CSS.escape(path)}"]`)
+    return forPath || document.getElementById("file_threads")
   }
 
   buildProvisionalCard(body) {
@@ -270,23 +281,30 @@ export default class extends Controller {
     }
   }
 
+  // The composer says nothing about line numbers (W4): the reviewer picked
+  // the block by clicking it, and the line is plumbing we still send to
+  // GitHub. The note is left for the one thing worth saying — why a block
+  // cannot be anchored at all — so in the ordinary case it stays empty and
+  // hidden rather than narrating "Lines 3-4".
   fillAnchorNote(fragment, commentable, anchor, button) {
     const note = fragment.querySelector('[data-composer-target="anchorNote"]')
     const filePreviewNote = fragment.querySelector('[data-composer-target="filePreviewNote"]')
 
     if (commentable && anchor) {
-      const range =
-        anchor.start_line && anchor.start_line !== anchor.line
-          ? `Lines ${anchor.start_line}–${anchor.line}`
-          : `Line ${anchor.line}`
-      if (note) note.textContent = range
+      if (note) {
+        note.textContent = ""
+        note.hidden = true
+      }
       if (filePreviewNote) filePreviewNote.hidden = true
     } else {
       const explanations = fragment.querySelector('[data-composer-target="explanations"]')
       const reason = button.dataset.uncommentableReason
       const key = reason ? reason.replace(/_/g, "-") : null
       const explanation = key && explanations ? explanations.dataset[this.camelize(key)] : null
-      if (note) note.textContent = explanation || "This block can't be anchored to a line."
+      if (note) {
+        note.textContent = explanation || "This block can't be anchored to a line."
+        note.hidden = false
+      }
       if (filePreviewNote) filePreviewNote.hidden = false
     }
   }

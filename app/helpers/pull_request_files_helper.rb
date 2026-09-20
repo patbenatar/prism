@@ -20,17 +20,37 @@ module PullRequestFilesHelper
     lookup_context.exists?(name, [], true)
   end
 
+  # --- ids -----------------------------------------------------------------
+
+  # Every block id on the page is prefixed with its file's key.
+  #
+  # Markdown::Renderer numbers blocks from zero *per document*
+  # ("b0-1-3-<sha8>"), which was unique while a page held one file and is not
+  # now that it holds all of them: two files whose first block is the same
+  # heading produce byte-identical ids, and with them duplicate `block_`,
+  # `threads_` and `composer_` containers. The prefix travels with the id
+  # everywhere — the gutter button's `data-block-id`, the composer's hidden
+  # field, and so the Turbo Stream targets the write path builds from it.
+  def block_dom_id(block, file_key) = "#{file_key}-#{block.id}"
+
+  # The container a file's file-level threads render into, and the one
+  # ReviewCommentsController streams a new file-level comment into.
+  def file_threads_dom_id(path) = "file_threads_#{Review::Page.file_key(path)}"
+
   # --- the gutter ----------------------------------------------------------
 
   # The "+" beside a block. Emitted with plain data attributes rather than
   # Stimulus values so the markup does not depend on E's controller having
   # loaded — without JS it is an inert focusable button, with JS it opens the
   # composer.
-  def gutter_button(annotated, modifier: nil, testid: "gutter-add")
-    content_tag(:button, "+", gutter_attributes(annotated, modifier: modifier, testid: testid))
+  def gutter_button(annotated, path:, modifier: nil, testid: "gutter-add")
+    content_tag(:button, "+", gutter_attributes(annotated, path: path, modifier: modifier,
+                                                           testid: testid))
   end
 
-  def gutter_attributes(annotated, modifier: nil, testid: "gutter-add")
+  def gutter_attributes(annotated, path:, modifier: nil, testid: "gutter-add")
+    file_key = Review::Page.file_key(path)
+
     block = annotated.block
     commentable = annotated.commentable?
 
@@ -41,14 +61,51 @@ module PullRequestFilesHelper
       "aria-label" => commentable ? "Comment on this block" : "Comment on this block (file-level)",
       "data-action" => "composer#open",
       "data-testid" => testid,
-      "data-block-id" => block.id,
+      "data-block-id" => block_dom_id(block, file_key),
       "data-block-text" => block.plain_text.to_s.truncate(300),
       "data-start-line" => block.start_line.to_s,
       "data-end-line" => block.end_line.to_s,
       "data-commentable" => commentable.to_s,
       "data-uncommentable-reason" => annotated.uncommentable_reason.to_s,
-      "data-anchor" => annotated.anchor&.to_rest&.to_json
+      "data-anchor" => annotated.anchor&.to_rest&.to_json,
+      # Which file this block is in. Every other page fact the composer needs
+      # sits on its own section's `data-composer-*`; the path is here too so a
+      # handler holding only the button can still tell the files apart.
+      "data-path" => path
     }.compact
+  end
+
+  # --- a file that isn't on the page --------------------------------------
+
+  # Three different reasons a document is missing, three different sentences.
+  # Prism explains its own limits rather than showing a blank space (DESIGN
+  # §1), and the three are not interchangeable: one is about the file, one is
+  # about GitHub, and one is about this page being full.
+  def missing_content_title(page)
+    case page.content_problem
+    when :deferred then "Not rendered on this page"
+    when :unavailable then "GitHub didn't send this file"
+    else "Prism can't render this file"
+    end
+  end
+
+  def missing_content_body(page)
+    case page.content_problem
+    when :deferred
+      "This pull request has more Markdown than Prism renders in one request, " \
+        "and the budget ran out above this file. It is still listed and still " \
+        "reviewable on GitHub."
+    when :unavailable
+      "#{page.content_error_message} Every other file in this pull request is " \
+        "still on the page; this one is a click away on GitHub."
+    when :too_large
+      "It's larger than Prism renders in a request. Reading it here would mean " \
+        "parsing several megabytes of Markdown before the page could start, so " \
+        "the file stays on GitHub."
+    else
+      "GitHub didn't return readable text for it at this commit — it may be " \
+        "binary, or too large to serve. The file itself is still on GitHub."
+    end
   end
 
   # The sentence Prism shows instead of disabling the affordance. DESIGN §7:
@@ -73,7 +130,7 @@ module PullRequestFilesHelper
   # A block's sanitized HTML with the per-child markers woven in: a
   # `data-block-id` and an id on each `<li>`/`<tr>`, its own "+", and the
   # `threads_<id>` / `composer_<id>` containers workstream E targets.
-  def block_body(annotated, pull_request:)
+  def block_body(annotated, pull_request:, path:)
     children = annotated.children.flat_map(&:self_and_descendants)
     return annotated.block.html if children.empty?
 
@@ -100,7 +157,7 @@ module PullRequestFilesHelper
       child = pending[sourcepos_start_line(element)]&.shift
       next if child.nil?
 
-      decorate_child(element, child, pull_request: pull_request)
+      decorate_child(element, child, pull_request: pull_request, path: path)
     end
 
     fragment.to_html.html_safe
@@ -115,53 +172,55 @@ module PullRequestFilesHelper
     fragment.css("table").each { |table| append_class(table, "md-child-table") }
   end
 
-  def decorate_child(element, annotated, pull_request:)
+  def decorate_child(element, annotated, pull_request:, path:)
     block = annotated.block
     document = element.document
+    dom_id = block_dom_id(block, Review::Page.file_key(path))
 
-    element["id"] = "block_#{block.id}"
-    element["data-block-id"] = block.id
+    element["id"] = "block_#{dom_id}"
+    element["data-block-id"] = dom_id
     element["data-change"] = annotated.change.to_s
     element["data-commentable"] = annotated.commentable?.to_s
     append_class(element, "md-child")
 
     if element.name == "tr"
-      decorate_row(element, annotated, document: document, pull_request: pull_request)
+      decorate_row(element, annotated, document: document, pull_request: pull_request, path: path)
     else
-      decorate_item(element, annotated, document: document, pull_request: pull_request)
+      decorate_item(element, annotated, document: document, pull_request: pull_request, path: path)
     end
   end
 
   # A list item holds its own "+" and its threads, so a comment on one bullet
   # renders under that bullet.
-  def decorate_item(element, annotated, document:, pull_request:)
-    element.prepend_child(button_node(document, annotated, modifier: "md-add--child"))
-    element.add_child(containers_node(document, annotated, pull_request: pull_request))
+  def decorate_item(element, annotated, document:, pull_request:, path:)
+    element.prepend_child(button_node(document, annotated, path: path, modifier: "md-add--child"))
+    element.add_child(containers_node(document, annotated, pull_request: pull_request, path: path))
   end
 
   # A table row can't contain a div, so its threads go in an extra row beneath
   # it, spanning every column. The "+" sits in the row's first cell.
-  def decorate_row(element, annotated, document:, pull_request:)
+  def decorate_row(element, annotated, document:, pull_request:, path:)
     first_cell = element.at_xpath("./th|./td")
-    first_cell&.prepend_child(button_node(document, annotated, modifier: "md-add--row"))
+    first_cell&.prepend_child(button_node(document, annotated, path: path, modifier: "md-add--row"))
 
     cells = element.xpath("./th|./td").size
     thread_row = node(document, "tr", "class" => "md-thread-row",
-                                      "data-thread-row-for" => annotated.block.id)
+                                      "data-thread-row-for" => block_dom_id(annotated.block,
+                                                                            Review::Page.file_key(path)))
     cell = node(document, "td", "colspan" => [ cells, 1 ].max.to_s)
-    cell.add_child(containers_node(document, annotated, pull_request: pull_request))
+    cell.add_child(containers_node(document, annotated, pull_request: pull_request, path: path))
     thread_row.add_child(cell)
     element.add_next_sibling(thread_row)
   end
 
   # The two containers the seam promises for every block: existing threads go
   # in the first, E's composer opens into the second.
-  def containers_node(document, annotated, pull_request:)
-    id = annotated.block.id
+  def containers_node(document, annotated, pull_request:, path:)
+    id = block_dom_id(annotated.block, Review::Page.file_key(path))
     wrapper = node(document, "div", "class" => "md-child-slots")
 
     threads = node(document, "div", "id" => "threads_#{id}", "class" => "md-threads")
-    rendered = rendered_threads(annotated, pull_request: pull_request)
+    rendered = rendered_threads(annotated, pull_request: pull_request, block_id: id)
     threads.add_child(Nokogiri::HTML5.fragment(rendered)) if rendered.present?
 
     wrapper.add_child(threads)
@@ -169,17 +228,17 @@ module PullRequestFilesHelper
     wrapper
   end
 
-  def rendered_threads(annotated, pull_request:)
+  def rendered_threads(annotated, pull_request:, block_id:)
     return nil if annotated.threads.blank?
 
     annotated.threads.map do |thread|
       render("pull_request_files/thread", thread: thread, pull_request: pull_request,
-                                          block_id: annotated.block.id)
+                                          block_id: block_id)
     end.join
   end
 
-  def button_node(document, annotated, modifier:)
-    button = node(document, "button", gutter_attributes(annotated, modifier: modifier,
+  def button_node(document, annotated, path:, modifier:)
+    button = node(document, "button", gutter_attributes(annotated, path: path, modifier: modifier,
                                                                    testid: "gutter-add-child"))
     button.content = "+"
     button

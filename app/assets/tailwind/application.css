@@ -42,37 +42,56 @@
   /* ── Surfaces & ink ─────────────────────────────────────────────────────
      Cool paper under north light, with a faint violet cast so the canvas
      belongs to the same family as the brand. White is reserved for raised
-     surfaces, which keeps panels legible without a shadow. */
-  --color-canvas: #f2f3f8;        /* the page */
-  --color-surface: #ffffff;       /* panels, rows, the top bar */
-  --color-sunk: #eceef5;          /* wells: code blocks, inset strips, inputs */
-  --color-ink: #16182b;           /* primary text — 15.8:1 on canvas */
-  --color-ink-soft: #565c78;      /* secondary text, metadata — 5.9:1 */
-  --color-ink-faint: #6e7490;     /* tertiary: timestamps, counts — 4.2:1 */
-  --color-line: #dee1ec;          /* hairline rules and borders */
-  --color-line-strong: #c3c8db;   /* a rule that has to carry weight */
+     surfaces, which keeps panels legible without a shadow.
+
+     Every colour is a `light-dark()` PAIR, resolved from the `color-scheme`
+     on :root — so the device preference drives the theme and nothing has to
+     be restated in a second block. The two values sit on one line on purpose:
+     a dark value is a reviewed decision rather than an inversion, and the
+     pair is the unit that gets reviewed. Measured ratios for both modes are
+     in DESIGN.md §2.
+
+     Dark flips exactly one relationship: `sunk` is LIGHTER than `surface`
+     there. On a dark canvas a well and a hover fill both read as a lift; a
+     hover that darkens reads as pressed or disabled. */
+  --color-canvas:      light-dark(#f2f3f8, #0e1020);  /* the page */
+  --color-surface:     light-dark(#ffffff, #171a2c);  /* panels, rows, the top bar */
+  --color-sunk:        light-dark(#eceef5, #212539);  /* wells, hover fills */
+  --color-ink:         light-dark(#16182b, #e6e9f4);  /* primary text — 15.8 / 15.6 on canvas */
+  --color-ink-soft:    light-dark(#565c78, #a2a8c4);  /* secondary — 5.9 / 8.0 */
+  --color-ink-faint:   light-dark(#6e7490, #858ca9);  /* tertiary — 4.2 / 5.7 */
+  --color-line:        light-dark(#dee1ec, #2b3049);  /* hairline rules and borders */
+  --color-line-strong: light-dark(#c3c8db, #3f4664);  /* a rule that has to carry weight */
 
   /* ── The spectrum ───────────────────────────────────────────────────────
-     Every value is AA on both canvas and its own -soft fill; see DESIGN.md §2
-     for the measured ratios. */
-  --color-brand: #4b33ce;         /* refracted violet — 7.1:1 on canvas */
-  --color-brand-deep: #37209f;    /* hover / pressed */
-  --color-brand-soft: #ece9fd;    /* tinted fill: pills, active rows */
+     Every value is AA on the canvas, on a panel, and on its own -soft fill,
+     in BOTH modes; see DESIGN.md §2 for the two measured tables. The dark
+     values are not the light ones lightened: each band was pushed back apart
+     in hue so added / modified / removed / pending / resolved stay five
+     different colours once they all sit in the pale half of the scale. */
+  --color-brand:         light-dark(#4b33ce, #9a89f7);  /* refracted violet — 7.1 / 6.6 */
+  --color-brand-deep:    light-dark(#37209f, #b7abff);  /* hover / pressed — darker on light, brighter on dark */
+  --color-brand-soft:    light-dark(#ece9fd, #231e4a);  /* tinted fill: pills, active rows */
 
-  --color-pending: #1f66c9;       /* a pending (unsubmitted) review */
-  --color-pending-soft: #e1edfb;
+  --color-pending:       light-dark(#1f66c9, #5cabf2);  /* a pending (unsubmitted) review — 5.0 / 7.7 */
+  --color-pending-soft:  light-dark(#e1edfb, #102a49);
 
-  --color-added: #15795d;         /* added lines, blocks, files */
-  --color-added-soft: #dcf1e9;
+  --color-added:         light-dark(#15795d, #45c79a);  /* added lines, blocks, files — 4.8 / 8.9 */
+  --color-added-soft:    light-dark(#dcf1e9, #0c2c22);
 
-  --color-modified: #8f5e0e;      /* changed blocks, draft state */
-  --color-modified-soft: #faedd6;
+  --color-modified:      light-dark(#8f5e0e, #d7a256);  /* changed blocks, draft state — 5.0 / 8.3 */
+  --color-modified-soft: light-dark(#faedd6, #2f2209);
 
-  --color-removed: #b02d3c;       /* deleted content, closed PRs, destructive */
-  --color-removed-soft: #fbe3e6;
+  --color-removed:       light-dark(#b02d3c, #ec8092);  /* deleted, closed, destructive — 5.8 / 7.2 */
+  --color-removed-soft:  light-dark(#fbe3e6, #34141c);
 
-  --color-resolved: #565c78;      /* a resolved thread goes quiet (= ink-soft) */
-  --color-resolved-soft: #eceef5;
+  --color-resolved:      light-dark(#565c78, #a5aac2);  /* a resolved thread goes quiet (≈ ink-soft) */
+  --color-resolved-soft: light-dark(#eceef5, #212539);
+
+  /* Text on a SOLID brand fill (the primary button, the hovered gutter "+").
+     Brand is deep violet on light and pale violet on dark, so its ink has to
+     flip with it: white on the dark brand would be 1.7:1. 7.9 / 6.1. */
+  --color-on-brand: light-dark(#ffffff, #16182b);
 
   /* ── Measure ────────────────────────────────────────────────────────────
      Prose is capped at a reading measure; tables and code may run wider,
@@ -105,7 +124,7 @@
   /* `whitespace-nowrap`: a button label is a phrase, and "Submit review"
      broken across two lines reads as two controls. It also keeps the fixed
      tray one line tall at phone width, which the page floor depends on. */
-  @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2
          font-display text-sm font-medium transition
          disabled:cursor-not-allowed disabled:opacity-55;
 }
@@ -125,6 +144,71 @@
   @apply flex items-start gap-2.5 rounded-lg border px-4 py-2.5 text-sm;
 }
 
+/* ═══ Light and dark ══════════════════════════════════════════════════════
+   Prism mirrors the device. `color-scheme: light dark` is the whole
+   mechanism: it tells the browser this page renders both ways — so native
+   form controls, the scrollbar and the caret follow along — and it is what
+   resolves every `light-dark()` pair in `@theme` above. There is no second
+   copy of the palette and no media query around the colours.
+
+   `data-theme` is the manual override hook, not the mechanism. Setting it on
+   <html> pins `color-scheme` to one side, which pins every token with it. No
+   UI sets it today; a toggle would only have to write that one attribute.
+
+   The two values below are the only things dark mode needs that are NOT
+   colours, so they are the only things that have to be restated in a media
+   query. Keep the two blocks in step.
+
+   Shadows are not among them. `shadow-ink/5` becomes a faint light halo on
+   the dark canvas, which is invisible rather than wrong: a floating panel
+   there is already raised by being `surface` over `canvas`, and the hairline
+   finishes the job. §4's "almost no shadows" holds in both modes.  */
+:root {
+  color-scheme: light dark;
+
+  /* ── Ink on a fill that cannot follow the theme ─────────────────────────
+     A GitHub label is drawn in the colour its repository chose, and that
+     colour does not change when the page does, so the text on it can't
+     either. `label_pill_style` measures the label's own luminance and names
+     one of these two. Theme-independent by design — never wrap them in
+     light-dark(). They live here rather than in `@theme` because Tailwind
+     drops a theme variable no utility references, and these two are only
+     ever read from Ruby. */
+  --color-on-light: #16182b;      /* ink for a pale fill */
+  --color-on-dark: #ffffff;       /* ink for a deep fill */
+
+  /* How much of a block's -soft fill shows behind changed content. Dark
+     needs a little more of it: a tint on a dark canvas reads as less present
+     in peripheral vision than the same delta on paper, which is exactly
+     where a skim finds it. 45% was picked by rendering 30/38/45/52/62 side
+     by side against the light page, not by formula — above ~52% the dark
+     page stops being a document and starts being a diff. */
+  --tint-strength: 42%;
+
+  /* The spectrum seam under the top bar. On paper it is held back so it
+     reads as a horizon line rather than a rainbow; on a dark canvas the same
+     opacity leaves it muddy. */
+  --seam-alpha: 0.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --tint-strength: 45%;
+    --seam-alpha: 0.9;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --tint-strength: 45%;
+  --seam-alpha: 0.9;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -138,9 +222,40 @@
   }
 
   /* One focus treatment everywhere, so a keyboard user sees the same ring on a
-     button, a row, a gutter "+" and a link. Never strip it. */
+     button, a row, a gutter "+" and a link. Never strip it.
+
+     If a component has to suppress it — a textarea whose own card takes the
+     ring for it — `focus:ring-0` is not enough: the 2px OFFSET is a separate
+     shadow, and with a zero-width ring it still paints a 2px canvas-coloured
+     band. Zero both (`focus:ring-0 focus:ring-offset-0`), and make sure
+     something else in the composition is still showing focus. */
   :focus-visible {
     @apply outline-none ring-2 ring-brand/45 ring-offset-2 ring-offset-canvas;
+  }
+
+  /* A pointer on everything you can click. Preflight resets <button> to the
+     default arrow, so without this the gutter "+", a reaction, "Submit
+     review" and a <summary> used as a menu all read as text while every
+     plain link reads as a control — the one inconsistency a reviewer's hand
+     notices before their eye does. Stated here rather than on each component
+     so a new button never has to remember it. Disabled controls keep the
+     "not-allowed" cursor `.btn` gives them, because the variant wins. */
+  button:not(:disabled),
+  summary,
+  [role="button"],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="reset"]:not(:disabled),
+  select:not(:disabled),
+  /* A label wrapping a checkbox or a radio IS the click target — usually a
+     bigger one than the control — so it has to match the control's cursor or
+     the two halves of one affordance disagree. Only these two: a label around
+     a text field wants the caret, not a pointer. Descendant rather than child,
+     because a form builder is free to wrap the input in a span. */
+  label:has(input[type="checkbox"]:not(:disabled)),
+  label:has(input[type="radio"]:not(:disabled)) {
+    cursor: pointer;
   }
 
   /* Numbers that sit in columns — counts, line numbers, additions/deletions. */
@@ -215,7 +330,7 @@
       var(--color-modified) 72%,
       var(--color-removed) 100%
     );
-    opacity: 0.55;
+    opacity: var(--seam-alpha);
   }
 
   /* ═══ Panels & ledger rows ═══════════════════════════════════════════════
@@ -281,7 +396,7 @@
 
   /* ═══ Buttons ════════════════════════════════════════════════════════════ */
   .btn-primary {
-    @apply btn bg-brand text-white hover:bg-brand-deep active:translate-y-px;
+    @apply btn bg-brand text-on-brand hover:bg-brand-deep active:translate-y-px;
   }
 
   .btn-secondary {
@@ -365,7 +480,7 @@
   }
 
   .tab {
-    @apply -mb-px border-b-2 border-transparent px-3 py-2 font-display text-sm font-medium text-ink-soft
+    @apply -mb-px cursor-pointer border-b-2 border-transparent px-3 py-2 font-display text-sm font-medium text-ink-soft
            transition-colors hover:border-line-strong hover:text-ink;
   }
 
@@ -474,9 +589,10 @@
   .md-block--removed  .md-gutter-bar { @apply bg-removed; }
 
   /* A very faint tint behind changed blocks so a skim finds them without the
-     page turning into a diff. */
-  .md-block--added .md-body    { background: color-mix(in oklab, var(--color-added-soft) 42%, transparent); }
-  .md-block--modified .md-body { background: color-mix(in oklab, var(--color-modified-soft) 42%, transparent); }
+     page turning into a diff. `--tint-strength` is 42% on paper and 45% on
+     the dark canvas — see the token for why, and for how the two were set. */
+  .md-block--added .md-body    { background: color-mix(in oklab, var(--color-added-soft) var(--tint-strength), transparent); }
+  .md-block--modified .md-body { background: color-mix(in oklab, var(--color-modified-soft) var(--tint-strength), transparent); }
 
   .md-body {
     @apply min-w-0 px-3 py-0.5;
@@ -487,7 +603,7 @@
   .md-add {
     @apply relative z-10 flex h-6 w-6 items-center justify-center rounded-md border border-line
            bg-surface font-display text-sm leading-none text-brand opacity-0 transition
-           hover:bg-brand hover:text-white focus-visible:opacity-100;
+           hover:bg-brand hover:text-on-brand focus-visible:opacity-100;
   }
 
   .md-block:hover .md-add,
@@ -525,11 +641,46 @@
      The per-file bar, and the gutter affordances for child blocks — a list
      item or a table row a reviewer can comment on on its own. */
 
-  /* File-level comments live at the top of the file. The section (heading
-     included) is always in the DOM so a comment streamed in by Turbo gets a
-     heading; it simply stays hidden while the list is empty. */
-  .file-threads:not(:has(#file_threads > *)) {
-    display: none;
+  /* NOT here: the file-level comment section's "hide me while I am empty"
+     rule. It was keyed off a page-wide `#file_threads` id, and that id
+     stopped existing when the review screen became one page holding every
+     Markdown file — there is one such section per file now. It lives in
+     `_file_threads.html.erb` as a self-contained arbitrary variant, because
+     exactly one partial uses it and there is no family for it to join. See
+     DESIGN.md §8. */
+
+  /* ── The stack of pinned bars ──────────────────────────────────────────
+     Three deep on the Markdown review page: `.topbar`, then `.filebar` for
+     the page, then a `.filehead` for each file. Each one offsets by the sum
+     of the ones above it, and each is a component class — `.topbar`,
+     `.topbar-seam`, `.filebar`, `.filebar-inner`, `.tray`, `.tray-inner` all
+     are — so the offsets are written once and can't drift apart.
+
+     `--filebar-height` is measured, not chosen: `file_nav_controller` reads
+     the real bar and sets it on <html>, because the bar wraps to two lines at
+     phone width and a constant would put every anchored jump a line off. It
+     is deliberately NOT declared in `@theme`, because a declaration always
+     beats a `var()` fallback and would quietly override the one below.
+
+     The 2.5rem fallback applies only with JavaScript off, and it UNDER-shoots
+     the bar's measured 41px at 1440 on purpose: one pixel short tucks the
+     heading behind the bar, which is `z-20` to its `z-10`, and nobody sees
+     it. Three pixels long leaves a sliver of scrolling document showing
+     through the gap. Under-shooting fails invisibly; over-shooting doesn't. */
+  .filehead {
+    @apply sticky z-10 -mx-4 flex flex-wrap items-center gap-x-3 gap-y-1
+           border-b border-line bg-surface/95 px-4 py-2 backdrop-blur-sm md:-mx-6 md:px-6;
+    top: calc(var(--topbar-height) + var(--filebar-height, 2.5rem));
+  }
+
+  /* One file's whole section. Everything that navigates to a file — the
+     switcher's jump menu, a deep link, the per-file route's redirect — lands
+     on this and has to stop below both pinned bars. `.filehead` is sticky, so
+     it reserves no room of its own: clearing the two bars puts it exactly
+     under them. Same offset as above, which is the reason this rule is here
+     rather than beside it in the markup — written twice, the two drift. */
+  .file-section {
+    scroll-margin-top: calc(var(--topbar-height) + var(--filebar-height, 2.5rem));
   }
 
   /* Sits directly under the app top bar. The offset is the token, so the
@@ -603,23 +754,81 @@
     @apply border-t-0 px-3 py-0;
   }
 
-  /* ═══ Comment cards ══════════════════════════════════════════════════════
-     Used under a block on the review screen and anywhere a GitHub comment is
-     shown. A thread is a stack of these inside one `.thread`. */
+  /* ╔═════════════════════════════════════════════════════════════════════╗
+     ║ W4 — COMMENTING COMPONENTS                                          ║
+     ║ composer · thread · comment card · reactions                        ║
+     ╚═════════════════════════════════════════════════════════════════════╝
+     One family, not two. A thread with its reply box open *is* the composer's
+     next state, so both are built from `.composer-card`: a single frame that
+     holds the Write/Preview tabs, the textarea and the buttons, and takes the
+     focus ring as one control.
+
+     Three rules hold the whole section together:
+
+     1. **Nothing is announced by a fill.** A thread stays on the base surface
+        in every state; what changes is a 3px band down its left edge, in the
+        spectrum colour of that state — the same language the gutter's change
+        bar speaks two columns to the left. The tinted panels this replaced
+        (a blue wash for a draft, grey for resolved) read as a different kind
+        of object sitting on the document rather than a part of it.
+     2. **No rule above a thing, only between things.** The composer no longer
+        hangs under a hairline; its own border is the edge. Inside a thread,
+        the hairlines separate one comment from the next and nothing else.
+     3. **Destructive is quiet until you reach for it.** Edit and delete are
+        equal-weight icon buttons in the card's top right; delete only takes
+        the removed colour on hover and focus. A red button sitting next to a
+        ghost one made deleting look like the expected move.
+
+     Every value here is a semantic token, so dark mode inherits it. No class
+     here declares `cursor`: `@layer base` gives every button, summary and
+     form control the pointer centrally (§5), and a local copy would only be
+     something to forget to update. */
+
+  /* ── The thread ───────────────────────────────────────────────────────── */
   .thread {
     @apply my-3 overflow-hidden rounded-xl border border-line bg-surface;
   }
 
-  .thread--pending  { @apply border-pending/40 bg-pending-soft/30; }
-  .thread--resolved { @apply border-line bg-sunk/60; }
-  .thread--outdated { @apply border-modified/30; }
+  /* Written one class more specific than `.thread` on purpose: an override of
+     equal specificity is not guaranteed to survive the compiler's ordering
+     (see §7's cascade note), and this one has to beat `border-line`. */
+  .thread.thread--pending  { @apply border-l-[3px] border-l-pending; }
+  .thread.thread--outdated { @apply border-l-[3px] border-l-modified; }
+  .thread.thread--resolved { @apply border-l-[3px] border-l-resolved; }
 
-  .comment-card {
-    @apply border-b border-line px-4 py-3 last:border-b-0;
+  /* Badges (Outdated / Resolved / On removed content) and the resolve toggle.
+     Rendered only when it has something to say, so an ordinary thread opens
+     straight onto its first comment with no strip above it. */
+  .thread-head {
+    @apply flex flex-wrap items-center gap-2 px-3 pb-0 pt-2 font-display text-xs text-ink-faint;
   }
 
+  /* The comments themselves. The hairline belongs to the gap between two
+     comments, which is why it lives on the container: each comment renders
+     inside its own `#comment_<node_id>` wrapper, so `:last-child` on the card
+     can never see its siblings. */
+  .thread-comments > * + * {
+    @apply border-t border-line;
+  }
+
+  /* The reply box's room inside the thread. No rule above it — the composer
+     card's own border already separates it from the conversation. */
+  .thread-foot {
+    @apply px-3 pb-3 pt-2;
+  }
+
+  /* ── One comment ──────────────────────────────────────────────────────── */
+  .comment-card {
+    @apply px-3.5 py-3;
+  }
+
+  /* `font-display` here and on the rows below is not decoration: a thread
+     renders inside the block body, which is `.md-prose`, so everything in it
+     inherits the reading serif unless it says otherwise. The document speaks
+     in serif; the tool speaks in grotesk, and a comment's chrome is the tool.
+     Its body keeps the serif, because that part really is prose. */
   .comment-head {
-    @apply flex items-center gap-2 text-xs text-ink-faint;
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1 font-display text-xs text-ink-faint;
   }
 
   .comment-author {
@@ -630,28 +839,185 @@
     @apply mt-2;
   }
 
-  .comment-actions {
-    @apply mt-2 flex flex-wrap items-center gap-1.5;
+  /* Edit / delete / open-on-GitHub, top right of the card. `button_to` wraps
+     its button in a form, which would otherwise sit in this row as a box of
+     its own; `display: contents` lets the button be the flex child. */
+  .comment-tools {
+    @apply ml-auto flex shrink-0 items-center gap-0.5;
   }
 
-  /* A reaction. Filled when the viewer has reacted, so the toggle state is
-     legible without reading the count. */
+  .comment-tools form {
+    display: contents;
+  }
+
+  .comment-icon {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md
+           text-ink-faint transition hover:bg-sunk hover:text-ink;
+  }
+
+  .comment-icon--danger {
+    @apply hover:bg-removed-soft hover:text-removed focus-visible:text-removed;
+  }
+
+  /* ── Reactions ────────────────────────────────────────────────────────── */
+  .comment-actions {
+    @apply mt-2 flex flex-wrap items-center gap-1 font-display;
+  }
+
+  /* A count, not a button-sized thing: reactions are the quietest row on the
+     card. Filled when the viewer has reacted, so the toggle state is legible
+     without reading the number. */
   .reaction-pill {
-    @apply inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5
-           text-xs text-ink-soft transition hover:border-line-strong hover:bg-sunk;
+    @apply inline-flex h-6 items-center gap-1 rounded-full border border-line bg-surface
+           px-2 text-xs leading-none text-ink-soft transition;
+  }
+
+  /* The summary under a comment is a count, not a control; only the picker's
+     own pills are clickable, so only they answer the pointer. */
+  button.reaction-pill {
+    @apply hover:border-line-strong hover:bg-sunk;
   }
 
   .reaction-pill--on {
     @apply border-brand/40 bg-brand-soft text-brand;
   }
 
-  /* The reply / new comment box at the foot of a thread. */
-  .reply-box {
-    @apply border-t border-line bg-sunk/50 px-4 py-3;
+  /* The "add a reaction" trigger. An icon on the surface, not a bordered box:
+     it is an invitation, not a control with standing. */
+  .reaction-add {
+    @apply inline-flex h-6 w-6 shrink-0 list-none items-center justify-center rounded-full
+           text-ink-faint transition hover:bg-sunk hover:text-ink;
+  }
+
+  .reaction-menu {
+    @apply absolute z-20 mt-1 flex w-max flex-wrap gap-1 rounded-lg border border-line bg-surface p-1.5
+           shadow-lg shadow-ink/5;
+  }
+
+  /* ── The composer (and the reply box, and the edit form) ──────────────── */
+  .composer-card {
+    @apply rounded-xl border border-line bg-surface transition;
+  }
+
+  /* The card is the input: the focus ring goes around the whole frame rather
+     than the bare textarea inside it, so tabs, field and buttons read as one
+     control. */
+  .composer-card:focus-within {
+    @apply border-brand ring-2 ring-brand/20;
+  }
+
+  .composer-head {
+    @apply flex items-center gap-1 px-2.5 pt-1.5;
+  }
+
+  /* The reply box at the foot of a thread is the composer at rest. A page can
+     hold a dozen threads, and a full editor under each one — tabs, a four-line
+     field, two buttons — is a wall of chrome around a document nobody has
+     replied to yet. Collapsed it is a single line that says "Reply…"; it
+     unfolds into the same card the moment focus lands anywhere inside it, so
+     the expanded state and the block composer are still the same component.
+     No JavaScript: `:focus-within` is the whole mechanism, which means it
+     also works from the keyboard and cannot get stuck open. */
+  .composer-card--compact:not(:focus-within) .composer-head,
+  .composer-card--compact:not(:focus-within) .composer-foot {
+    @apply hidden;
+  }
+
+  .composer-card--compact:not(:focus-within) .composer-textarea {
+    @apply min-h-0 resize-none py-2;
+  }
+
+  .composer-tab {
+    @apply border-b-2 border-transparent px-1.5 pb-1.5 pt-1 font-display text-xs
+           font-medium text-ink-faint transition-colors hover:text-ink;
+  }
+
+  /* One class more specific than `.tab-active` alone, which is declared
+     earlier in this file: `border-transparent` above would otherwise win the
+     tie and the selected tab would lose its underline (§7's cascade note —
+     the compiler's order is not something to bet on). */
+  .composer-tab.tab-active {
+    @apply border-brand text-ink;
+  }
+
+  /* Anything the composer has to say before you write: the explanation for a
+     block GitHub cannot anchor to, what a file-level comment will do, an
+     error from the last attempt. Never the line number — the reviewer picked
+     the block by clicking it. */
+  .composer-note {
+    @apply px-3 pb-1 font-display text-xs text-ink-faint;
+  }
+
+  .composer-note--warn {
+    @apply text-modified;
+  }
+
+  .composer-note--error {
+    @apply pt-2 font-medium text-removed;
+  }
+
+  .composer-foot {
+    @apply flex flex-wrap items-center justify-end gap-2 px-2.5 pb-2.5 pt-1;
   }
 
   .composer-textarea {
     @apply field-input min-h-[5.5rem] resize-y font-prose text-[0.95rem] leading-relaxed;
+  }
+
+  /* Inside the card the textarea gives up its own frame — the card carries it.
+     Kept as an override rather than a second class so `_submit_panel`'s
+     standalone textarea (no card around it) still gets the bordered field. */
+  .composer-card .composer-textarea {
+    @apply min-h-[4.5rem] rounded-none border-0 bg-transparent px-3 py-1.5
+           focus:border-0 focus:ring-0 focus:ring-offset-0
+           focus-visible:ring-0 focus-visible:ring-offset-0;
+  }
+  /* `ring-offset-0` is not belt and braces: `@layer base`'s `:focus-visible`
+     sets a 2px ring offset for every focusable thing, and an offset with a
+     zero-width ring still paints a 2px canvas-coloured halo — which drew a
+     hairline across the card above and below the textarea. */
+
+  /* The preview pane stands in for the textarea, so it occupies the same
+     space rather than drawing a second box inside the card. */
+  .composer-card .composer-preview {
+    @apply min-h-[4.5rem] px-3 py-1.5;
+  }
+
+  /* ── Not prose ─────────────────────────────────────────────────────────
+     A thread renders inside the block's body, which carries `.md-prose`, so
+     §9's descendant rules (`a`, `img`, `details`, `summary`) reach this
+     markup too and dress a control as though it were part of the document:
+     the reaction picker came out in a bordered box, the "On GitHub" icon
+     came out brand-coloured and underlined, an avatar picked up an image
+     border. These put the chrome back. The comment *body* is deliberately
+     untouched — the Markdown inside it really is prose.
+
+     Two classes each, deliberately: `.md-prose details` is one class and one
+     element, and a selector with more classes wins however the compiler
+     orders them (§7's cascade note). */
+  .thread .avatar {
+    @apply rounded-full border-0;
+  }
+
+  .thread .comment-icon {
+    @apply text-ink-faint no-underline hover:bg-sunk hover:text-ink;
+  }
+
+  .thread .comment-icon.comment-icon--danger {
+    @apply hover:bg-removed-soft hover:text-removed;
+  }
+
+  .thread .reaction-picker,
+  .thread .thread-collapse {
+    @apply rounded-none border-0 bg-transparent p-0;
+  }
+
+  .thread .reaction-add {
+    @apply text-ink-faint hover:bg-sunk hover:text-ink;
+  }
+
+  .thread .thread-summary {
+    @apply px-3.5 py-2 font-display text-xs font-normal text-ink-faint hover:text-ink;
   }
 
   /* ═══ Fixed bottom tray ══════════════════════════════════════════════════
@@ -902,11 +1268,24 @@
   .md-prose-compact > * { max-width: 100%; }
 }
 
-/* ═══ Code highlighting (Rouge, light) ════════════════════════════════════
+/* ═══ Code highlighting (Rouge) ═══════════════════════════════════════════
    Rouge tags fenced code with short class names. Hues are pulled from the
    spectrum so a code block belongs to the same palette as everything else;
    comments recede, strings and numbers take the warm end, keywords the violet
-   end. Workstream B applies Rouge to `pre[lang]`. */
+   end. Workstream B applies Rouge to `pre[lang]`.
+
+   There is one theme, not two. Every rule here names a semantic token, so the
+   same six selectors are a light theme on paper and a dark theme on the dark
+   canvas — the tokens have already flipped by the time they get here. The
+   well behind the code (`bg-sunk`) flips with them.
+
+   `sunk` is the one surface the canvas table in DESIGN.md §2 does not cover,
+   so it is measured here. On the light sunk (#eceef5): comment 4.0, keyword
+   6.8, string 4.6, number 4.8, name 4.8, tag 5.5. On the dark sunk
+   (#212539): comment 4.6, keyword 5.3, string 7.1, number 6.6, name 6.2,
+   tag 5.8. All AA except the light comment at 4.0 — a deliberate recession
+   that predates dark mode and reads as a comment rather than as code. If you
+   add a token here, measure it on `sunk` in both modes, not on the canvas. */
 @layer components {
   .md-prose .highlight .c,
   .md-prose .highlight .cm,
@@ -954,37 +1333,6 @@
   .md-prose .highlight .err { @apply text-removed; }
   .md-prose .highlight .gd  { @apply bg-removed-soft text-removed; }
   .md-prose .highlight .gi  { @apply bg-added-soft text-added; }
-}
-
-/* ═══ Dark theme (scaffolded, not shipped) ════════════════════════════════
-   Every token above is semantic, so a dark theme is a matter of redefining
-   them — no component class changes. This block is opt-in: nothing sets
-   `data-theme="dark"` yet and it has not been reviewed on screen. When dark
-   mode is taken on, switch the selector to also cover
-   `@media (prefers-color-scheme: dark)` and re-measure contrast (DESIGN.md §2).  */
-:root[data-theme="dark"] {
-  --color-canvas: #0f1120;
-  --color-surface: #171a2c;
-  --color-sunk: #1f2338;
-  --color-ink: #e8eaf4;
-  --color-ink-soft: #a6acc6;
-  --color-ink-faint: #848bab;
-  --color-line: #2b3049;
-  --color-line-strong: #3d4360;
-
-  --color-brand: #a394ff;
-  --color-brand-deep: #bdb2ff;
-  --color-brand-soft: #241f4d;
-  --color-pending: #78b1f5;
-  --color-pending-soft: #142740;
-  --color-added: #5fd3a6;
-  --color-added-soft: #0f2e25;
-  --color-modified: #e0ac5c;
-  --color-modified-soft: #33260f;
-  --color-removed: #f0899a;
-  --color-removed-soft: #37151d;
-  --color-resolved: #a6acc6;
-  --color-resolved-soft: #1f2338;
 }
 
 @media (prefers-reduced-motion: reduce) {

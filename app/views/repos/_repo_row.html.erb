@@ -1,0 +1,44 @@
+<%# locals: repo:, pinned:, page: %>
+<%# The pin toggle has to be a sibling of the link, not nested inside it: a
+    <form> inside an <a> is invalid content, and worse, a click on the button
+    would bubble up and also trigger the row's navigation. That means this
+    wrapper, not .row-link, is the thing filtering hides and the thing that
+    is actually "the row" — so it carries the hairline (`last:border-b-0`)
+    and the testid; `!border-b-0` cancels .row-link's own hairline so the
+    border isn't drawn twice. %>
+<div class="relative border-b border-line last:border-b-0"
+     data-filter-target="item" data-filter-text="<%= "#{repo.full_name} #{repo.description}" %>"
+     data-testid="repo-row">
+  <%= link_to repo_pulls_path(owner: repo.owner, repo: repo.name),
+              class: "row-link !border-b-0 pr-12" do %>
+    <div class="flex items-start gap-3">
+      <%= image_tag repo.owner_avatar_url, alt: "",
+                    class: "#{repo.owner_type == 'Organization' ? 'avatar-sq' : 'avatar'} mt-0.5 h-6 w-6",
+                    loading: "lazy" %>
+
+      <div class="min-w-0 flex-1">
+        <p class="flex flex-wrap items-center gap-2">
+          <span class="row-title">
+            <span class="font-normal text-ink-soft"><%= repo.owner %>/</span><%= repo.name %>
+          </span>
+          <% if repo.private? %>
+            <span class="pill-neutral">Private</span>
+          <% end %>
+        </p>
+
+        <% if repo.description.present? %>
+          <p class="mt-1 line-clamp-2 text-sm text-ink-soft"><%= repo.description %></p>
+        <% end %>
+
+        <div class="row-meta">
+          <% if repo.open_issues_count.to_i.positive? %>
+            <span><%= count_of(repo.open_issues_count, "open issue or pull request", "open issues and pull requests") %></span>
+          <% end %>
+          <span><%= relative_time(repo.pushed_at, prefix: "pushed") %></span>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <%= render "repos/pin_toggle", repo: repo, pinned: pinned, page: page %>
+</div>

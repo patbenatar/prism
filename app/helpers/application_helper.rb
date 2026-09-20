@@ -81,14 +81,22 @@ module ApplicationHelper
   # Inline style for a GitHub label pill. GitHub stores the label color as a
   # bare hex ("d73a4a") and leaves the text color to the client, so we compute
   # one that passes contrast against it: white on dark labels, near-black on
-  # light ones. The border is the same hue darkened, which keeps a pale yellow
-  # label from dissolving into a white panel.
+  # light ones. Those two are tokens (`--color-on-light` / `--color-on-dark`)
+  # but they are deliberately NOT theme-aware — the fill underneath them is
+  # the repository's own colour and does not change when the page does.
+  #
+  # The border is the label's hue pulled 18% toward the page's ink, which is
+  # the only part that has to know about the theme: on paper that darkens a
+  # pale yellow label so it doesn't dissolve into a white panel, and on the
+  # dark canvas the same expression lightens a near-black label so it doesn't
+  # dissolve into the panel there. Ruby can't know which mode is on screen, so
+  # the mixing is left to CSS.
   def label_pill_style(hex)
     rgb = parse_hex(hex) || [ 0x8b, 0x94, 0x9e ]
-    text = relative_luminance(rgb) > 0.42 ? "#16182b" : "#ffffff"
-    border = rgb.map { |c| (c * 0.82).round }
+    text = relative_luminance(rgb) > 0.42 ? "--color-on-light" : "--color-on-dark"
+    border = "color-mix(in oklab, #{rgb_css(rgb)} 82%, var(--color-ink))"
 
-    "background-color: #{rgb_css(rgb)}; color: #{text}; border-color: #{rgb_css(border)};"
+    "background-color: #{rgb_css(rgb)}; color: var(#{text}); border-color: #{border};"
   end
 
   # "+128 −7" with the two numbers colored by what they mean. Used on file rows

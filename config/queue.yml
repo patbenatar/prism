@@ -1,0 +1,27 @@
+# Solid Queue. The tables live in the primary database (see
+# db/migrate/*_install_solid_queue_tables.rb and config/database.yml), so
+# there is no `connects_to` here and no separate queue database.
+#
+# One queue and one worker process is the right size: the only jobs Prism runs
+# are webhook deliveries, which are a handful a day per repository and each
+# costs two or three GitHub calls. Three threads is plenty of parallelism, and
+# keeping it small matters — GitHub's advice for write bursts is to make
+# requests serially, not concurrently (docs/research/github-api.md §3.8).
+default: &default
+  dispatchers:
+    - polling_interval: 1
+      batch_size: 500
+  workers:
+    - queues: "*"
+      threads: 3
+      processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
+      polling_interval: 1
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+
+production:
+  <<: *default

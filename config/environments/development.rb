@@ -28,6 +28,28 @@ Rails.application.configure do
   # Change to :null_store to avoid any caching.
   config.cache_store = :memory_store
 
+  # Webhook deliveries run as background jobs, and the whole point is that the
+  # endpoint answers GitHub before the work starts. :async would drop queued
+  # jobs on restart and hide that the production path is durable, so
+  # development runs the same Solid Queue as production — in the `jobs`
+  # compose service (see docker-compose.yml and docs/webhooks.md).
+  config.active_job.queue_adapter = :solid_queue
+
+  # A tunnel gives the dev server a public hostname, which Rails' host
+  # authorization would otherwise reject with "Blocked hosts". Nothing is
+  # allowed that PRISM_PUBLIC_URL doesn't name.
+  #
+  # Webhooks::PublicUrl parses the same variable everywhere else, but an
+  # environment file runs before autoloading, so this one spot has to do it by
+  # hand.
+  tunnel_host =
+    begin
+      ENV["PRISM_PUBLIC_URL"].presence && URI.parse(ENV["PRISM_PUBLIC_URL"]).host
+    rescue URI::InvalidURIError
+      nil
+    end
+  config.hosts << tunnel_host if tunnel_host.present?
+
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
 

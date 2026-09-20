@@ -3,7 +3,8 @@
   explains its own limits rather than hiding them, so this is a sentence above
   the document, not a disabled button below it.
 
-  Locals: kind (:missing_content, :too_large, :no_patch, :file_removed), page
+  Locals: kind (:missing_content, :unavailable, :too_large, :deferred,
+          :no_patch, :file_removed), page (Review::Page)
 %>
 <div class="banner mb-4" role="status" data-testid="uncommentable-notice"
      data-kind="<%= kind %>">
@@ -24,6 +25,14 @@
     <% when :missing_content %>
       GitHub didn't return readable text for this file at
       <span class="mono-tag"><%= page.pull_request.head_sha.to_s.first(7) %></span>.
+    <% when :unavailable %>
+      <%= page.content_error_message %>
+      The rest of the pull request is unaffected — only this file is missing
+      from the page.
+    <% when :deferred %>
+      This pull request has more Markdown than Prism renders in one request.
+      The budget ran out before this file, so it is listed but not rendered —
+      every file above it is.
     <% when :too_large %>
       This file is over
       <%= number_to_human_size(Review::Page::MAX_SOURCE_BYTES) %>, which is more

@@ -1,0 +1,27 @@
+# The repository nearly every webhook test uses. Matches the acme/docs-site
+# pull request in test/fixtures/github/.
+docs_site:
+  user: prism_dev
+  owner: acme
+  name: docs-site
+  github_repo_id: 900001
+  hook_id: 555
+  secret: whsec_docs_site_0123456789abcdef
+  status: active
+  # Matches the PRISM_PUBLIC_URL the webhook tests set, so this row is
+  # "fresh"; a test makes it stale by changing one or the other.
+  callback_url: https://prism.test/webhooks/github
+
+# Subscribed, then GitHub stopped accepting the token. The job must not act
+# and must not retry.
+broken:
+  user: octocat
+  owner: octo
+  name: hello-world
+  github_repo_id: 900002
+  hook_id: 556
+  secret: whsec_hello_world_0123456789abcd
+  status: broken
+  callback_url: https://prism.test/webhooks/github
+  broken_reason: "GitHub rejected the token"
+  broken_at: <%= 1.day.ago.to_fs(:db) %>

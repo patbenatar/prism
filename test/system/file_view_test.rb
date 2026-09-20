@@ -202,8 +202,8 @@ class FileViewTest < ApplicationSystemTestCase
     trailing.find("summary").click
     assert_text "A closing note this pull request drops"
 
-    # It is the end of the document, below every block.
-    last_block = all("[data-testid=md-block]").last
+    # It is the end of this document, below every block *of this file*.
+    last_block = section.all("[data-testid=md-block]").last
     assert_operator trailing.rect.y, :>, last_block.rect.y,
                     "the trailing strip renders after the last block"
     assert_equal 0, trailing.all(".md-add", visible: :all).size,
@@ -223,6 +223,24 @@ class FileViewTest < ApplicationSystemTestCase
 
     find("body").send_keys("p")
     assert_selector "[data-testid=changed-count]", text: /^1 of \d+ changed blocks$/
+  end
+
+  test "n walks straight out of one file and into the next" do
+    open_file
+
+    # The page holds every Markdown file in the pull request, so the walk is
+    # through the *review*, not through a file. Press "n" until it runs out of
+    # changes in docs/deploy.md and it lands in docs/changelog.md rather than
+    # wrapping back to the top of the file it started in.
+    total = find("[data-testid=changed-count]").text[/(\d+) changed/, 1].to_i
+    here = section.all("[data-testid=md-block][data-change]:not([data-change=unchanged])").size
+    assert_operator total, :>, here, "the count is the whole pull request's, not this file's"
+
+    total.times { find("body").send_keys("n") }
+    assert_selector "[data-testid=changed-count]", text: /^#{total} of #{total} changed blocks$/
+
+    landed = page.evaluate_script("document.activeElement.closest('[data-file-path]').dataset.filePath")
+    assert_equal "docs/changelog.md", landed, "the last change in the pull request is in the second file"
   end
 
   test "the file switcher moves between the pull request's Markdown files" do
@@ -264,24 +282,28 @@ class FileViewTest < ApplicationSystemTestCase
     assert_operator horizontal_overflow, :<=, 1
   end
 
-  test "hovering another file in the switcher does not render it behind your back" do
+  test "the switcher jumps on the page instead of navigating, so it costs nothing" do
     open_file
 
     find("[data-testid=file-switcher] summary").click
     assert_selector "[data-testid=file-switcher-item]", minimum: 2
 
-    # Turbo prefetches a hovered link after ~100ms unless it is turned off, and
-    # the layout turns it off for the whole app. This asserts the effect rather
-    # than the meta tag: rendering a file view costs three GitHub calls and two
-    # Markdown parses, so reading the switcher must not spend a rate limit.
-    find("[data-testid=file-switcher-item]", text: "changelog.md", match: :first).hover
-    assert_selector "[data-testid=file-switcher-menu]"
-    sleep 0.5
+    # Every file is already rendered, so a row is a fragment link and hovering
+    # or clicking one spends no GitHub call at all — not the three a file view
+    # used to cost. `turbo: false` on the row is what keeps that true: a Turbo
+    # visit to "#anchor" would re-render the body from the snapshot cache and
+    # throw away whatever the page was holding.
+    before = github_request_count
 
-    assert_github_not_requested(
-      :get, "/repos/#{OWNER}/#{REPO}/contents/docs/changelog.md",
-      query: hash_including({ "ref" => HEAD_SHA })
-    )
+    row = find("[data-testid=file-switcher-item]", text: "changelog.md", match: :first)
+    assert_equal "false", row["data-turbo"]
+    row.hover
+    sleep 0.5
+    row.click
+
+    assert_selector "[data-testid=file-switcher] summary", text: "changelog.md", wait: 5
+    assert_equal before, github_request_count,
+                 "jumping to another file must not cost a GitHub request"
   end
 
   test "on a phone the block keeps its + and the per-child ones step aside" do
@@ -311,10 +333,26 @@ class FileViewTest < ApplicationSystemTestCase
     page.driver.browser.manage.window.resize_to(width, height)
   end
 
+  # The Markdown tab holds every file in the pull request, so this returns
+  # docs/deploy.md's own section: everything this test class asserts is about
+  # that one document, and a page-wide `all(...)` would be counting the second
+  # file too.
   def open_file
     sign_in_as(@user)
-    visit repo_pull_file_path(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
-    assert_selector "[data-testid=rendered-file]"
+    visit repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER,
+                                  anchor: Review::Page.file_key(PATH))
+    assert_selector "[data-testid=rendered-file]", minimum: 1
+    section
+  end
+
+  def section = find("##{Review::Page.file_key(PATH)}")
+
+  # Selenium's own WebDriver traffic goes through WebMock's registry too, so
+  # count only what actually went to GitHub.
+  def github_request_count
+    WebMock::RequestRegistry.instance.requested_signatures.hash
+                            .select { |signature, _| signature.uri.host == "api.github.com" }
+                            .values.sum
   end
 
   def opacity(node)
