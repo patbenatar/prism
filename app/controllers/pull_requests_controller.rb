@@ -16,6 +16,13 @@ class PullRequestsController < ApplicationController
     @repo = github.repo(@owner, @name)
     @pull_requests = github.pull_requests(@owner, @name, state: @state, page: @page)
     @next_page = (@page + 1 if @pull_requests.size >= Github::Client::PER_PAGE)
+
+    # Whether Prism is watching this repository *for this person*. A row, so
+    # it costs a local query and no GitHub call; scoped to the signed-in user
+    # for the same reason /subscriptions is — someone else's subscription is
+    # not this person's to see. They still meet it: subscribing over the top
+    # of one fails with the registrar's "already subscribed".
+    @subscription = current_user.webhook_subscriptions.named(@repo.owner, @repo.name).first
   end
 
   def show

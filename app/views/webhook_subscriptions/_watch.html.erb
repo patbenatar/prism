@@ -1,0 +1,62 @@
+<%# locals: owner:, name:, subscription:, error: (optional)
+
+    Watching a repository from the repository's own page — the same thing the
+    form on /subscriptions does, from where someone actually stands when they
+    decide they want it.
+
+    It posts to the same two actions, with `from: "repo"`, which is what tells
+    WebhookSubscriptionsController to send this control back in place instead
+    of redirecting to /subscriptions. Every failure the registrar can raise
+    lands in `error:` and is rendered right here, next to the button that
+    caused it.
+
+    The line under the button is the consent: Prism is about to write into
+    pull request descriptions on this repository under the signed-in person's
+    name, and this screen has no room for the full notice /subscriptions
+    carries, so it says the short version *before* the click, not after. %>
+<% error = local_assigns[:error] %>
+<div id="repo-watch" class="flex min-w-0 basis-full flex-col items-end gap-1.5 text-right sm:flex-1 sm:basis-0"
+     data-testid="repo-watch">
+  <div class="flex flex-wrap items-center justify-end gap-2">
+    <% if subscription %>
+      <%= render "webhook_subscriptions/status_pill", subscription: subscription %>
+
+      <% if subscription.callback_stale? %>
+        <%= button_to "Re-register", webhook_subscription_path(subscription),
+                      method: :patch,
+                      params: { from: "repo" },
+                      class: "btn-secondary",
+                      data: { testid: "repo-re-register-button" } %>
+      <% end %>
+
+      <%= button_to "Stop watching", webhook_subscription_path(subscription),
+                    method: :delete,
+                    params: { from: "repo" },
+                    class: "btn-danger",
+                    form: { data: { turbo_confirm: "Stop watching #{subscription.full_name}? Prism will delete the webhook on GitHub. Links already added to pull requests stay where they are." } },
+                    data: { testid: "repo-unwatch-button" } %>
+    <% else %>
+      <%= button_to "Watch repository", webhook_subscriptions_path,
+                    params: { full_name: "#{owner}/#{name}", from: "repo" },
+                    class: "btn-primary",
+                    data: { testid: "repo-watch-button" } %>
+    <% end %>
+  </div>
+
+  <% if error.present? %>
+    <p role="alert" class="text-sm text-removed" data-testid="repo-watch-error"><%= error %></p>
+  <% elsif subscription %>
+    <%= render "webhook_subscriptions/status_reason", subscription: subscription %>
+    <% unless subscription.broken? || subscription.callback_stale? %>
+      <p class="text-xs text-ink-faint">
+        Prism adds a link to its rendered review on every pull request that changes
+        Markdown, as @<%= subscription.user.login %>.
+      </p>
+    <% end %>
+  <% else %>
+    <p class="text-xs text-ink-faint">
+      Prism will add a link to its rendered review on every pull request that changes
+      Markdown, as @<%= current_user.login %>. Needs admin access on GitHub.
+    </p>
+  <% end %>
+</div>
