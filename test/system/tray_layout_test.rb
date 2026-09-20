@@ -102,9 +102,11 @@ class TrayLayoutTest < ApplicationSystemTestCase
     end
   end
 
-  # `.md-prose > *` caps prose at the reading measure. A thread is not prose,
-  # and a comment box capped at 72ch inside an 848px column looks broken.
-  test "a thread fills the body column rather than the reading measure" do
+  # Everything in the body column is one width — prose, tables, threads and
+  # the composer alike. Prose used to stop at a 72ch reading measure while the
+  # rest ran full width, so a document rendered at two widths and a paragraph
+  # visibly widened the moment a composer opened under it.
+  test "prose and threads are both the full width of the body column" do
     open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
 
     assert_selector ".thread"
@@ -137,11 +139,13 @@ class TrayLayoutTest < ApplicationSystemTestCase
                     "the thread is #{measured['thread']}px inside a #{available}px column — " \
                     "it is still capped at the reading measure"
 
-    # And the prose beside it is still capped, or the fix went too far.
+    # And the prose beside it is the same width, not a narrower measure — this
+    # is the assertion that fails if a reading cap is ever reintroduced.
     assert measured["para"].present?,
            "no paragraph in the block body to compare against: #{measured['bodyChildren']}"
-    assert_operator measured["para"], :<, available,
-                    "prose should still stop at the reading measure"
+    assert_in_delta available, measured["para"], 1,
+                    "prose is #{measured['para']}px inside a #{available}px column — " \
+                    "something is capping it again"
   end
 
   private

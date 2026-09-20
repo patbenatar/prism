@@ -96,7 +96,6 @@
   /* ── Measure ────────────────────────────────────────────────────────────
      Prose is capped at a reading measure; tables and code may run wider,
      because wrapping a table is worse than a long line. */
-  --measure-prose: 72ch;
   --measure-read: 60rem;          /* the reading column incl. its gutter */
   /* The page floor that keeps the fixed pending-review tray off the end of
      the document. The tray's height is content rather than a constant, so
@@ -1066,31 +1065,13 @@
     font-variant-numeric: oldstyle-nums;
   }
 
-  .md-prose > * {
-    max-width: var(--measure-prose);
-  }
-
-  .md-prose > pre,
-  .md-prose > table,
-  .md-prose > .table-scroll,
-  .md-prose > img,
-  .md-prose > details,
-  .md-prose > .markdown-alert {
-    max-width: 100%;
-  }
-
-  /* Threads and the composer are ours, not prose. They sit inside `.md-body`
-     so they line up with the block they belong to, but the reading measure is
-     for reading — a comment box capped at 72ch looks half-finished next to a
-     full-width block. A list holding an open composer gets the same room. */
-  .md-prose > .md-threads,
-  .md-prose > .md-composer,
-  .md-prose > ul:has(.md-composer:not(:empty)),
-  .md-prose > ol:has(.md-composer:not(:empty)),
-  .md-prose > ul:has(.md-threads > *),
-  .md-prose > ol:has(.md-threads > *) {
-    max-width: 100%;
-  }
+  /* No reading measure here, deliberately. Prose was capped at 72ch while
+     tables, code, alerts and our own comment components ran the full column,
+     so a document rendered at two different widths and a paragraph visibly
+     widened the moment you opened a composer under it. One width for
+     everything is worth more than an ideal line length: the column itself
+     (`.reading-shell`, `--measure-read`) is the only cap, and narrowing that
+     is the way to shorten lines if we ever want to. */
 
   .md-prose > * + * {
     @apply mt-4;
