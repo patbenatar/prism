@@ -323,9 +323,13 @@ behind the bar — `z-20` to the heading's `z-10` — and nobody sees it. Three
 pixels long leaves a sliver of scrolling document showing through the gap.
 Under-shooting fails invisibly; over-shooting doesn't.
 
-Prose inside `.md-prose` is capped at `--measure-prose` (72ch). Tables, code
-blocks, images, `<details>` and alerts are allowed the full column width,
-because wrapping a table is worse than a long line.
+Everything inside `.md-prose` runs the full column width. There is no reading
+measure, deliberately: prose used to be capped at 72ch while tables, code,
+alerts and our own comment components ran full width, so one document rendered
+at two widths and a paragraph visibly widened the moment a composer opened
+under it. One width everywhere is worth more than an ideal line length. The
+column itself (`.reading-shell`, `--measure-read`) is the only cap, so
+narrowing *that* is how to shorten lines if we ever want to.
 
 ### Rhythm
 
