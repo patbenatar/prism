@@ -28,6 +28,7 @@ docker compose logs app -f    # follow app logs
 | `css` | (none) | `bin/rails tailwindcss:watch` — rebuilds `app/assets/builds/tailwind.css` |
 | `jobs` | (none) | `bin/jobs` — Solid Queue worker. Webhook deliveries run here. |
 | `tunnel` | http://localhost:**4040** | ngrok, **off by default**: `docker compose --profile tunnel up -d tunnel` gives the dev app a public HTTPS URL so GitHub can deliver webhooks to it, plus a request inspector on 4040. Needs a free `NGROK_AUTHTOKEN`. See `docs/webhooks.md`. |
+| `bin/tunnel` | (host, not compose) | No-account alternative to the above: a localhost.run tunnel over SSH. Prints a public URL; random every run. See `docs/webhooks.md`. |
 
 There is no mailpit/email service — Prism sends no email. Sign-in is GitHub
 OAuth only.
