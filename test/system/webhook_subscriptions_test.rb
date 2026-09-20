@@ -26,8 +26,8 @@ class WebhookSubscriptionsSystemTest < ApplicationSystemTestCase
     # The consent has to be on the screen before the button, not after it:
     # Prism is about to write into someone's pull request under this name.
     within "[data-testid=acting-as-notice]" do
-      assert_text "Prism acts as @prism-dev"
-      assert_text "shows up under your account"
+      assert_text "edits its pull requests under your name"
+      assert_text "coming from your account, @prism-dev"
     end
 
     select "prism-dev/scratchpad", from: "Repository"

@@ -494,6 +494,9 @@ Review-screen classes are in §7 and §8.
 | `_rate_limit_banner` | Locals: `retry_in:` (seconds, from `Github::RateLimited#retry_in`) and `reset_at:` as a fallback. Use above content that rendered anyway. |
 | `_comment_card` | One review comment: avatar, login, time, pending/outdated pills, prose body, reaction pills. Locals: `comment:` (required), `actions:` (safe HTML for the action row). **This is the reference for all comment styling** — extend it with `actions:`, don't restyle it. |
 | `not_found` / `forbidden` / `rate_limited` | Full-page error screens rendered by `GithubErrorHandling`. |
+| `webhook_subscriptions/_watch` | The Watch / Stop watching control, in the repository page's header. Locals: `owner:`, `name:`, `subscription:` (may be nil). Posts to the existing subscription actions with `from: "repo"`, so there is no second copy of the GitHub logic and no extra route. |
+| `webhook_subscriptions/_consent` | What watching does, in one place. Rendered by the "What happens?" disclosure *and* by `/subscriptions`, so the two screens cannot drift into saying different things about an action that edits other people's pull requests. Change the wording here only. |
+| `webhook_subscriptions/_status_pill` / `_status_reason` | Active / Not working / Wrong address, and the sentence explaining each. Shared by both screens for the same reason. |
 
 ### Helpers
 

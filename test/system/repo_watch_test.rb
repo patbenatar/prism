@@ -30,12 +30,20 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
 
     visit repo_pulls_path(owner: "acme", repo: "new-docs")
 
-    # The consent is on the screen before the button, not after it: Prism is
-    # about to write into pull request descriptions under this name.
-    within "[data-testid=repo-watch]" do
-      assert_text "as @prism-dev"
+    # The consent is reachable before the button, not after it: Prism is about
+    # to write into pull request descriptions under this person's name.
+    assert_no_text "coming from your account"
+    find("[data-testid=watch-explainer] summary").click
+
+    within "[data-testid=watch-explainer-panel]" do
+      assert_text "Prism edits the pull request's description"
+      assert_text "coming from your account, @prism-dev"
+      assert_text "deleting the block"
       assert_text "admin access"
     end
+
+    find("[data-testid=watch-explainer] summary").click
+    assert_no_text "coming from your account"
 
     mark_page
     click_on "Watch repository"
@@ -138,10 +146,51 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
       assert_no_horizontal_overflow
       take_screenshot
 
+      find("[data-testid=watch-explainer] summary").click
+      assert_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
+      assert_no_horizontal_overflow
+      take_screenshot
+
       visit repo_pulls_path(owner: OWNER, repo: REPO)
       assert_selector "[data-testid=repo-unwatch-button]"
       assert_no_horizontal_overflow
       take_screenshot
+    end
+  end
+
+  # The explanation is three sentences behind a disclosure, so the two things
+  # that make that acceptable are that it opens without a pointer and that it
+  # is actually on the screen when it does.
+  test "the explainer opens from the keyboard, closes on Escape, and stays on screen at 1440 and at 390" do
+    stub_pulls("acme", "new-docs")
+
+    [ [ 1440, 900 ], [ 390, 844 ] ].each do |width, height|
+      resize_window(width, height)
+      visit repo_pulls_path(owner: "acme", repo: "new-docs")
+
+      summary = find("[data-testid=watch-explainer] summary")
+
+      assert_equal "What happens?", summary.text.strip,
+                   "the trigger's visible text is its accessible name"
+
+      summary.send_keys(:enter)
+
+      assert_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
+      assert_no_horizontal_overflow
+
+      panel = measure_panel
+      where = "at #{width}px"
+
+      assert_operator panel["left"], :>=, 0, "#{where}: the panel hangs off the left of the screen"
+      assert_operator panel["right"], :<=, panel["viewportWidth"] + 0.5,
+                      "#{where}: the panel hangs off the right of the screen"
+      assert_operator panel["bottom"], :<=, panel["viewportHeight"] + 0.5,
+                      "#{where}: the panel runs off the bottom of the screen"
+      assert_not panel["covered"], "#{where}: the panel is clipped or painted under something else"
+
+      summary.send_keys(:escape)
+
+      assert_no_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
     end
   end
 
@@ -161,6 +210,10 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
       take_screenshot
 
       visit repo_pulls_path(owner: "acme", repo: "new-docs")
+      find("[data-testid=watch-explainer] summary").click
+      assert_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
+      take_screenshot
+
       click_on "Watch repository"
       assert_selector "[data-testid=repo-watch-error]"
       take_screenshot
@@ -168,6 +221,22 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
   end
 
   private
+
+  # Where the open panel actually landed, and whether anything is in front of
+  # it — a header that clipped it would still report a sane rectangle.
+  def measure_panel
+    page.evaluate_script(<<~JS)
+      (() => {
+        const panel = document.querySelector('[data-testid=watch-explainer-panel]');
+        const r = panel.getBoundingClientRect();
+        const topmost = document.elementFromPoint(r.left + r.width / 2, r.top + 8);
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+                 viewportWidth: document.documentElement.clientWidth,
+                 viewportHeight: document.documentElement.clientHeight,
+                 covered: !panel.contains(topmost) };
+      })()
+    JS
+  end
 
   def assert_no_horizontal_overflow
     overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")

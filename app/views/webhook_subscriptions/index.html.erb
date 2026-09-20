@@ -9,18 +9,17 @@
       description on GitHub using this person's OAuth token, so the edit
       carries their name and their avatar, and anyone reading the pull request
       will believe they wrote it. Saying so plainly, before the button rather
-      than after it, is the whole of the consent here. %>
+      than after it, is the whole of the consent here — and it is said in the
+      shared `consent` partial, so this screen and the Watch button on a
+      repository's own page cannot end up telling two different stories. %>
   <div class="mb-6 flex items-start gap-3 rounded-xl border border-line bg-brand-soft/45 px-4 py-3"
        data-testid="acting-as-notice">
     <%= image_tag current_user.avatar_url, alt: "", class: "avatar mt-0.5 h-8 w-8", loading: "lazy" %>
     <div class="min-w-0 text-sm text-ink">
-      <p class="font-medium">Prism acts as <span class="text-brand">@<%= current_user.login %></span>.</p>
-      <p class="mt-1 text-ink-soft">
-        The link is appended to the pull request description, inside HTML comment markers,
-        using your GitHub token — so the edit shows up under your account, exactly as if you
-        had typed it. Nothing outside those markers is ever changed, and deleting the block
-        by hand tells Prism to leave that pull request alone.
-      </p>
+      <p class="font-medium">Watching a repository edits its pull requests under your name.</p>
+      <div class="mt-1 text-ink-soft">
+        <%= render "webhook_subscriptions/consent", login: current_user.login %>
+      </div>
     </div>
   </div>
 

@@ -31,8 +31,24 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-testid=repo-watch-button]"
-    assert_select "[data-testid=repo-watch]", /as @#{@user.login}/
-    assert_select "[data-testid=repo-watch]", /admin access/
+    assert_select "[data-testid=watch-explainer] summary", "What happens?"
+    assert_select "[data-testid=watch-explainer-panel]" do
+      assert_select "p", /edits the pull request's description/
+      assert_select "p", /coming from your account, @#{@user.login}/
+      assert_select "p", /deleting the block/
+      assert_select "p", /admin access/
+    end
+  end
+
+  # The same three sentences on both screens, from the same partial.
+  test "the subscriptions screen says the same thing in the same words" do
+    sign_in_as @user
+    stub_github_get("/user/repos", fixture: "repos")
+
+    get webhook_subscriptions_path
+
+    assert_select "[data-testid=acting-as-notice]", /coming from your account, @#{@user.login}/
+    assert_select "[data-testid=acting-as-notice]", /deleting the block/
   end
 
   test "a watched repository says so and offers to stop" do
