@@ -1,0 +1,88 @@
+<%# locals: subscription:
+
+    The watching half of the Watch control: one object that says what Prism
+    is doing and holds what you can do about it.
+
+    Not a pill beside a button. A pill plus a button is two shapes for one
+    idea, and when the second of them is tinted with the removed colour the
+    loudest thing in the header is a reversible action nobody came here for.
+    So: the state is the button's own label — a word, never colour alone —
+    and stopping lives one click inside it, quiet until the pointer is on it.
+
+    Its shape is `.btn`, exactly like the "Watch repository" button it
+    replaces, so the header does not change height when someone watches or
+    unwatches.
+
+    A native <details> for the same reasons as everywhere else in this app:
+    it opens with no JavaScript, is keyboard-reachable for free, and needs no
+    inline handler. The `menu` controller only adds outside-click and Escape
+    closing, as it does for the account menu. %>
+<% if subscription.broken? %>
+  <% state, label = :broken, "Not working" %>
+  <%# An exceptional state is allowed to be louder than the quiet one: this
+      is `.btn-danger`'s own recipe, spelled out because the state also has
+      to carry a chevron and a menu. %>
+  <% tone = "border-removed/30 text-removed hover:bg-removed-soft" %>
+<% elsif subscription.callback_stale? %>
+  <% state, label = :stale, "Wrong address" %>
+  <% tone = "border-modified/30 text-modified hover:bg-modified-soft" %>
+<% else %>
+  <% state, label = :active, "Watching" %>
+  <% tone = "border-line text-ink hover:border-line-strong hover:bg-sunk" %>
+<% end %>
+
+<%# `flex` for the same reason the unwatched form has it: no baseline
+    strut under the summary, so both states are exactly one button tall. %>
+<details class="relative flex" data-controller="menu" data-testid="repo-watch-menu">
+  <summary class="btn list-none border bg-surface active:translate-y-px <%= tone %>"
+           aria-haspopup="menu" data-testid="repo-watch-state" data-state="<%= state %>">
+    <% if state == :active %>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
+        <path d="m4 10.5 3.5 3.5L16 5.5" />
+      </svg>
+    <% else %>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" class="h-4 w-4" aria-hidden="true">
+        <circle cx="10" cy="10" r="7.25" />
+        <path d="M10 6.25v4.5M10 13.75h.01" />
+      </svg>
+    <% end %>
+
+    <%= label %>
+
+    <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 opacity-70" aria-hidden="true">
+      <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+    </svg>
+  </summary>
+
+  <%# `top-full` rather than relying on the static position: this <details>
+      is a flex container, so an absolutely positioned child of it starts at
+      the top of the box, not after the summary, and the menu would open on
+      top of the button that opened it. %>
+  <div class="absolute right-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-surface text-left shadow-lg shadow-ink/5"
+       role="menu" data-testid="repo-watch-menu-panel">
+    <p class="border-b border-line px-3 py-2 text-xs text-ink-faint">
+      Watching as @<%= subscription.user.login %>
+    </p>
+
+    <% if subscription.callback_stale? %>
+      <%= button_to "Re-register", webhook_subscription_path(subscription),
+                    method: :patch,
+                    params: { from: "repo" },
+                    class: "block w-full px-3 py-2 text-left text-sm text-ink-soft hover:bg-sunk hover:text-ink",
+                    role: "menuitem",
+                    data: { testid: "repo-re-register-button" } %>
+    <% end %>
+
+    <%# Quiet until the pointer is on it, like the comment card's delete: the
+        tint is feedback, not a warning label. %>
+    <%= button_to "Stop watching", webhook_subscription_path(subscription),
+                  method: :delete,
+                  params: { from: "repo" },
+                  class: "block w-full px-3 py-2 text-left text-sm text-ink-soft hover:bg-removed-soft hover:text-removed",
+                  form: { data: { turbo_confirm: "Stop watching #{subscription.full_name}? Prism will delete the webhook on GitHub. Links already added to pull requests stay where they are." } },
+                  role: "menuitem",
+                  data: { testid: "repo-unwatch-button" } %>
+  </div>
+</details>

@@ -76,6 +76,43 @@ class Webhooks::MarkerBlockTest < ActiveSupport::TestCase
     assert_equal removed, removed_again, "the second remove produced different text from the first"
   end
 
+  # The block Prism actually writes opens with a horizontal rule, so the rule
+  # is inside the markers and goes away with them. A rule written outside
+  # would survive every retraction and pile up in the author's description.
+  test "a leading horizontal rule lives inside the markers and leaves with them" do
+    body = "Author's own words."
+    content = "---\n\nThe link."
+
+    added = BLOCK.apply(body, content)
+
+    assert BLOCK.content_of(added).start_with?("---"), "the rule must be inside the markers"
+    assert_equal "Author's own words.\n\n", BLOCK.remove(added)
+    assert_not_includes BLOCK.remove(added), "---"
+  end
+
+  test "add and remove cycles with a rule still converge" do
+    body = "Original body."
+    content = "---\n\nThe link."
+
+    added = BLOCK.apply(body, content)
+    removed = BLOCK.remove(added)
+    added_again = BLOCK.apply(removed, content)
+    removed_again = BLOCK.remove(added_again)
+
+    assert_equal added, added_again, "the second add produced different text from the first"
+    assert_equal removed, removed_again, "the second remove produced different text from the first"
+    assert_equal 1, added.scan("---").size, "a rule accumulated across the cycle"
+  end
+
+  # A rule directly under a paragraph is a setext heading, not a thematic
+  # break. Ours is under the HTML comment marker, which closes its own block,
+  # so it stays a rule — and the marker is always preceded by a blank line.
+  test "the rule is never glued to the author's last paragraph" do
+    added = BLOCK.apply("A paragraph.", "---\n\nThe link.")
+
+    assert_includes added, "A paragraph.\n\n#{BLOCK::BEGIN_MARKER}\n---"
+  end
+
   test "reads back the content between the markers" do
     assert_equal "the link", BLOCK.content_of(BLOCK.apply("Body", "the link"))
     assert_nil BLOCK.content_of("Body with no block")

@@ -34,6 +34,17 @@ module Webhooks
   # nothing accumulates. Trailing newlines render as nothing on GitHub, which
   # is why leaving them is preferable to trimming bytes we did not write.
   #
+  # ## The block does not explain itself, on purpose
+  #
+  # Deleting this block by hand tells Prism to stop writing to that pull
+  # request for good (see PullRequestAnnouncement). The block used to say so
+  # in a trailing `<sub>` line; that line was removed deliberately, because
+  # the subscribe screen now explains the escape hatch before anyone turns
+  # the feature on (app/views/webhook_subscriptions/_consent.html.erb).
+  #
+  # The behaviour is unchanged — only the restatement is gone. Don't add the
+  # sentence back assuming it was lost by accident.
+  #
   # ## Tampering
   #
   # A body with a begin marker and no end marker (someone deleted half of it,

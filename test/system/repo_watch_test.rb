@@ -8,7 +8,8 @@ require "application_system_test_case"
 # Driven through the browser because the whole point of the control is that
 # it flips in place: a Turbo Stream aimed at an id that isn't there, or a
 # failure that redirects away instead of explaining itself where it happened,
-# both look fine in an integration test.
+# both look fine in an integration test. The confirmation dialog is the other
+# half — `showModal()`, focus and Escape only exist in a real browser.
 class RepoWatchSystemTest < ApplicationSystemTestCase
   OWNER = "acme"
   REPO  = "docs-site"
@@ -29,28 +30,25 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
     stub_github_post("/repos/acme/new-docs/hooks", body: hook_payload(id: 9001))
 
     visit repo_pulls_path(owner: "acme", repo: "new-docs")
+    mark_page
 
-    # The consent is reachable before the button, not after it: Prism is about
-    # to write into pull request descriptions under this person's name.
-    assert_no_text "coming from your account"
-    find("[data-testid=watch-explainer] summary").click
+    # The consent is said before anything happens, and it names the
+    # repository: Prism is about to write into its pull requests under this
+    # person's name.
+    open_watch_dialog
 
-    within "[data-testid=watch-explainer-panel]" do
+    within "[data-testid=watch-dialog]" do
+      assert_selector "h2", text: "Watch acme/new-docs?"
       assert_text "Prism edits the pull request's description"
       assert_text "coming from your account, @prism-dev"
       assert_text "deleting the block"
       assert_text "admin access"
     end
 
-    find("[data-testid=watch-explainer] summary").click
-    assert_no_text "coming from your account"
-
-    mark_page
-    click_on "Watch repository"
+    find("[data-testid=watch-confirm]").click
 
     within "[data-testid=repo-watch]" do
-      assert_text "Active"
-      assert_selector "[data-testid=repo-unwatch-button]"
+      assert_selector "[data-testid=repo-watch-state]", text: "Watching"
       assert_no_selector "[data-testid=repo-watch-button]"
     end
 
@@ -59,20 +57,74 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
     assert_no_csp_violations
   end
 
+  test "the confirmation cancels on Escape, on Cancel and on the backdrop, and nothing is watched" do
+    stub_pulls("acme", "new-docs")
+
+    visit repo_pulls_path(owner: "acme", repo: "new-docs")
+
+    # Escape.
+    open_watch_dialog
+
+    assert focus_inside_dialog?, "focus should land inside the dialog, on the button that commits"
+    assert_equal "watch-confirm", focused_testid
+
+    page.send_keys(:escape)
+    assert_dialog_closed
+    assert_equal "repo-watch-button", focused_testid, "focus should come back to the trigger"
+
+    # Cancel.
+    open_watch_dialog
+    find("[data-testid=watch-cancel]").click
+    assert_dialog_closed
+    assert_equal "repo-watch-button", focused_testid, "focus should come back to the trigger"
+
+    # The backdrop — a click outside the panel, which the browser reports as
+    # a click on the dialog itself.
+    open_watch_dialog
+    click_top_left_corner
+    assert_dialog_closed
+
+    assert_selector "[data-testid=repo-watch-button]"
+    assert_empty WebhookSubscription.named("acme", "new-docs")
+    assert_not_requested :post, /api\.github\.com/
+    assert_no_csp_violations
+  end
+
+  test "the consent copy is not on the page until the dialog is opened" do
+    stub_pulls("acme", "new-docs")
+
+    visit repo_pulls_path(owner: "acme", repo: "new-docs")
+
+    # Capybara only sees what a screen reader would: a closed <dialog> is
+    # `display: none`, so none of this is exposed until it is asked for.
+    assert_no_selector "[data-testid=watch-dialog]"
+    assert_no_text "coming from your account"
+    assert_no_text "Watch acme/new-docs?"
+
+    open_watch_dialog
+
+    assert_text "coming from your account"
+  end
+
   test "a repository already being watched says so on arrival, and can be stopped from here" do
     stub_pulls
     stub_github_delete("/repos/#{OWNER}/#{REPO}/hooks/555")
 
     visit repo_pulls_path(owner: OWNER, repo: REPO)
 
-    within("[data-testid=repo-watch]") { assert_text "Active" }
+    # The state is the control: one button, saying what Prism is doing.
+    assert_selector "[data-testid=repo-watch-state]", text: "Watching"
+    assert_no_selector "[data-testid=repo-unwatch-button]", visible: true
 
     mark_page
+    open_watch_menu
+    # Unwatching is the reversible direction and keeps the browser's own
+    # confirm — no dialog of its own.
     accept_confirm { click_on "Stop watching" }
 
     within "[data-testid=repo-watch]" do
       assert_selector "[data-testid=repo-watch-button]"
-      assert_no_text "Active"
+      assert_no_text "Watching"
     end
 
     assert page_never_reloaded?
@@ -85,7 +137,7 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
     stub_github_error(:post, "/repos/acme/new-docs/hooks", status: 404, message: "Not Found")
 
     visit repo_pulls_path(owner: "acme", repo: "new-docs")
-    click_on "Watch repository"
+    confirm_watch
 
     within "[data-testid=repo-watch]" do
       assert_selector "[data-testid=repo-watch-error]", text: "You need admin access to acme/new-docs"
@@ -94,6 +146,9 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
       assert_selector "[data-testid=repo-watch-button]"
     end
 
+    # The failed attempt replaced the control, dialog and all, so nothing is
+    # left open over the page.
+    assert_no_selector "[data-testid=watch-dialog]"
     assert_no_selector "[data-testid=flash]"
     assert_no_csp_violations
   end
@@ -103,7 +158,7 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
     stub_pulls("acme", "new-docs")
 
     visit repo_pulls_path(owner: "acme", repo: "new-docs")
-    click_on "Watch repository"
+    confirm_watch
 
     within "[data-testid=repo-watch]" do
       assert_selector "[data-testid=repo-watch-error]", text: "PRISM_PUBLIC_URL"
@@ -124,97 +179,100 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
     visit repo_pulls_path(owner: OWNER, repo: REPO)
 
     within "[data-testid=repo-watch]" do
-      assert_selector "[data-testid=subscription-stale]", text: "Wrong address"
+      assert_selector "[data-testid=repo-watch-state]", text: "Wrong address"
       assert_text "Nothing is arriving"
+    end
 
-      click_on "Re-register"
+    open_watch_menu
+    click_on "Re-register"
 
-      assert_text "Active"
-      assert_no_selector "[data-testid=subscription-stale]"
+    within "[data-testid=repo-watch]" do
+      assert_selector "[data-testid=repo-watch-state]", text: "Watching"
+      assert_no_text "Wrong address"
     end
   end
 
-  test "it looks right at 1440 and at 390, watched and not" do
+  # Every state the header can be in, at both widths and in both schemes.
+  # The four are meant to be one control changing state, so this both looks
+  # at them and measures the two things that make them one: they are the
+  # same height, and they sit on one row (or, at phone width, wrap into a
+  # column whose right edges line up).
+  test "the header reads as one row in every state, at 1440 and at 390, light and dark" do
     stub_pulls
     stub_pulls("acme", "new-docs")
 
     [ [ 1440, 900 ], [ 390, 844 ] ].each do |width, height|
       resize_window(width, height)
 
-      visit repo_pulls_path(owner: "acme", repo: "new-docs")
-      assert_selector "[data-testid=repo-watch-button]"
-      assert_no_horizontal_overflow
-      take_screenshot
+      %i[light dark].each do |scheme|
+        with_color_scheme(scheme) do
+          heights = {}
 
-      find("[data-testid=watch-explainer] summary").click
-      assert_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
-      assert_no_horizontal_overflow
-      take_screenshot
+          heights[:unwatched] = state_shot(width, "unwatched") do
+            visit repo_pulls_path(owner: "acme", repo: "new-docs")
+            assert_selector "[data-testid=repo-watch-button]"
+          end
 
-      visit repo_pulls_path(owner: OWNER, repo: REPO)
-      assert_selector "[data-testid=repo-unwatch-button]"
-      assert_no_horizontal_overflow
-      take_screenshot
+          heights[:watching] = state_shot(width, "watching") do
+            visit repo_pulls_path(owner: OWNER, repo: REPO)
+            assert_selector "[data-testid=repo-watch-state]", text: "Watching"
+          end
+
+          # Stopping lives inside the state rather than beside it.
+          open_watch_menu
+          take_screenshot
+
+          heights[:broken] = state_shot(width, "not working") do
+            webhook_subscriptions(:docs_site).mark_broken!("GitHub rejected the token")
+            visit repo_pulls_path(owner: OWNER, repo: REPO)
+            assert_selector "[data-testid=repo-watch-state]", text: "Not working"
+          end
+          webhook_subscriptions(:docs_site).mark_active!
+
+          heights[:stale] = state_shot(width, "wrong address") do
+            ENV["PRISM_PUBLIC_URL"] = "https://a-new-tunnel.ngrok-free.app"
+            visit repo_pulls_path(owner: OWNER, repo: REPO)
+            assert_selector "[data-testid=repo-watch-state]", text: "Wrong address"
+          end
+          ENV["PRISM_PUBLIC_URL"] = CALLBACK.sub("/webhooks/github", "")
+
+          assert_equal 1, heights.values.uniq.size,
+                       "at #{width}px in #{scheme}: the control changes height between states, " \
+                       "so the header jumps when someone watches or unwatches — #{heights.inspect}"
+        end
+      end
     end
   end
 
-  # The explanation is three sentences behind a disclosure, so the two things
-  # that make that acceptable are that it opens without a pointer and that it
-  # is actually on the screen when it does.
-  test "the explainer opens from the keyboard, closes on Escape, and stays on screen at 1440 and at 390" do
+  test "the confirmation dialog reads at 1440 and at 390, light and dark" do
     stub_pulls("acme", "new-docs")
 
     [ [ 1440, 900 ], [ 390, 844 ] ].each do |width, height|
       resize_window(width, height)
-      visit repo_pulls_path(owner: "acme", repo: "new-docs")
 
-      summary = find("[data-testid=watch-explainer] summary")
-
-      assert_equal "What happens?", summary.text.strip,
-                   "the trigger's visible text is its accessible name"
-
-      summary.send_keys(:enter)
-
-      assert_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
-      assert_no_horizontal_overflow
-
-      panel = measure_panel
-      where = "at #{width}px"
-
-      assert_operator panel["left"], :>=, 0, "#{where}: the panel hangs off the left of the screen"
-      assert_operator panel["right"], :<=, panel["viewportWidth"] + 0.5,
-                      "#{where}: the panel hangs off the right of the screen"
-      assert_operator panel["bottom"], :<=, panel["viewportHeight"] + 0.5,
-                      "#{where}: the panel runs off the bottom of the screen"
-      assert_not panel["covered"], "#{where}: the panel is clipped or painted under something else"
-
-      summary.send_keys(:escape)
-
-      assert_no_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
+      %i[light dark].each do |scheme|
+        with_color_scheme(scheme) do
+          visit repo_pulls_path(owner: "acme", repo: "new-docs")
+          open_watch_dialog
+          assert_no_horizontal_overflow
+          assert_dialog_on_screen(width)
+          take_screenshot
+        end
+      end
     end
   end
 
-  # Tokens only, so dark mode is supposed to come for free —
   # DarkModeTest#"no screen paints a pale panel on the dark canvas" already
-  # sweeps this screen for hardcoded colours. This is the picture of it, plus
-  # the two states that sweep never reaches: the inline failure and the
-  # wrong-address one.
-  test "the control reads in dark mode, watched, unwatched and failing" do
-    stub_pulls
+  # sweeps this screen for hardcoded colours, and the sweep above is the
+  # picture of every healthy state. This is the one neither reaches.
+  test "a failed attempt reads in dark mode" do
     stub_pulls("acme", "new-docs")
     stub_github_error(:post, "/repos/acme/new-docs/hooks", status: 404, message: "Not Found")
 
     with_color_scheme(:dark) do
-      visit repo_pulls_path(owner: OWNER, repo: REPO)
-      assert_selector "[data-testid=repo-unwatch-button]"
-      take_screenshot
-
       visit repo_pulls_path(owner: "acme", repo: "new-docs")
-      find("[data-testid=watch-explainer] summary").click
-      assert_selector "[data-testid=watch-explainer-panel]", text: "coming from your account"
-      take_screenshot
+      confirm_watch
 
-      click_on "Watch repository"
       assert_selector "[data-testid=repo-watch-error]"
       take_screenshot
     end
@@ -222,19 +280,122 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
 
   private
 
-  # Where the open panel actually landed, and whether anything is in front of
-  # it — a header that clipped it would still report a sane rectangle.
-  def measure_panel
-    page.evaluate_script(<<~JS)
+  def open_watch_menu
+    find("[data-testid=repo-watch-state]").click
+
+    assert_selector "[data-testid=repo-watch-menu-panel]"
+  end
+
+  def open_watch_dialog
+    find("[data-testid=repo-watch-button]").click
+
+    assert_selector "[data-testid=watch-dialog][open]", text: "coming from your account"
+  end
+
+  def confirm_watch
+    open_watch_dialog
+    find("[data-testid=watch-confirm]").click
+  end
+
+  def assert_dialog_closed
+    assert_no_selector "[data-testid=watch-dialog]"
+    assert_not page.evaluate_script("document.querySelector('[data-testid=watch-dialog]').open")
+  end
+
+  def focused_testid = page.evaluate_script("document.activeElement && document.activeElement.dataset.testid")
+
+  def focus_inside_dialog?
+    page.evaluate_script(
+      "document.querySelector('[data-testid=watch-dialog]').contains(document.activeElement)"
+    )
+  end
+
+  # The backdrop is not part of the dialog's box, so it cannot be clicked
+  # through an element handle — it is a point on the viewport outside the
+  # panel. The browser reports the click as landing on the dialog itself,
+  # which is what the controller keys on.
+  def click_top_left_corner
+    page.driver.browser.action.move_to_location(6, 6).click.perform
+  end
+
+  # A modal dialog is centred in the viewport, so "on screen" is the whole of
+  # it, and `elementFromPoint` catches anything painted over it.
+  def assert_dialog_on_screen(width)
+    box = page.evaluate_script(<<~JS)
       (() => {
-        const panel = document.querySelector('[data-testid=watch-explainer-panel]');
-        const r = panel.getBoundingClientRect();
+        const dialog = document.querySelector('[data-testid=watch-dialog]');
+        const r = dialog.getBoundingClientRect();
         const topmost = document.elementFromPoint(r.left + r.width / 2, r.top + 8);
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom,
                  viewportWidth: document.documentElement.clientWidth,
                  viewportHeight: document.documentElement.clientHeight,
-                 covered: !panel.contains(topmost) };
+                 covered: !dialog.contains(topmost) };
       })()
+    JS
+
+    assert_operator box["left"], :>=, 0, "at #{width}px: the dialog hangs off the left of the screen"
+    assert_operator box["right"], :<=, box["viewportWidth"] + 0.5,
+                    "at #{width}px: the dialog hangs off the right of the screen"
+    assert_operator box["top"], :>=, 0, "at #{width}px: the dialog runs off the top of the screen"
+    assert_operator box["bottom"], :<=, box["viewportHeight"] + 0.5,
+                    "at #{width}px: the dialog runs off the bottom of the screen"
+    assert_not box["covered"], "at #{width}px: something is painted over the dialog"
+  end
+
+  # Watch sits in a form and "Open on GitHub" does not, which is exactly the
+  # kind of difference that puts two buttons on slightly different lines.
+  # Only while they share one: at phone width the header wraps them, and
+  # stacked is the point rather than a fault.
+  # Runs the block, checks the header still reads as one row, photographs it,
+  # and hands back the height of the control so the states can be compared
+  # against each other.
+  def state_shot(width, label)
+    yield
+    assert_no_horizontal_overflow
+    assert_header_is_one_row(width, label)
+    take_screenshot
+    control_height
+  end
+
+  # The header's actions are "Open on GitHub" and the watch control, whatever
+  # state it is in. One row means they share a top edge. At phone width they
+  # are allowed to stack instead — but then their right edges have to line
+  # up, or the group reads as debris rather than a column.
+  def assert_header_is_one_row(width, label)
+    boxes = page.evaluate_script(<<~JS)
+      (() => {
+        const header = document.querySelector('[data-testid=repo-watch]').closest('header');
+        const items = header.querySelectorAll(
+          'a.btn-secondary, [data-testid=repo-watch-button], [data-testid=repo-watch-state]'
+        );
+        return [...items].map(el => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top, right: r.right };
+        });
+      })()
+    JS
+
+    assert_equal 2, boxes.size, "#{label} at #{width}px: expected Open on GitHub and one watch control"
+
+    tops = boxes.map { |box| box["top"] }
+    rights = boxes.map { |box| box["right"] }
+    one_row = (tops.max - tops.min) <= 0.5
+    aligned_column = (rights.max - rights.min) <= 0.5
+
+    if width >= 640
+      assert one_row,
+             "#{label} at #{width}px: the header's controls are on #{tops.uniq.size} different lines"
+    else
+      assert one_row || aligned_column,
+             "#{label} at #{width}px: the controls neither share a line nor line up on the right"
+    end
+  end
+
+  # The control is the form (unwatched) or the <details> (watching): the one
+  # element the header holds either way.
+  def control_height
+    page.evaluate_script(<<~JS).round(1)
+      document.querySelector('[data-testid=repo-watch]').firstElementChild.getBoundingClientRect().height
     JS
   end
 

@@ -31,12 +31,29 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-testid=repo-watch-button]"
-    assert_select "[data-testid=watch-explainer] summary", "What happens?"
-    assert_select "[data-testid=watch-explainer-panel]" do
+    assert_select "[data-testid=watch-dialog] h2", "Watch acme/new-docs?"
+    assert_select "[data-testid=watch-dialog]" do
       assert_select "p", /edits the pull request's description/
       assert_select "p", /coming from your account, @#{@user.login}/
       assert_select "p", /deleting the block/
       assert_select "p", /admin access/
+    end
+  end
+
+  # The confirmation is JavaScript's contribution, not the button's. With no
+  # JavaScript the trigger is still an ordinary submit button in a form that
+  # carries everything the action needs, so it watches the repository
+  # straight away rather than doing nothing at all.
+  test "the trigger is a real submit button in a form that would post on its own" do
+    sign_in_and_stub_pulls("acme", "new-docs")
+
+    get repo_pulls_path(owner: "acme", repo: "new-docs")
+
+    assert_select "form[action=?][method=post]", webhook_subscriptions_path do
+      assert_select "input[type=hidden][name=full_name][value=?]", "acme/new-docs"
+      assert_select "input[type=hidden][name=from][value=repo]"
+      assert_select "button[type=submit][data-testid=repo-watch-button]"
+      assert_select "button[type=submit][data-testid=watch-confirm]"
     end
   end
 
@@ -56,7 +73,7 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
 
     get repo_pulls_path(owner: OWNER, repo: REPO)
 
-    assert_select "[data-testid=repo-watch] .pill-added", "Active"
+    assert_select "[data-testid=repo-watch-state][data-state=active]", /Watching/
     assert_select "[data-testid=repo-unwatch-button]"
     assert_select "[data-testid=repo-watch-button]", false
   end
@@ -67,7 +84,7 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
 
     get repo_pulls_path(owner: OWNER, repo: REPO)
 
-    assert_select "[data-testid=repo-watch] [data-testid=subscription-broken]", "Not working"
+    assert_select "[data-testid=repo-watch-state][data-state=broken]", /Not working/
     assert_select "[data-testid=broken-reason]", /GitHub rejected the token/
   end
 
@@ -77,7 +94,7 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
 
     get repo_pulls_path(owner: OWNER, repo: REPO)
 
-    assert_select "[data-testid=repo-watch] [data-testid=subscription-stale]", "Wrong address"
+    assert_select "[data-testid=repo-watch-state][data-state=stale]", /Wrong address/
     assert_select "[data-testid=repo-re-register-button]"
   end
 
@@ -208,7 +225,7 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_turbo_stream_replaces "repo-watch"
-    assert_no_match "subscription-stale", response.body
+    assert_match 'data-state="active"', response.body
     assert_equal "https://a-new-tunnel.ngrok-free.app/webhooks/github",
                  webhook_subscriptions(:docs_site).reload.callback_url
   end

@@ -8,14 +8,19 @@
   <% repo_title = capture do %>
     <span class="font-normal text-ink-soft"><%= @repo.owner %>/</span><%= @repo.name %>
   <% end %>
-  <%# The actions get their own row inside the slot: the watch control is a
-      button with a line of copy under it, and `_page_header` lays its actions
-      out on one centred line. The cap is load-bearing rather than taste —
-      that slot is `shrink-0`, so whatever is in it claims its full max-content
-      width, and an uncapped line of explanatory copy claims the width of the
-      sentence and pushes the page sideways at 390. %>
+  <%# The actions get their own row inside the slot, because `_page_header`
+      lays its own out on one centred line and the watch control can carry a
+      line of explanation under it.
+      Both width rules are load-bearing, not taste. The slot `_page_header`
+      puts this in is `shrink-0` and the title beside it is `flex-1 min-w-0`,
+      so whatever fits on that line stays on it and the title is what gives —
+      two buttons were enough to squeeze "acme/docs-site" to one character
+      per line at 390. `min-w-80` makes the slot too wide to share the line,
+      so it wraps under the title and keeps its own contents on one row, and
+      the matching cap keeps a long failure message from pushing the page
+      sideways. At laptop width the cap does that job alone. %>
   <% repo_actions = capture do %>
-    <div class="flex max-w-80 flex-wrap items-start justify-end gap-2 sm:max-w-md">
+    <div class="flex min-w-80 max-w-80 flex-wrap items-start justify-end gap-2 sm:min-w-0 sm:max-w-xl">
       <%= link_to "Open on GitHub", @repo.html_url, class: "btn-secondary",
                   target: "_blank", rel: "noopener" %>
       <%= render "webhook_subscriptions/watch",

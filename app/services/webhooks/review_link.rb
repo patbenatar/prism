@@ -35,16 +35,20 @@ module Webhooks
       helpers.repo_pull_markdown_url(owner: owner, repo: repo, number: number, **PublicUrl.url_options)
     end
 
-    # One line, because it is going into someone else's writing. It says what
-    # the link is, how much is behind it, and — because a bot editing a human's
-    # text should sign its work — whose account made the edit.
-    def markdown(file_count:, actor_login:)
+    # One line, because it is going into someone else's writing.
+    #
+    # The rule above it makes the block read as a footer rather than as the
+    # next sentence of the author's description. It lives *inside* the
+    # markers, and must stay there: a rule written outside them would survive
+    # a retraction and leave a stray `---` in someone's description forever,
+    # which would quietly falsify MarkerBlock's whole guarantee. See the
+    # cycle tests in test/services/webhooks/marker_block_test.rb.
+    def markdown(file_count:)
       files = file_count == 1 ? "1 Markdown file" : "#{file_count} Markdown files"
 
-      "**[Review #{files} rendered, in Prism](#{url})** — comment on paragraphs " \
-        "and headings instead of diff lines.\n\n" \
-        "<sub>Link added by Prism on behalf of @#{actor_login}. " \
-        "Delete this block and Prism will not add it again.</sub>"
+      "---\n\n" \
+        "**[Review #{files} rendered, in Prism](#{url})** — comment on paragraphs " \
+        "and headings instead of diff lines."
     end
 
     private

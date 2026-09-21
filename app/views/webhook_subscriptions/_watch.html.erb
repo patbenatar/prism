@@ -7,71 +7,83 @@
     It posts to the same two actions, with `from: "repo"`, which is what tells
     WebhookSubscriptionsController to send this control back in place instead
     of redirecting to /subscriptions. Every failure the registrar can raise
-    lands in `error:` and is rendered right here, next to the button that
+    lands in `error:` and is rendered right here, next to the control that
     caused it.
 
-    The consent lives behind "What happens?" rather than beside the button: it
-    is three sentences, and three sentences printed in a page header are noise
-    to everyone who has not yet decided to click. A native <details> so it
-    needs no JavaScript to open, is keyboard-reachable and touch-friendly for
-    free, and adds no inline handler for the CSP to refuse; the `menu`
-    controller only adds outside-click and Escape closing, exactly as the
-    account menu and the reaction picker do.
+    **One control with states, not a pile of controls.** Whatever Prism is
+    doing with this repository, the header holds exactly one `.btn`-shaped
+    thing next to "Open on GitHub": "Watch repository" when it is doing
+    nothing, and the state itself — Watching / Not working / Wrong address —
+    when it is. Same shape, same height, so the header does not jump when
+    someone watches or unwatches, and one line at every width the two fit on.
 
-    The panel is positioned against this element, not against the <details> —
-    the trigger sits mid-row, so anchoring to it would hang the panel off the
-    left of a phone screen. %>
+    Watching is a deliberate second click through a confirmation dialog,
+    because it edits pull requests under this person's name (see
+    confirm_dialog_controller.js). Unwatching is reversible, so it is a quiet
+    item inside the state's own menu rather than a red button in the header. %>
 <% error = local_assigns[:error] %>
-<div id="repo-watch" class="relative flex min-w-0 basis-full flex-col items-end gap-1.5 text-right sm:flex-1 sm:basis-0"
+<%# No `flex-auto`: the control is sized by its content and packs against
+    "Open on GitHub" rather than growing to push itself to the far end of
+    the row. %>
+<div id="repo-watch" class="flex min-w-0 flex-col items-end gap-1.5 text-right"
      data-testid="repo-watch">
-  <div class="flex flex-wrap items-center justify-end gap-2">
-    <% if subscription %>
-      <%= render "webhook_subscriptions/status_pill", subscription: subscription %>
+  <% if subscription %>
+    <%= render "webhook_subscriptions/watch_menu", subscription: subscription %>
+  <% else %>
+    <%# `flex`, so the button is a flex item rather than an inline one: an
+        inline-flex button sits on its parent's text baseline, and the strut
+        under it made this state two pixels taller than the watching one. %>
+    <%= form_with url: webhook_subscriptions_path, method: :post, class: "flex",
+                  data: { controller: "confirm-dialog", testid: "watch-form" } do |form| %>
+      <%= form.hidden_field :full_name, value: "#{owner}/#{name}" %>
+      <%= form.hidden_field :from, value: "repo" %>
+
+      <button type="submit" class="btn-primary"
+              data-confirm-dialog-target="trigger"
+              data-action="confirm-dialog#open"
+              data-testid="repo-watch-button">Watch repository</button>
+
+      <%# `m-auto` is not decoration: Preflight zeroes every margin, which
+          includes the `margin: auto` the UA stylesheet uses to centre a
+          modal dialog, so without it the dialog sits in the top left. %>
+      <dialog class="m-auto w-[calc(100vw-2rem)] max-w-md rounded-xl border border-line bg-surface p-0 text-ink shadow-lg shadow-ink/10 backdrop:bg-canvas/70 backdrop:backdrop-blur-sm"
+              aria-labelledby="watch-dialog-title"
+              data-confirm-dialog-target="dialog"
+              data-action="click->confirm-dialog#cancelOnBackdrop close->confirm-dialog#restoreFocus"
+              data-testid="watch-dialog">
+        <div class="max-h-[80vh] overflow-y-auto p-5 text-left">
+          <h2 id="watch-dialog-title" class="font-display text-base font-semibold tracking-tight text-ink">
+            Watch <%= owner %>/<%= name %>?
+          </h2>
+
+          <div class="mt-3 text-sm text-ink-soft">
+            <%= render "webhook_subscriptions/consent", login: current_user.login %>
+          </div>
+
+          <div class="mt-5 flex flex-wrap justify-end gap-2">
+            <button type="button" class="btn-secondary"
+                    data-action="confirm-dialog#cancel"
+                    data-testid="watch-cancel">Cancel</button>
+            <button type="submit" class="btn-primary"
+                    data-confirm-dialog-target="confirm"
+                    data-testid="watch-confirm">Watch repository</button>
+          </div>
+        </div>
+      </dialog>
     <% end %>
+  <% end %>
 
-    <details data-controller="menu" data-testid="watch-explainer">
-      <summary class="flex list-none items-center gap-1 rounded-lg px-2 py-1 font-display text-xs font-medium text-ink-soft hover:bg-sunk hover:text-ink">
-        What happens?
-        <svg viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true">
-          <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
-        </svg>
-      </summary>
-
-      <div class="absolute right-0 top-full z-40 mt-1 w-72 max-w-full rounded-xl border border-line bg-surface p-3 text-left text-xs leading-relaxed text-ink-soft shadow-lg shadow-ink/5"
-           data-testid="watch-explainer-panel">
-        <%= render "webhook_subscriptions/consent", login: current_user.login %>
-      </div>
-    </details>
-
-    <% if subscription %>
-      <% if subscription.callback_stale? %>
-        <%= button_to "Re-register", webhook_subscription_path(subscription),
-                      method: :patch,
-                      params: { from: "repo" },
-                      class: "btn-secondary",
-                      data: { testid: "repo-re-register-button" } %>
-      <% end %>
-
-      <%= button_to "Stop watching", webhook_subscription_path(subscription),
-                    method: :delete,
-                    params: { from: "repo" },
-                    class: "btn-danger",
-                    form: { data: { turbo_confirm: "Stop watching #{subscription.full_name}? Prism will delete the webhook on GitHub. Links already added to pull requests stay where they are." } },
-                    data: { testid: "repo-unwatch-button" } %>
-    <% else %>
-      <%= button_to "Watch repository", webhook_subscriptions_path,
-                    params: { full_name: "#{owner}/#{name}", from: "repo" },
-                    class: "btn-primary",
-                    data: { testid: "repo-watch-button" } %>
-    <% end %>
-  </div>
-
-  <%# What is left in the open is only ever exceptional: a failure, or a
-      subscription that has stopped working. Neither is something to tuck
-      behind a disclosure. %>
+  <%# What is printed under the control is only ever exceptional: a failure,
+      or a subscription that has stopped working. Neither is something to
+      tuck inside a menu — they are the reason someone would open it.
+      The width cap is what keeps the row a row: the header's action slot is
+      `shrink-0`, so an uncapped sentence claims the width of the sentence
+      and shoves the control onto a line of its own. %>
   <% if error.present? %>
-    <p role="alert" class="text-sm text-removed" data-testid="repo-watch-error"><%= error %></p>
+    <p role="alert" class="max-w-72 text-sm text-removed sm:max-w-sm" data-testid="repo-watch-error"><%= error %></p>
   <% elsif subscription %>
-    <%= render "webhook_subscriptions/status_reason", subscription: subscription %>
+    <div class="max-w-72 sm:max-w-sm">
+      <%= render "webhook_subscriptions/status_reason", subscription: subscription %>
+    </div>
   <% end %>
 </div>
