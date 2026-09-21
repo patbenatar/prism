@@ -37,6 +37,27 @@ plugin :tmp_restart
 # Run the Solid Queue supervisor inside of Puma for single-server deployments.
 plugin :solid_queue if ENV["SOLID_QUEUE_IN_PUMA"]
 
+# Keep the whole app in ONE Ruby VM, which is what makes it fit a 512MB
+# instance. Two things have to agree for that:
+#
+#   solid_queue_mode :async  runs the dispatcher, worker and scheduler as
+#                            THREADS in this process. Left at its default the
+#                            plugin forks a supervisor and a worker, so a
+#                            second Ruby VM appears and memory roughly doubles.
+#   workers 0                keeps Puma single-process. Clustered Puma would
+#                            fork the app again, once per web worker.
+#
+# Setting SOLID_QUEUE_MODE=fork opts back into separate processes, which is
+# the right call on an instance with room for them. Matches MealMate/Sprout.
+solid_queue_async = ENV["SOLID_QUEUE_IN_PUMA"] && ENV.fetch("SOLID_QUEUE_MODE", "async") == "async"
+solid_queue_mode :async if solid_queue_async
+
+if solid_queue_async
+  workers 0
+else
+  workers ENV.fetch("WEB_CONCURRENCY", 0).to_i
+end
+
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.
 # In other environments, only set the PID file if requested.
 pidfile ENV["PIDFILE"] if ENV["PIDFILE"]
