@@ -1,0 +1,75 @@
+## Render Blueprint — https://render.com/docs/blueprint-spec
+##
+## Mirrors how MealMate and Sprout are deployed: one Docker web service on
+## Render, one Postgres at Neon (https://neon.tech). Render runs the web
+## service and connects to Neon over DATABASE_URL; there is no Render Postgres
+## and no separate worker service — Solid Queue runs inside Puma.
+##
+## Secrets marked `sync: false` are set in the Render dashboard or with the
+## CLI, never in this file:
+##
+##   DATABASE_URL                       Neon POOLED connection string (host
+##                                      contains "-pooler"; keep ?sslmode=require)
+##   RAILS_MASTER_KEY                   contents of config/master.key
+##   AR_ENCRYPTION_PRIMARY_KEY          protects users.access_token at rest.
+##   AR_ENCRYPTION_DETERMINISTIC_KEY    Generate a PRODUCTION set with
+##   AR_ENCRYPTION_KEY_DERIVATION_SALT  `bin/rails db:encryption:init` — never
+##                                      reuse the throwaway values in
+##                                      .env.example, which are public.
+##   GITHUB_CLIENT_ID                   A SEPARATE GitHub OAuth App from the
+##   GITHUB_CLIENT_SECRET               development one, with its callback set
+##                                      to https://<this service>/auth/github/callback
+##   PRISM_PUBLIC_URL                   This service's own https:// origin. Webhook
+##                                      callbacks and the review links Prism writes
+##                                      into pull request descriptions are built
+##                                      from it, and those links outlive the merge.
+##
+## Neon's compute auto-suspends when idle and wakes on the next request, so
+## the first request after a quiet period pays a cold start.
+
+services:
+  - type: web
+    name: prism
+    runtime: docker
+    repo: https://github.com/patbenatar/prism
+    plan: starter
+    region: oregon
+    branch: main
+    healthCheckPath: /up
+    dockerfilePath: ./Dockerfile
+    envVars:
+      # Secrets — set at deploy time, never stored in the repo.
+      - key: DATABASE_URL
+        sync: false
+      - key: RAILS_MASTER_KEY
+        sync: false
+      - key: AR_ENCRYPTION_PRIMARY_KEY
+        sync: false
+      - key: AR_ENCRYPTION_DETERMINISTIC_KEY
+        sync: false
+      - key: AR_ENCRYPTION_KEY_DERIVATION_SALT
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: PRISM_PUBLIC_URL
+        sync: false
+
+      # Runtime config
+      - key: RAILS_LOG_TO_STDOUT
+        value: "true"
+      - key: RAILS_SERVE_STATIC_FILES
+        value: "true"
+      - key: RAILS_MAX_THREADS
+        value: "3"
+      # Solid Queue runs inside Puma, so no separate worker service. Its tables
+      # live in the primary database (config/queue.yml), so `db:prepare` on
+      # boot is the whole setup.
+      - key: SOLID_QUEUE_IN_PUMA
+        value: "true"
+      # async = dispatcher/worker/scheduler as THREADS in one Puma process, so
+      # the whole app stays a single Ruby VM and fits the 512MB Starter
+      # instance. Set to "fork" to revert.
+      - key: SOLID_QUEUE_MODE
+        value: "async"
