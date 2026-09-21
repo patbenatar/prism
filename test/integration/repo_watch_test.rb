@@ -76,6 +76,15 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=repo-watch-state][data-state=active]", /Watching/
     assert_select "[data-testid=repo-unwatch-button]"
     assert_select "[data-testid=repo-watch-button]", false
+
+    # The menu says what watching is doing while it runs, in the short
+    # wording — test/views/webhook_subscriptions/consent_copy_test.rb is what
+    # keeps it saying the same things as the dialog's long one.
+    assert_select "[data-testid=repo-watch-menu-panel]" do
+      assert_select "p", /Adds a review link .* that change Markdown/
+      assert_select "p", /as @#{@user.login}/
+      assert_select "p", /leaves that one alone/
+    end
   end
 
   test "a broken subscription shows the same words the subscriptions screen uses" do

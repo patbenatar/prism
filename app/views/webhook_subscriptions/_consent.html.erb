@@ -1,16 +1,22 @@
 <%# locals: login:
 
     What watching a repository actually does, and whose account GitHub will
-    record it under. Shared by the disclosure beside the Watch button and the
-    notice on /subscriptions, because this is the one thing on either screen
-    someone could later say they were not told — and two copies of it are two
-    copies to drift.
+    record it under. Shared by the confirmation dialog behind "Watch
+    repository" and the notice on /subscriptions, because this is the one
+    thing on either screen someone could later say they were not told — and
+    two copies of it are two copies to drift.
 
     It states the consequence rather than the mechanism. "Prism acts as you"
     is not a fact anyone can act on; "GitHub records the edit as coming from
     your account" is, because it says what a teammate reading the pull
     request's history will see. The last paragraph is what makes it safe to
-    try: the block can be deleted and Prism takes the hint. %>
+    try: the block can be deleted and Prism takes the hint.
+
+    **Paired with `_consent_brief`**, the two-sentence present-tense version
+    inside the watching menu. Same facts, different job: this one is asked
+    before anything happens, that one reports what is already happening.
+    test/views/webhook_subscriptions/consent_copy_test.rb holds both to the
+    same three facts, so an edit here that drops one fails there. %>
 <p>
   Prism edits the pull request's description to add the link. GitHub records that edit as
   coming from your account, <span class="font-medium text-brand">@<%= login %></span> —

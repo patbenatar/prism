@@ -1,0 +1,19 @@
+<%# locals: login:
+
+    What Prism is doing to this repository right now, in two sentences, for
+    the menu behind the "Watching" button.
+
+    **Paired with `_consent`, which says the same things at length.** That one
+    is asked before anything happens — "do you want this?" — and has room for
+    three paragraphs. This one answers "what is happening?" for someone who
+    already said yes, so it is present tense and short. Two partials rather
+    than one because the prose genuinely differs; the facts must not.
+
+    Neither may lose a fact: what Prism writes and on which pull requests,
+    whose account GitHub records it under, and how to call it off.
+    test/views/webhook_subscriptions/consent_copy_test.rb asserts that of
+    both, so dropping one here fails rather than quietly disagreeing with
+    the other. %>
+Adds a review link to the description of new pull requests that change Markdown,
+as <span class="font-medium text-brand">@<%= login %></span>.
+Delete the link from a pull request and Prism leaves that one alone.

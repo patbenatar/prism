@@ -118,6 +118,13 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
 
     mark_page
     open_watch_menu
+
+    within "[data-testid=repo-watch-menu-panel]" do
+      assert_text "Adds a review link to the description of new pull requests that change Markdown"
+      assert_text "as @prism-dev"
+      assert_text "Prism leaves that one alone"
+    end
+
     # Unwatching is the reversible direction and keeps the browser's own
     # confirm — no dialog of its own.
     accept_confirm { click_on "Stop watching" }
@@ -218,8 +225,12 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
             assert_selector "[data-testid=repo-watch-state]", text: "Watching"
           end
 
-          # Stopping lives inside the state rather than beside it.
+          # Stopping lives inside the state rather than beside it, under a
+          # line saying what watching is doing meanwhile.
           open_watch_menu
+          assert_text "Adds a review link"
+          assert_no_horizontal_overflow
+          assert_fully_on_screen("repo-watch-menu-panel", "the watching menu", width)
           take_screenshot
 
           heights[:broken] = state_shot(width, "not working") do
@@ -234,6 +245,18 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
             visit repo_pulls_path(owner: OWNER, repo: REPO)
             assert_selector "[data-testid=repo-watch-state]", text: "Wrong address"
           end
+
+          # An exceptional state's menu is actions only: the reason under the
+          # control has already said what is wrong, and repeating what
+          # watching does when it works would be padding.
+          open_watch_menu
+          within "[data-testid=repo-watch-menu-panel]" do
+            assert_no_text "Adds a review link"
+            assert_selector "[data-testid=repo-re-register-button]"
+            assert_selector "[data-testid=repo-unwatch-button]"
+          end
+          assert_fully_on_screen("repo-watch-menu-panel", "the wrong-address menu", width)
+          take_screenshot
           ENV["PRISM_PUBLIC_URL"] = CALLBACK.sub("/webhooks/github", "")
 
           assert_equal 1, heights.values.uniq.size,
@@ -255,7 +278,7 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
           visit repo_pulls_path(owner: "acme", repo: "new-docs")
           open_watch_dialog
           assert_no_horizontal_overflow
-          assert_dialog_on_screen(width)
+          assert_fully_on_screen("watch-dialog", "the dialog", width)
           take_screenshot
         end
       end
@@ -318,34 +341,31 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
     page.driver.browser.action.move_to_location(6, 6).click.perform
   end
 
-  # A modal dialog is centred in the viewport, so "on screen" is the whole of
-  # it, and `elementFromPoint` catches anything painted over it.
-  def assert_dialog_on_screen(width)
+  # "On screen" is the whole of it, and `elementFromPoint` catches anything
+  # painted over it. Used for the modal, which the browser centres, and for
+  # the watching menu, which hangs off the control and grew a paragraph.
+  def assert_fully_on_screen(testid, label, width)
     box = page.evaluate_script(<<~JS)
       (() => {
-        const dialog = document.querySelector('[data-testid=watch-dialog]');
-        const r = dialog.getBoundingClientRect();
+        const el = document.querySelector('[data-testid=#{testid}]');
+        const r = el.getBoundingClientRect();
         const topmost = document.elementFromPoint(r.left + r.width / 2, r.top + 8);
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom,
                  viewportWidth: document.documentElement.clientWidth,
                  viewportHeight: document.documentElement.clientHeight,
-                 covered: !dialog.contains(topmost) };
+                 covered: !el.contains(topmost) };
       })()
     JS
 
-    assert_operator box["left"], :>=, 0, "at #{width}px: the dialog hangs off the left of the screen"
-    assert_operator box["right"], :<=, box["viewportWidth"] + 0.5,
-                    "at #{width}px: the dialog hangs off the right of the screen"
-    assert_operator box["top"], :>=, 0, "at #{width}px: the dialog runs off the top of the screen"
-    assert_operator box["bottom"], :<=, box["viewportHeight"] + 0.5,
-                    "at #{width}px: the dialog runs off the bottom of the screen"
-    assert_not box["covered"], "at #{width}px: something is painted over the dialog"
+    where = "#{label} at #{width}px"
+
+    assert_operator box["left"], :>=, 0, "#{where}: hangs off the left of the screen"
+    assert_operator box["right"], :<=, box["viewportWidth"] + 0.5, "#{where}: hangs off the right of the screen"
+    assert_operator box["top"], :>=, 0, "#{where}: runs off the top of the screen"
+    assert_operator box["bottom"], :<=, box["viewportHeight"] + 0.5, "#{where}: runs off the bottom of the screen"
+    assert_not box["covered"], "#{where}: something is painted over it"
   end
 
-  # Watch sits in a form and "Open on GitHub" does not, which is exactly the
-  # kind of difference that puts two buttons on slightly different lines.
-  # Only while they share one: at phone width the header wraps them, and
-  # stacked is the point rather than a fault.
   # Runs the block, checks the header still reads as one row, photographs it,
   # and hands back the height of the control so the states can be compared
   # against each other.

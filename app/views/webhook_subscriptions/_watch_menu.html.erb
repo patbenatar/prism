@@ -60,11 +60,17 @@
       is a flex container, so an absolutely positioned child of it starts at
       the top of the box, not after the summary, and the menu would open on
       top of the button that opened it. %>
-  <div class="absolute right-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-surface text-left shadow-lg shadow-ink/5"
+  <div class="absolute right-0 top-full z-40 mt-2 w-72 overflow-hidden rounded-xl border border-line bg-surface text-left shadow-lg shadow-ink/5"
        role="menu" data-testid="repo-watch-menu-panel">
-    <p class="border-b border-line px-3 py-2 text-xs text-ink-faint">
-      Watching as @<%= subscription.user.login %>
-    </p>
+    <%# Only the healthy state gets a line of explanation. Broken and wrong
+        address already carry a reason under the control saying what has
+        stopped and what to do, and repeating the running behaviour above it
+        would pad a menu someone opened to fix something. %>
+    <% if state == :active %>
+      <p class="border-b border-line px-3 py-2 text-xs leading-relaxed text-ink-faint">
+        <%= render "webhook_subscriptions/consent_brief", login: subscription.user.login %>
+      </p>
+    <% end %>
 
     <% if subscription.callback_stale? %>
       <%= button_to "Re-register", webhook_subscription_path(subscription),
