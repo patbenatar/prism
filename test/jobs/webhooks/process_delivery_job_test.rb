@@ -271,15 +271,49 @@ class Webhooks::ProcessDeliveryJobTest < ActiveJob::TestCase
     assert_nothing_raised { Webhooks::ProcessDeliveryJob.perform_now(0) }
   end
 
-  # ── Attribution ────────────────────────────────────────────────────────
+  # ── The footer rule ────────────────────────────────────────────────────
 
-  test "the block names the account the edit was made as" do
+  # The rule separates our line from the author's prose. It has to be inside
+  # the markers: outside, it would survive every retraction and accumulate.
+  test "the block opens with a horizontal rule, inside the markers" do
     stub_pull(body: "Docs.")
     stub_patch
 
     perform(action: "opened")
 
-    assert_includes patched_body, "@#{@subscription.user.login}"
+    body = patched_body
+
+    assert_includes body, "#{MARKER_BEGIN}\n---\n"
+    assert_equal 1, body.scan("---").size
+  end
+
+  test "retracting takes the rule with it and restores the author's text" do
+    # Placed by the first delivery, not by hand: pre-setting the state to
+    # "present" while the body has no block is exactly the shape that means
+    # "the author deleted it", and the run would decline instead of placing.
+    stub_pull(body: "Docs.")
+    stub_patch
+    perform(action: "opened", delivery_id: "place")
+
+    with_block = patched_body
+    reset_stubs
+    stub_pull(body: with_block, files: :no_markdown)
+    stub_patch
+
+    perform(action: "synchronize", delivery_id: "retract")
+
+    assert_equal "Docs.\n\n", patched_body
+    assert_not_includes patched_body, "---", "a stray rule was left in the description"
+  end
+
+  test "the block carries no attribution line" do
+    stub_pull(body: "Docs.")
+    stub_patch
+
+    perform(action: "opened")
+
+    assert_not_includes patched_body, "on behalf of"
+    assert_not_includes patched_body, "<sub>"
   end
 
   private

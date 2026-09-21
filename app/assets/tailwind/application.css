@@ -394,8 +394,14 @@
   }
 
   /* ═══ Buttons ════════════════════════════════════════════════════════════ */
+  /* `border border-transparent` is load-bearing, not decoration. Every other
+     variant here is bordered, so without it a primary button is 2px shorter
+     than the secondary beside it — which shows up as a header that jumps by
+     2px when a control switches between them, and as a Cancel/Confirm pair
+     that don't line up. Found by a test asserting every state of the watch
+     control is the same height. Don't remove it to "clean up". */
   .btn-primary {
-    @apply btn bg-brand text-on-brand hover:bg-brand-deep active:translate-y-px;
+    @apply btn border border-transparent bg-brand text-on-brand hover:bg-brand-deep active:translate-y-px;
   }
 
   .btn-secondary {
@@ -403,7 +409,7 @@
   }
 
   .btn-ghost {
-    @apply btn px-2.5 text-ink-soft hover:bg-sunk hover:text-ink;
+    @apply btn border border-transparent px-2.5 text-ink-soft hover:bg-sunk hover:text-ink;
   }
 
   .btn-danger {

@@ -5,11 +5,22 @@ render, Prism appends a link to its description:
 
 ```markdown
 <!-- prism:begin -->
-**[Review 3 Markdown files rendered, in Prism](https://…/acme/docs-site/pulls/42/markdown)** — comment on paragraphs and headings instead of diff lines.
+---
 
-<sub>Link added by Prism on behalf of @nick. Delete this block and Prism will not add it again.</sub>
+**[Review 3 Markdown files rendered, in Prism](https://…/acme/docs-site/pulls/42/markdown)** — comment on paragraphs and headings instead of diff lines.
 <!-- prism:end -->
 ```
+
+The horizontal rule makes the block read as a footer rather than as the next
+sentence of the author's description. **It sits inside the markers**, so a
+retraction takes it with it — a rule written outside them would survive every
+removal and pile up. There are tests on exactly that
+(`test/services/webhooks/marker_block_test.rb`).
+
+The block carries no attribution line. Deleting it still tells Prism to leave
+that pull request alone permanently; that is explained on the subscribe
+screen before anyone turns the feature on, rather than restated on every pull
+request.
 
 A later push that adds the first renderable Markdown file adds the block; one
 that removes the last renderable Markdown file takes it away.
@@ -46,9 +57,13 @@ GitHub ──POST /webhooks/github──▶ WebhooksController      (verify · d
 
 Prism acts **as the person who subscribed the repository**, using their stored
 OAuth token. The edit appears on GitHub under their name and avatar, which is
-why `/subscriptions` says so above the button rather than below it. It is also
-why the block signs itself: a reader who sees a paragraph appear in someone's
-pull request deserves to know a tool put it there.
+why `/subscriptions` says so above the button rather than below it.
+
+The block itself is unsigned — it names no account. Anyone wanting to know
+who made the edit can see it in the pull request's edit history, which is
+where GitHub records it either way. What matters is that the person whose
+name is on it agreed to that before it happened, and the subscribe screen is
+where that happens.
 
 If that token is later revoked, the next delivery marks the subscription
 **broken** (`webhook_subscriptions.status`), the job stops, and the screen

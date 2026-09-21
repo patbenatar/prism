@@ -41,7 +41,7 @@ module Webhooks
     private
 
     def place(announcement)
-      changed = target.place(link.markdown(file_count: renderable.size, actor_login: subscription.user.login))
+      changed = target.place(link.markdown(file_count: renderable.size))
       announcement.placed!(renderable.size)
 
       changed ? result(:placed, "link written") : result(:unchanged, "link already correct")
