@@ -71,6 +71,37 @@ the app still boots, but signing in raises when it tries to store the token.
 
 ---
 
+## Deploying
+
+Production mirrors MealMate and Sprout: one Docker web service on
+[Render](https://dashboard.render.com), one Postgres at [Neon](https://neon.tech).
+Render runs the app and reaches Neon over `DATABASE_URL`; there is no Render
+Postgres, and no worker service — Solid Queue runs inside Puma
+(`SOLID_QUEUE_IN_PUMA`), with its tables in the primary database.
+
+| | |
+| --- | --- |
+| Service | `prism` (`srv-dao9ebv40ujc73ee3kk0`), Oregon, Starter |
+| URL | https://prism-sgr2.onrender.com |
+| Database | Neon project `prism` (`wild-flower-62955027`), `aws-us-west-2` |
+| Deploys | Automatic on every push to `main` |
+
+`render.yaml` is the blueprint of record; it documents every variable the
+service needs. Three things are worth knowing before touching production:
+
+- **The encryption keys are not the ones in `.env.example`.** Those are
+  throwaway development values committed to a public-ish repo. Production has
+  its own set, generated with `bin/rails db:encryption:init`. Rotating them
+  makes every stored GitHub token unreadable, which signs everyone out.
+- **`PRISM_PUBLIC_URL` is not cosmetic.** Webhook callbacks are registered
+  against it, and the review links Prism writes into pull request descriptions
+  are built from it — those links outlive the merge, so changing the origin
+  strands every link already posted.
+- **Production needs its own GitHub OAuth App**, separate from development,
+  with its callback set to `https://<service>/auth/github/callback`.
+
+---
+
 ## Testing — the rules
 
 ```bash
