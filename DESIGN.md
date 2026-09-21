@@ -488,7 +488,7 @@ Review-screen classes are in §7 and §8.
 | `_account_menu` | Avatar → GitHub profile (`User#html_url`), sign out. A native `<details>`; the `menu` controller only adds outside-click and Escape closing. |
 | `_prism_mark` | The brand mark. Locals: `size:` (px, default 24), `tile:` (dark rounded tile, default false), `class:`. Keep in sync with `public/icon.svg`. |
 | `_flash` | Notice and alert. **Rendered by the layout** — don't re-render. |
-| `_page_header` | A browsing screen's title block. Locals: `title:` (required, string or `capture`d HTML), `subtitle:`, `meta:`, `actions:`. |
+| `_page_header` | A browsing screen's title block. Locals: `title:` (required, string or `capture`d HTML), `subtitle:`, `meta:`, `actions:`.  **Passing two or more `actions:` collapses the title at phone width** — the slot is `shrink-0` beside a `flex-1 min-w-0` title, so the title is what gives. Wrap multiple actions in a div with a phone-width floor; `pull_requests/index` shows the shape. |
 | `_empty_state` | Locals: `title:` (required), `body:`, `icon:` `:prism`/`:repo`/`:pull`/`:file`/`:search`, `cta_label:` + `cta_to:`. |
 | `_labels` | GitHub labels in the repo's colors. Locals: `labels:` (array of `Github::Types::Label`), `limit:` (then "+N more"). |
 | `_rate_limit_banner` | Locals: `retry_in:` (seconds, from `Github::RateLimited#retry_in`) and `reset_at:` as a fallback. Use above content that rendered anyway. |

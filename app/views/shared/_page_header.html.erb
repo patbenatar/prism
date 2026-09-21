@@ -6,6 +6,18 @@
     subtitle: (optional) one line under the title
     meta:     (optional) safe HTML rendered as a metadata row under the title
     actions:  (optional) safe HTML for the right-hand side
+
+  A trap worth knowing before you pass `actions:`. The slot is `shrink-0`
+  and the title beside it is `flex-1 min-w-0`, so the title can shrink to
+  nothing while the actions keep their full width. Whatever fits on that line
+  stays on it, and the title is what gives — two buttons were enough to
+  squeeze "acme/docs-site" down to one character per line at 390px.
+
+  One action is fine. For two or more, wrap them yourself in a div with a
+  phone-width floor (`min-w-80 max-w-80 sm:min-w-0 sm:max-w-xl`), which makes
+  the slot too wide to share the line so it wraps under the title instead and
+  keeps its own contents on one row. `pull_requests/index` does exactly that
+  and explains why in place.
 %>
 <% title    = local_assigns.fetch(:title) %>
 <% subtitle = local_assigns.fetch(:subtitle, nil) %>
