@@ -11,6 +11,14 @@ class SessionLifetimeTest < ActionDispatch::IntegrationTest
     stub_github_get("/user/repos", fixture: :repos)
   end
 
+  # Rack writes the cookie's expiry as `Time.now + expire_after`: a fixed number
+  # of seconds. `30.days.from_now` is calendar arithmetic in the app's time
+  # zone, so the two disagree by exactly an hour whenever the window straddles a
+  # daylight saving change. That is why this test began failing on its own in
+  # late September with no code change — `now + 10.days + 30.days` had started
+  # landing past the November transition. Compare seconds to seconds.
+  def expected_expiry = Time.now.to_i + 30.days.to_i
+
   def session_cookie_expiry(response)
     header = Array(response.headers["Set-Cookie"]).join("\n")
     line = header.lines.find { |l| l.start_with?("_prism_app_session=") }
@@ -26,7 +34,7 @@ class SessionLifetimeTest < ActionDispatch::IntegrationTest
     expiry = session_cookie_expiry(response)
 
     assert expiry, "expected the session cookie to carry an explicit expiry"
-    assert_in_delta 30.days.from_now.to_i, expiry.to_i, 5, "expiry should be ~30 days out"
+    assert_in_delta expected_expiry, expiry.to_i, 5, "expiry should be ~30 days out"
   end
 
   test "a later request slides the expiry forward instead of leaving it fixed" do
@@ -40,7 +48,7 @@ class SessionLifetimeTest < ActionDispatch::IntegrationTest
       assert second_expiry, "the cookie should still be resent with a fresh expiry"
       assert_operator second_expiry, :>, first_expiry,
                       "10 days of activity should have pushed the expiry forward, not left it where sign-in set it"
-      assert_in_delta 30.days.from_now.to_i, second_expiry.to_i, 5
+      assert_in_delta expected_expiry, second_expiry.to_i, 5
     end
   end
 
