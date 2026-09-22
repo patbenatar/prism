@@ -7,15 +7,23 @@
 # costs two or three GitHub calls. Three threads is plenty of parallelism, and
 # keeping it small matters — GitHub's advice for write bursts is to make
 # requests serially, not concurrently (docs/research/github-api.md §3.8).
+#
+# The polling intervals below are deliberately relaxed. Neon bills compute by
+# active time rather than by query volume, and Solid Queue's defaults have the
+# app querying the database a few times a second around the clock for a queue
+# that carries a handful of jobs a day. Nothing here needs fast pickup: a
+# webhook delivery has already been acknowledged to GitHub by the time the job
+# runs, and the only other job is a nightly prune. A second or two of extra
+# latency costs nothing; a constant query floor costs money.
 default: &default
   dispatchers:
-    - polling_interval: 1
+    - polling_interval: 10
       batch_size: 500
   workers:
     - queues: "*"
       threads: 3
       processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
-      polling_interval: 1
+      polling_interval: 2
 
 development:
   <<: *default

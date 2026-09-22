@@ -4,6 +4,14 @@ development:
 test:
   adapter: test
 
-# In-process async adapter — no Redis needed. Fine for a single web instance.
+# In-process async adapter — no Redis, and no database polling either.
+#
+# `solid_cable` would be needed only if Turbo Stream broadcasts originated in a
+# process other than Puma. They don't, twice over: Prism makes no broadcasts at
+# all (no `broadcast_*`, no `turbo_stream_from` — every Turbo Stream here is a
+# direct response to the request that caused it), and Solid Queue runs as
+# threads inside Puma anyway (`SOLID_QUEUE_MODE=async`, verified on the Render
+# service, with `workers 0` in config/puma.rb). Switching to `solid_cable`
+# would add a database poll per instance for a feature nothing uses.
 production:
   adapter: async
