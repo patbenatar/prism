@@ -131,9 +131,18 @@ class PendingReviewTest < ApplicationSystemTestCase
     end
   end
 
-  test "requesting changes without a body is rejected before it reaches GitHub, then works with one" do
+  # GitHub requires a review to carry a body OR at least one comment, not a body
+  # whenever the decision is not Approve. Verified against the real API. This
+  # test holds the case that used to be blocked: a reviewer who said everything
+  # inline and has nothing to add as a summary.
+  test "requesting changes with drafted comments and no summary goes through" do
     stub_feature_reviews_sequence([ github_fixture(:pending_review) ])
     stub_feature_review_threads([ draft_thread("1", PATH) ])
+    stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events",
+                      body: { id: REVIEW_ID, node_id: REVIEW_NODE_ID, state: "CHANGES_REQUESTED",
+                              body: nil, user: { login: "prism-dev" },
+                              html_url: "https://github.com/#{OWNER}/#{REPO}/pull/#{NUMBER}",
+                              commit_id: HEAD_SHA }.to_json)
 
     open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
     assert_selector "[data-testid=pending-count]", text: "1"
@@ -142,14 +151,17 @@ class PendingReviewTest < ApplicationSystemTestCase
     find("[data-testid=review-event-request-changes]").click
     click_on "Submit review"
 
-    # Rejected server-side without ever calling GitHub. ReviewsController
-    # redirects every submit outcome — success or rejection — to the PR
-    # overview, never back to the file view, so the pending review (and its
-    # tray) is reached again by opening a Markdown file afresh.
     assert_current_path repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
-    assert_github_not_requested :post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events"
-    assert_selector "[data-testid=flash]", text: /body is required/i
+    assert_selector "[data-testid=flash]", text: /changes requested/i
 
+    expect_github_received(:post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events") do |body|
+      body["event"] == "REQUEST_CHANGES" && body["body"].blank?
+    end
+  end
+
+  test "requesting changes with a summary sends it" do
+    stub_feature_reviews_sequence([ github_fixture(:pending_review) ])
+    stub_feature_review_threads([ draft_thread("1", PATH) ])
     stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events",
                       body: { id: REVIEW_ID, node_id: REVIEW_NODE_ID, state: "CHANGES_REQUESTED",
                               body: "Needs a bit more detail.", user: { login: "prism-dev" },

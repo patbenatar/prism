@@ -1,19 +1,23 @@
 <%#
   The panel opened from the pending-review tray's "Submit review" button: an
-  optional body and the three GitHub review events. `body` is required for
-  Request changes / Comment and optional for Approve — ReviewsController
-  validates this again server-side before calling GitHub.
+  optional body and the three GitHub review events.
+
+  A summary is NOT required whenever the review already carries comments —
+  GitHub's rule is that a review must have a body or at least one comment, not
+  that non-approving reviews need prose. See ReviewsController#submit.
 
   Locals: pull_request: (required), pending_review: (required)
 %>
 <% pull_request = local_assigns.fetch(:pull_request) %>
 <% pending_review = local_assigns.fetch(:pending_review) %>
+<% pending_count = local_assigns.fetch(:pending_count, 0) %>
 
 <%= form_with url: repo_pull_review_submit_path(owner: params[:owner], repo: params[:repo], number: pull_request.number, id: pending_review.id),
               method: :post, data: { turbo: true, testid: "review-submit-form" } do |f| %>
+  <%= hidden_field_tag :pending_count, pending_count, id: nil %>
   <p class="field-label">Review summary</p>
   <%= f.text_area :body, rows: 3, id: nil, class: "composer-textarea w-full",
-                   placeholder: "Leave a summary (required unless approving)",
+                   placeholder: pending_count.to_i.positive? ? "Leave a summary (optional)" : "Leave a summary",
                    data: { testid: "review-submit-body" }, aria: { label: "Review summary" } %>
 
   <fieldset class="mt-3 space-y-2">
