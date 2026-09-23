@@ -30,8 +30,22 @@ class ReviewsController < ApplicationController
     body = params[:body].presence
 
     return redirect_to file_path, alert: "Choose Approve, Request changes, or Comment." unless EVENTS.include?(event)
-    if body.blank? && event != "APPROVE"
-      return redirect_to file_path, alert: "A review body is required for #{event.tr('_', ' ').downcase}."
+
+    # GitHub's rule is not "a body unless approving", which is what this used to
+    # enforce and what the panel used to say. A review has to carry *something*:
+    # a body OR at least one comment. Verified against the real API — submitting
+    # COMMENT with no body and no comments is rejected with "You need to leave a
+    # comment indicating the requested changes", while the same submission with
+    # one draft comment attached succeeds. Requiring a body from a reviewer who
+    # has just written five inline comments blocked a perfectly ordinary review.
+    #
+    # The count comes from the tray, which already tracks it without a round
+    # trip. When it is missing we do not guess: GitHub validates this anyway and
+    # says so clearly, and handle_review_error surfaces its words.
+    drafted = params[:pending_count].presence&.to_i
+    if body.blank? && drafted&.zero?
+      return redirect_to file_path,
+                         alert: "Add a summary, or a comment on a line — a review can't be empty."
     end
 
     review = github.submit_review(@owner, @repo, @number, params[:id], event: event, body: body)
