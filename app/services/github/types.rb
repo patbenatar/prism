@@ -127,6 +127,34 @@ module Github
     # A person who can be @-mentioned in this repository.
     Mentionable = Data.define(:login, :name, :avatar_url)
 
+    # Something a comment can point at with `#123`.
+    #
+    # Issues and pull requests share one number space on GitHub, and one list
+    # endpoint returns both, so this is one type with a `kind` rather than two
+    # near-identical ones. `state` stays GitHub's own "open"/"closed"; `merged`
+    # and `draft` are the two facts that word alone would hide.
+    Reference = Data.define(:number, :title, :kind, :state, :draft, :merged) do
+      def pull_request? = kind == "pull_request"
+
+      def issue? = kind == "issue"
+
+      def open? = state == "open"
+
+      def merged? = !!merged
+
+      def draft? = !!draft
+
+      # The one word an autocomplete row shows. Same precedence as
+      # PullRequestsHelper#pull_request_state: merged outranks closed, and a
+      # draft is not open for review yet.
+      def status
+        return "merged" if merged?
+        return "draft" if pull_request? && open? && draft?
+
+        state
+      end
+    end
+
     # A repository webhook Prism registered. `url` is the callback we asked
     # GitHub to POST to, and is how we recognize our own hook among any others
     # the repository already has. The secret is write-only on GitHub's side —

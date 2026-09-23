@@ -520,6 +520,68 @@ class Github::ClientTest < ActiveSupport::TestCase
     assert_equal people.map(&:login).uniq, people.map(&:login)
   end
 
+  # ----------------------------------------------------------- references ---
+
+  test "references returns pull requests and issues from the one issues endpoint" do
+    stub_github_get("/repos/acme/docs-site/issues", fixture: :issues)
+
+    items = @client.references("acme", "docs-site")
+
+    assert_equal [ 42, 41, 39, 37, 12 ], items.map(&:number)
+    assert_equal %w[pull_request issue pull_request pull_request issue], items.map(&:kind)
+    assert_github_not_requested :get, "/repos/acme/docs-site/pulls"
+  end
+
+  test "references asks for every state, most recently touched first" do
+    stub_github_get("/repos/acme/docs-site/issues", fixture: :issues)
+
+    @client.references("acme", "docs-site")
+
+    assert_github_requested(:get, "/repos/acme/docs-site/issues",
+                             query: hash_including({ "state" => "all", "sort" => "updated",
+                                                     "direction" => "desc", "per_page" => "100" }))
+  end
+
+  # `state` alone says "closed" for both a merged pull request and an
+  # abandoned one; only the nested pull_request.merged_at tells them apart.
+  test "references reads merged and draft off the pull_request key" do
+    stub_github_get("/repos/acme/docs-site/issues", fixture: :issues)
+
+    by_number = @client.references("acme", "docs-site").index_by(&:number)
+
+    assert by_number[39].merged?
+    assert_equal "merged", by_number[39].status
+    assert by_number[37].draft?
+    assert_equal "draft", by_number[37].status
+    assert_equal "open", by_number[42].status
+    assert_equal "closed", by_number[12].status
+    assert_not by_number[41].pull_request?
+  end
+
+  test "references are cached within their TTL" do
+    stub_github_get("/repos/acme/docs-site/issues", fixture: :issues)
+
+    with_memory_cache do |store|
+      3.times { @client.references("acme", "docs-site") }
+
+      assert_not_nil store.read([ "github", @user.id, :references, "acme", "docs-site" ])
+    end
+
+    assert_github_requested :get, "/repos/acme/docs-site/issues", times: 1
+  end
+
+  test "references answers empty when the repository has issues turned off" do
+    stub_github_error(:get, "/repos/acme/docs-site/issues", status: 410, message: "Issues are disabled for this repo")
+
+    assert_equal [], @client.references("acme", "docs-site")
+  end
+
+  test "references on a repository with issues disabled raises NotFound for the caller to swallow" do
+    stub_github_error(:get, "/repos/acme/docs-site/issues", status: 404, message: "Not Found")
+
+    assert_raises(Github::NotFound) { @client.references("acme", "docs-site") }
+  end
+
   # ------------------------------------------------------------- markdown ---
 
   test "render_markdown posts gfm mode with the repository context" do

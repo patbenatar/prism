@@ -129,12 +129,20 @@ module PullRequestFilesHelper
 
   # A block's sanitized HTML with the per-child markers woven in: a
   # `data-block-id` and an id on each `<li>`/`<tr>`, its own "+", and the
-  # `threads_<id>` / `composer_<id>` containers workstream E targets.
+  # `threads_<id>` / `composer_<id>` containers workstream E targets — and, for
+  # a mermaid fence, the wrapper the diagram is drawn into (`wrap_mermaid`).
+  #
+  # Both can apply at once: a fenced diagram inside a list item is one list
+  # block with children *and* a fence to wrap.
   def block_body(annotated, pull_request:, path:)
     children = annotated.children.flat_map(&:self_and_descendants)
-    return annotated.block.html if children.empty?
+    html = annotated.block.html
+    return html if children.empty? && !html.include?(MERMAID_FENCE)
 
-    fragment = Nokogiri::HTML5.fragment(annotated.block.html)
+    fragment = Nokogiri::HTML5.fragment(html)
+    wrap_mermaid(fragment)
+    return fragment.to_html.html_safe if children.empty?
+
     tag_name = children.first.block.type == :table_row ? "tr" : "li"
 
     # Two children can start on the same source line — `- - a` is one line
@@ -164,6 +172,47 @@ module PullRequestFilesHelper
   end
 
   private
+
+  # `Markdown::Highlighter::SKIP` leaves a mermaid fence as a plain
+  # `<pre lang="mermaid">`; this is the cheap check for one, matched against the
+  # serialized attribute rather than the bare word so a paragraph about mermaids
+  # does not cost a parse.
+  MERMAID_FENCE = 'lang="mermaid"'
+
+  # Give each mermaid fence somewhere for the client to draw.
+  #
+  # The `<pre>` is not replaced and not moved out of the block: it carries the
+  # `data-sourcepos` the source mapping reads, it is what the gutter "+" anchors
+  # a comment to, and with JavaScript off it is still the whole block. The
+  # figure is a sibling, empty until `mermaid_controller.js` fills it, and the
+  # wrapper's `data-mermaid-state` decides which of the two is on screen.
+  #
+  # Doing this here rather than in a controller that scans the page is what
+  # makes the library's cost conditional: `data-controller="mermaid"` exists on
+  # a page with a diagram and on no other, so a pull request without one never
+  # asks for the 3.5 MB.
+  def wrap_mermaid(fragment)
+    fragment.css("pre[lang='mermaid']").each do |pre|
+      document = pre.document
+
+      wrapper = node(document, "div", "class" => "md-mermaid",
+                                      "data-controller" => "mermaid",
+                                      "data-mermaid-state" => "source",
+                                      "data-testid" => "mermaid")
+      pre.add_next_sibling(wrapper)
+
+      wrapper.add_child(node(document, "div", "class" => "md-mermaid-figure",
+                                              "data-mermaid-target" => "figure",
+                                              "data-testid" => "mermaid-figure"))
+      pre["data-mermaid-target"] = "source"
+      wrapper.add_child(pre)
+      wrapper.add_child(node(document, "div", "class" => "md-mermaid-error",
+                                              "data-mermaid-target" => "error",
+                                              "data-testid" => "mermaid-error",
+                                              "hidden" => "hidden",
+                                              "role" => "status"))
+    end
+  end
 
   # A table whose rows are individually commentable needs room in its first
   # column for the row's "+", because the table scrolls and anything placed

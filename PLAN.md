@@ -53,7 +53,7 @@ non-Markdown files (we link out to GitHub); storing any review data ourselves.
 | Auth | GitHub OAuth App via `omniauth-github` + `omniauth-rails_csrf_protection`; token stored with ActiveRecord Encryption |
 | GitHub API | `octokit` 10 (REST) + `Github::GraphQL` over `client.post("/graphql")` (threads, pending-review drafts, reactions, resolve) |
 | Markdown | `commonmarker` 2.10 (comrak) driven through its AST with `sourcepos`; `rouge` for code highlighting; `Rails::HTML5::SafeListSanitizer` with a custom safelist |
-| Frontend | Turbo Frames/Streams, Stimulus, Tailwind 4; hand-rolled Stimulus controller for @-mention autocomplete (no extra importmap pins) |
+| Frontend | Turbo Frames/Streams, Stimulus, Tailwind 4; one hand-rolled Stimulus controller for both comment autocompletes, `@` and `#` (no extra importmap pins) |
 | Tests | Minitest, Capybara + headless Chromium, WebMock (network is disabled in tests; GitHub is always stubbed) |
 | Dev | Docker Compose: `app` (host :3004), `postgres` (host :5436), `css` watcher. No mailpit (no email). |
 
@@ -93,6 +93,7 @@ app/
 │   ├── review_threads_controller.rb      # resolve / unresolve
 │   ├── reactions_controller.rb           # create / destroy on a comment
 │   ├── mentionables_controller.rb        # JSON for @-autocomplete
+│   ├── references_controller.rb          # JSON for #-autocomplete (issues + PRs)
 │   └── markdown_previews_controller.rb   # render a comment body via GitHub
 ├── models/
 │   └── user.rb
@@ -117,7 +118,7 @@ app/
 └── javascript/controllers/
     ├── block_gutter_controller.js     # hover "+" per block, open composer
     ├── comment_composer_controller.js # textarea, Cmd+Enter, preview tab, autosize
-    ├── mention_controller.js          # @ autocomplete against /mentionables
+    ├── autocomplete_controller.js     # @ people and # issues/PRs, one controller
     ├── pending_review_controller.js   # sticky "N pending · Submit review" tray
     └── collapse_controller.js         # removed-content strips, outdated section
 ```
@@ -420,7 +421,7 @@ GitHub's; Prism never sees data the user couldn't see on github.com.
 | Outdated comments | ✅ | `isOutdated` → Outdated section with `originalLine` + `diffHunk`; never guessed into a block |
 | Comments on deleted content | ✅ | LEFT-side threads placed via `right_of_left`, muted style, or on the removed strip |
 | Edit/Delete/Resolve affordances | ✅ | gated on `viewerCanUpdate` / `viewerCanDelete` / `viewerCanResolve`, not on login comparison |
-| `#123` issue autocomplete | later | |
+| `#123` issue autocomplete | ✅ | issues **and** pull requests, both from one `GET /repos/:o/:r/issues`; same Stimulus controller as `@` |
 | ```suggestion blocks | later | possible: we know the source lines |
 | Emoji `:shortcode:` autocomplete | later | |
 | Selection-level commenting | never (v1) | GitHub's unit is a line |
@@ -638,8 +639,13 @@ Recorded here so nobody rediscovers them as bugs (see `docs/review-2026-09-19.md
   worker the per-user cache becomes per-process and the 7-day file-content
   TTLs become advisory. Switch to Solid Cache (`db/cache_schema.rb`,
   `config/cache.yml`) before scaling horizontally.
-- **Mermaid and math** render as their `<pre>` fallback (still commentable);
-  client-side upgrades are a later step.
+- **Math** renders as its `<pre>`/`data-math-style` fallback (still
+  commentable); the client-side upgrade is a later step. **Mermaid no longer
+  does** — a ```mermaid fence is drawn as an SVG beside its `<pre>`, which
+  stays in the DOM because it is what a comment anchors to. The library is
+  vendored (`vendor/javascript/mermaid.min.js`, 3.5 MB) and pinned
+  `preload: false`, so a pull request with no diagram in it fetches nothing.
+  See DESIGN.md §9.
 - **The pending-review count after a write comes from the client, not GitHub.**
   A comment save used to cost up to five sequential GitHub round trips, and
   GraphQL alone measures 240-350ms from the container, so the tray count is now

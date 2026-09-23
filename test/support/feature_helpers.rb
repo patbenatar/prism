@@ -98,6 +98,17 @@ module FeatureHelpers
     stub_github_get("/orgs/#{owner}/members", fixture: :org_members)
   end
 
+  # The `#` autocomplete's one read. Same shape of convenience as
+  # `stub_feature_mentionables`: a test that types a `#` anywhere in a comment
+  # needs this, because the browser will go and ask.
+  def stub_feature_references(owner: FEATURE_OWNER, repo: FEATURE_REPO, fixture: :issues, body: nil)
+    if body
+      stub_github_get("/repos/#{owner}/#{repo}/issues", body: body)
+    else
+      stub_github_get("/repos/#{owner}/#{repo}/issues", fixture: fixture)
+    end
+  end
+
   # ---------------------------------------------------------- GraphQL world --
 
   # One GraphQL `reviewThreads` node, in the exact shape

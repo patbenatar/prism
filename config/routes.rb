@@ -86,8 +86,10 @@ Rails.application.routes.draw do
       post "threads/:id/unresolve", to: "review_threads#unresolve", as: :thread_unresolve
     end
 
-    # JSON for the @-mention autocomplete, and the Markdown preview fragment.
+    # JSON for the two comment autocompletes — @ people and # issues/pull
+    # requests — and the Markdown preview fragment.
     get  "mentionables",     to: "mentionables#index"
+    get  "references",       to: "references#index"
     post "markdown/preview", to: "markdown_previews#create", as: :markdown_preview
   end
 end

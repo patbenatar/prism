@@ -1173,6 +1173,62 @@
     @apply bg-transparent p-0 text-[1em];
   }
 
+  /* ── Mermaid ────────────────────────────────────────────────────────────
+     A ```mermaid fence is wrapped by PullRequestFilesHelper#wrap_mermaid and
+     drawn by mermaid_controller.js. The <pre> stays in the block — it carries
+     `data-sourcepos` and it is what a comment anchors to — so this is a pair
+     of siblings and `data-mermaid-state` picks which one is on screen.
+
+     `source` is the state the server renders, so a document reads correctly
+     before any JavaScript arrives and forever if none does. The controller
+     flips it to `diagram` only once it has actually drawn something. */
+  .md-mermaid {
+    @apply my-4;
+  }
+
+  .md-mermaid[data-mermaid-state="source"] .md-mermaid-figure,
+  .md-mermaid[data-mermaid-state="diagram"] > pre {
+    @apply hidden;
+  }
+
+  .md-mermaid-figure {
+    @apply overflow-x-auto rounded-lg border border-line bg-surface p-4 text-center;
+  }
+
+  /* Sized in the controller from its own viewBox, so a diagram wider than the
+     reading column scrolls in the frame rather than shrinking to an illegible
+     thumbnail — the same choice tables make in §9. */
+  .md-mermaid-figure svg {
+    @apply mx-auto block;
+  }
+
+  /* The toggle is added by the controller, so it exists only where there is
+     something to toggle to. */
+  .md-mermaid-toggle {
+    font-family: var(--font-display);
+    @apply mt-1 text-xs text-ink-faint hover:text-brand;
+  }
+
+  .md-mermaid-error {
+    font-family: var(--font-display);
+    @apply mt-2 rounded-md border border-removed bg-removed-soft px-3 py-2 text-xs text-ink;
+  }
+
+  /* Mermaid's own parse error, which points at the column it gave up on with
+     a caret — so it keeps its newlines and its monospace. */
+  .md-mermaid-error-detail {
+    font-family: var(--font-mono);
+    @apply mt-1 block overflow-x-auto bg-transparent p-0 text-[0.7rem] whitespace-pre text-ink-soft;
+  }
+
+  /* Where mermaid does its measuring. Off the side of the page rather than
+     `display: none`, because `getBBox` needs a real layout with the real
+     fonts — see the comment on `renderStage`. The token probe borrows it for
+     the same reason. */
+  .md-mermaid-stage {
+    @apply pointer-events-none invisible absolute top-0 left-[-10000px] w-[1200px];
+  }
+
   .md-prose table {
     @apply block w-max min-w-full max-w-full overflow-x-auto border-collapse text-[0.9rem];
     font-family: var(--font-display);

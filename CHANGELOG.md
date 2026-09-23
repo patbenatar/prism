@@ -2,6 +2,13 @@
 
 Newest first. Written for people using Prism, not for how it is built.
 
+## 2026-09-23
+
+- **Mermaid diagrams are drawn**, not shown as source. A ```mermaid fence in a
+  reviewed file renders as a diagram in the page's own colours, follows dark
+  mode, and can still be commented on — the source is a click away under it.
+  A diagram that won't parse falls back to its source with the reason.
+
 ## 2026-09-19
 
 - **Sign in with GitHub** and browse the repositories you can access, their
