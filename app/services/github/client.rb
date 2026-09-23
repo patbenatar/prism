@@ -34,6 +34,12 @@ module Github
       files_by_sha: 1.day,
       content: 7.days,
       mentionables: 10.minutes,
+      # Long enough that a reviewer moving between files in one sitting does not
+      # re-fetch the list on every page, short enough that a pull request opened
+      # while they were reading shows up without a sign-out. Nothing depends on
+      # it being current: a number the menu never offered still links, because
+      # GitHub resolves `#123` when it renders the comment, not when we suggest it.
+      references: 5.minutes,
       markdown: 1.day
     }.freeze
 
@@ -195,6 +201,39 @@ module Github
 
       people = data.map { |person| build_mentionable(person) } + Array(participants).map { |p| coerce_mentionable(p) }
       people.compact.uniq(&:login).sort_by { |person| person.login.downcase }
+    end
+
+    # Issues and pull requests a comment can reference with `#123`.
+    #
+    # One request, not two: on GitHub a pull request *is* an issue, so
+    # `GET /repos/{owner}/{repo}/issues` returns both and marks the pull
+    # requests with a `pull_request` key. Also asking `/pulls` would spend a
+    # second call against the user's rate limit to learn nothing the first did
+    # not already carry.
+    #
+    # One page of the hundred most recently touched, newest first, which is the
+    # order an autocomplete wants: the thing you are about to link is nearly
+    # always something you or someone else touched this week. A number outside
+    # that page is not lost — typing `#123` by hand still links, because GitHub
+    # resolves the reference when it renders the comment.
+    def references(owner, name)
+      data = cached(:references, owner, name, ttl: TTL[:references]) do
+        begin
+          get("#{repo_path(owner, name)}/issues",
+              state: "all", sort: "updated", direction: "desc", per_page: PER_PAGE)
+            .map { |item| attrs(item) }
+        rescue Octokit::Deprecated
+          # 410 Gone — issues are turned off on this repository, which GitHub
+          # answers with a status rather than an empty list. (Octokit's class
+          # for 410 is `Deprecated`, which has nothing to do with this;
+          # verified against octokit 10's error factory.) `translate_errors`
+          # passes 410 through untranslated, so without this it would reach
+          # the controller as a raw Octokit error and 500 — over nothing worth
+          # saying: typing `#123` by hand still links.
+          []
+        end
+      end
+      data.map { |item| build_reference(item) }
     end
 
     # GitHub's own renderer, so @mentions and #123 references link the way they
@@ -728,6 +767,23 @@ module Github
         login: data[:login],
         name: data[:name],
         avatar_url: data[:avatar_url] || data[:avatarUrl]
+      )
+    end
+
+    # The issues endpoint answers with issues and pull requests in one list.
+    # `pull_request` is present on exactly the pull requests, and carries the
+    # `merged_at` that the top-level `state` ("closed") cannot distinguish from
+    # an abandoned one.
+    def build_reference(data)
+      pull = data[:pull_request]
+
+      Types::Reference.new(
+        number: data[:number],
+        title: data[:title],
+        kind: pull.present? ? "pull_request" : "issue",
+        state: data[:state],
+        draft: data[:draft],
+        merged: pull.present? && pull[:merged_at].present?
       )
     end
 

@@ -49,10 +49,10 @@
     <%= f.hidden_field :pending_review_id, value: pending_review&.id, id: nil, data: { composer_target: "pendingReviewId" } %>
     <%= f.hidden_field :pending_count, value: local_assigns[:pending_count] || 0, id: nil, data: { composer_target: "pendingCount" } %>
 
-    <div data-controller="markdown-preview mention"
+    <div data-controller="markdown-preview autocomplete"
          data-markdown-preview-url-value="<%= repo_markdown_preview_path(owner: params[:owner], repo: params[:repo]) %>"
-         data-mention-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
-         data-mention-target="container">
+         data-autocomplete-mentionables-url-value="<%= repo_mentionables_path(owner: params[:owner], repo: params[:repo]) %>"
+         data-autocomplete-references-url-value="<%= repo_references_path(owner: params[:owner], repo: params[:repo]) %>">
       <div class="composer-head" role="tablist" aria-label="Reply editor">
         <button type="button" role="tab" aria-selected="true" class="composer-tab tab-active"
                 data-action="markdown-preview#showWrite" data-markdown-preview-target="writeTab">Write</button>
@@ -60,15 +60,17 @@
                 data-action="markdown-preview#showPreview" data-markdown-preview-target="previewTab">Preview</button>
       </div>
 
-      <div data-markdown-preview-target="writePane" role="tabpanel">
+      <%# `relative` so the listbox below anchors to the textarea it belongs to
+          rather than to whatever positioned ancestor happens to be nearest. %>
+      <div class="relative" data-markdown-preview-target="writePane" role="tabpanel">
         <%= f.text_area :body, value: local_assigns[:body], rows: 1, id: nil, class: "composer-textarea w-full",
                          placeholder: (thread.resolved? ? "Reply (this will not reopen the thread)" : "Reply…"),
-                         data: { testid: "reply-textarea", markdown_preview_target: "textarea", mention_target: "textarea",
-                                  action: "input->composer#autosize keydown->mention#keydown input->mention#input input->markdown-preview#dirty" },
+                         data: { testid: "reply-textarea", markdown_preview_target: "textarea", autocomplete_target: "textarea",
+                                  action: "input->composer#autosize keydown->autocomplete#keydown input->autocomplete#input blur->autocomplete#close input->markdown-preview#dirty" },
                          aria: { label: "Reply" } %>
-        <div data-mention-target="list"
-             class="absolute z-20 mt-1 max-h-56 w-72 overflow-auto rounded-lg border border-line bg-surface py-1 text-sm shadow-lg shadow-ink/5"
-             hidden role="listbox" aria-label="Mention someone"></div>
+        <div data-autocomplete-target="list"
+             class="absolute z-20 mt-1 max-h-56 w-max min-w-72 max-w-full overflow-auto rounded-lg border border-line bg-surface py-1 text-sm shadow-lg shadow-ink/5"
+             hidden role="listbox"></div>
       </div>
 
       <div data-markdown-preview-target="previewPane" hidden role="tabpanel"

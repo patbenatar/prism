@@ -350,7 +350,7 @@ same distinction GitHub makes.
 
 Almost none. Panels are defined by a border on `surface` over the canvas, never
 by a shadow. The only shadows in the system are on things that float above the
-page: the account menu, the file switcher, the mention listbox and the submit
+page: the account menu, the file switcher, the autocomplete listbox and the submit
 popover, all `shadow-lg shadow-ink/5`. Adding a shadow to a card is a bug.
 
 On the dark canvas `shadow-ink/5` becomes a faint light halo — invisible
@@ -389,7 +389,7 @@ to run it.
 | --- | --- | --- |
 | `default-src` | `'self'` | Everything not named below. |
 | `script-src` | `'self'` + per-request nonce | No inline scripts and no `on*` attributes exist in the app. Importmap's inline tags get the nonce automatically. Never `unsafe-inline` or `unsafe-eval`. |
-| `style-src` | `'self' https://fonts.googleapis.com` + nonce | The Tailwind build, the Google Fonts link, and the `<style>` Turbo injects for its progress bar — Turbo reads `csp-nonce` and sets it on that element. |
+| `style-src` | `'self' https://fonts.googleapis.com` + nonce | The Tailwind build, the Google Fonts link, the `<style>` Turbo injects for its progress bar — Turbo reads `csp-nonce` and sets it on that element — and a mermaid diagram's own stylesheet, which `mermaid_controller.js` nonces the same way. See below. |
 | `style-src-attr` | `'unsafe-inline'` | The one exception, for GitHub label colours. See below. |
 | `font-src` | `'self' https://fonts.gstatic.com` | The three web faces. |
 | `img-src` | `'self' https: data:` | Avatars, and an image in a rendered Markdown file can be hosted anywhere. No allowlist covers "whatever the document links to". |
@@ -412,6 +412,35 @@ the border, which is how a border computed in Ruby can still follow a theme
 Ruby cannot see. And `style` is not in `GITHUB_HTML_ATTRIBUTES`, so the
 sanitizer strips it from every piece of GitHub-authored HTML. Note that `style-src-attr` deliberately carries **no**
 nonce: adding one would cancel the `unsafe-inline` the labels depend on.
+
+**Mermaid runs under this policy unchanged.** It was the first thing that
+looked like it might not. A diagram's colours arrive as a `<style>` element
+mermaid builds itself, which `style-src 'self'` blocks — and mermaid has no
+configuration for a nonce. `mermaid_controller.js` stamps one on at the two
+points a stylesheet comes into being, for the length of one render:
+`document.createElement`, and `DOMParser.parseFromString`. The second is
+needed because **a nonce does not survive being written out as text**: the CSP
+nonce-hiding rule empties the `nonce` content attribute once an element is in a
+document, so when mermaid serializes the finished SVG and hands the string to
+its own DOMPurify pass, the `<style>` inside arrives as `nonce=""` and
+re-parsing it is a second violation — inside mermaid, not inside us. Putting
+the nonce back into the string on the way into any parse closes both. Nothing
+was added to `script-src` or `style-src`; `unsafe-inline` and `unsafe-eval`
+remain absent, and the vendored bundle contains no `eval`, no `new Function`
+that is ever reached, and no dynamic `import()`.
+
+The library itself is an ordinary `'self'` script: it is vendored under
+`vendor/javascript/` and loaded from `/assets`, never a CDN.
+
+**`style-src-attr` is still only the label pills.** The SVG a diagram produces
+is walked against an allowlist before it reaches the page and every `style`
+attribute in it is dropped — the diagram's own `classDef` and `style`
+directives live in its stylesheet, not in attributes, so nothing is lost. The
+drawing's size is set from its `viewBox` as plain `width`/`height` attributes.
+One fallback path, for a diagram type that somehow produces no `viewBox`, sets
+`max-width` through CSSOM from a number matched against `[\d.]+` — CSSOM is not
+an inline style attribute as far as CSP is concerned, and the value cannot
+carry anything but digits.
 
 **The nonce is random per request**, not derived from the session id as Rails
 suggests. A signed-out visitor has no session id, which would render `nonce-`
@@ -543,6 +572,10 @@ conveyed by color alone.
 - `filter_controller` — filters an already-rendered list as you type. Targets:
   `query`, `item` (each carrying `data-filter-text`), `empty`, `count`,
   `hideWhenFiltering`.
+- `mermaid_controller` — draws a ```mermaid fence as a diagram beside its
+  `<pre>`. Attached by `PullRequestFilesHelper#wrap_mermaid`, so it exists only
+  on a page that has one. Targets: `source` (the `<pre>`), `figure`, `error`,
+  `toggle`. See §9.
 
 ---
 
@@ -812,6 +845,54 @@ the GFM footnotes section, and GitHub alerts.
 speaks the same language as a change bar: `.markdown-alert-note` → pending,
 `-tip` → added, `-important` → brand, `-warning` → modified, `-caution` →
 removed.
+
+**Mermaid** — a ```mermaid fence is drawn as a diagram. GitHub renders one;
+showing the source instead is the thing this product exists to fix.
+
+The `<pre>` is never replaced and never moves. It carries `data-sourcepos`, it
+is what the block's gutter "+" anchors a comment to, and with JavaScript off it
+is still the whole block — so the diagram is a *sibling*.
+`PullRequestFilesHelper#wrap_mermaid` (after sanitizing, like every other
+wrapper here) puts both inside `.md-mermaid`, whose `data-mermaid-state` picks
+which one is on screen: `source` is what the server renders, and the controller
+flips it to `diagram` only once it has actually drawn something. A
+`.md-mermaid-toggle` button appears underneath, added by the controller so it
+exists only where there is something to toggle to.
+
+- **The frame** (`.md-mermaid-figure`) is a bordered panel on `surface`, and it
+  scrolls sideways rather than shrinking the drawing. A diagram too wide for
+  the reading column is scrolled at a readable size, the way a wide table is —
+  scaling it to fit turns a flowchart into an illegible thumbnail at 390px.
+- **The theme is the page's.** `theme: "base"` with `themeVariables` read out of
+  the stylesheet: nodes take `sunk` (a well on paper, a lift on the dark
+  canvas, which is the one relationship dark mode flips), borders `line-strong`,
+  edges `ink-faint`, labels `ink`, the display face, notes the `modified` band.
+  Every token is a `light-dark()` pair, so each is painted onto a probe and read
+  back as a used value — the same trick `DarkModeTest` uses. Which side won is
+  decided from the resolved canvas colour, not re-derived from
+  `prefers-color-scheme` and `data-theme`, so the stylesheet stays the one
+  source of truth. A scheme change while the page is open redraws every
+  diagram.
+- **A diagram that cannot be drawn is one bad diagram.** The block keeps its
+  gutter, the source stays on screen, and `.md-mermaid-error` says so in a
+  `removed`-band note with mermaid's own parse error under it in mono, newlines
+  kept, because that error points at the offending column with a caret.
+- **It costs nothing when there is nothing to draw.** The library is vendored
+  (3.5 MB, 953 KB gzipped — the app adds no `Rack::Deflater`, so whether that
+  is what crosses the wire is up to the edge in front of it) and pinned
+  `preload: false`; the controller is
+  attached by the server only where a fence exists, so a pull request without
+  one makes no request for it. One fetch however many diagrams a page holds.
+- **The SVG is untrusted.** It is built in the browser from a fence in somebody
+  else's repository, which `Markdown::Sanitizer` never sees. `securityLevel:
+  "strict"` (never `loose` or `antiscript`), `htmlLabels: false`, and
+  `bindFunctions` is never called, so no `click` directive can attach anything.
+  On top of that the controller walks the SVG against an element allowlist,
+  drops every `on*` and `style` attribute, allows only `http(s)`, `mailto` and
+  `#` in anything that names a resource, and namespaces every `id` to
+  `user-content-` — rewriting `url(#…)`, `href="#…"` and the `#id` selectors in
+  the diagram's own stylesheet to match — for the reason `Markdown::Sanitizer`
+  namespaces the document's.
 
 **Code highlighting** — one Rouge theme is defined at the end of
 `application.css` against `.md-prose .highlight`. Comments recede to

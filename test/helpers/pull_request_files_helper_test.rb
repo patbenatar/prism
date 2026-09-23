@@ -133,6 +133,52 @@ class PullRequestFilesHelperTest < ActionView::TestCase
     assert_equal 1, anchor["line"]
   end
 
+  # ------------------------------------------------------------- mermaid --
+
+  # `Markdown::Highlighter::SKIP` leaves a mermaid fence alone; `block_body`
+  # gives the client somewhere to draw and keeps the <pre> exactly where the
+  # comment anchor needs it.
+  MERMAID = "```mermaid\ngraph TD;\n  A-->B;\n```\n"
+
+  test "a mermaid fence is wrapped without the pre moving out of the block" do
+    fragment = woven(MERMAID)
+    wrapper = fragment.at_css(".md-mermaid")
+
+    assert wrapper, "a mermaid fence gets a wrapper for the diagram to go in"
+    assert_equal "mermaid", wrapper["data-controller"]
+    assert_equal "source", wrapper["data-mermaid-state"],
+                 "the server renders the source; only the client flips it to the diagram"
+
+    pre = wrapper.at_css("pre[lang=mermaid]")
+    assert pre, "the <pre> stays inside the wrapper"
+    assert_equal "source", pre["data-mermaid-target"]
+
+    # The attribute the whole source mapping hangs on is untouched.
+    assert_equal "1:1-4:3", pre["data-sourcepos"]
+
+    # An empty figure and a hidden note, in that order around the source.
+    assert wrapper.at_css(".md-mermaid-figure[data-mermaid-target=figure]")
+    assert wrapper.at_css(".md-mermaid-error[hidden]")
+    assert_equal %w[div pre div], wrapper.element_children.map(&:name)
+  end
+
+  test "a fence in any other language is left completely alone" do
+    html = block_body(annotated("```ruby\nputs 1\n```\n").first, pull_request: nil, path: PATH)
+
+    assert_no_match(/md-mermaid/, html)
+    assert_no_match(/data-controller/, html)
+  end
+
+  test "a mermaid fence inside a list item is wrapped and the item keeps its own marker" do
+    source = "- item\n\n  ```mermaid\n  graph TD;\n    A-->B;\n  ```\n"
+    fragment = woven(source)
+
+    item = fragment.at_css("li")
+    assert_equal 1, fragment.css(".md-mermaid").size
+    assert item.at_css(".md-mermaid pre[lang=mermaid]"), "the wrapper sits inside the item"
+    assert item.at_css("> .md-add--child"), "the item still offers its own +"
+  end
+
   private
 
   def annotated(source, patch: nil)
