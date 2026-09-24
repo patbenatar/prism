@@ -194,6 +194,88 @@ class PullRequestFilesTest < ActionDispatch::IntegrationTest
                  "every child element that claims a block also offers its own +"
   end
 
+  # ------------------------------------------------------- folding a file away --
+
+  test "each file heading carries the control that folds the file away" do
+    sign_in_and_stub
+
+    get markdown_path
+
+    MARKDOWN_PATHS.each do |path|
+      toggle = css_select("##{key(path)} [data-testid=file-toggle]").first
+      assert toggle, "#{path} needs a disclosure control in its heading"
+      assert_equal "true", toggle["aria-expanded"], "every file starts open"
+      assert_equal "body_#{key(path)}", toggle["aria-controls"]
+      assert_equal "filehead-#{key(path)}", toggle["aria-labelledby"],
+                   "the control is named by the file it folds, not by a bare chevron"
+    end
+
+    assert_select "#body_#{key(PATH)}", 1, "the control has something to point at"
+  end
+
+  # --------------------------------------------- folding what didn't change --
+
+  test "a long untouched stretch of a modified file folds into an expander" do
+    sign_in_and_stub
+    stub_contents(PATH, HEAD_SHA, long_document)
+    stub_contents(PATH, BASE_SHA, long_document.sub("Paragraph 1.", "The old first line."))
+
+    get markdown_path
+
+    within_file(PATH) do
+      assert_select "[data-testid=unchanged-run]", minimum: 1
+      assert_select "[data-testid=unchanged-run] summary", text: /\d+ unchanged blocks/
+      # `<details>`, not something removed from the page: the blocks inside
+      # are ordinary DOM, so every id still resolves and every "+" still works
+      # the moment it opens.
+      assert_select "[data-testid=unchanged-run][open]", 0, "it starts folded"
+      assert_select "[data-testid=unchanged-run] [data-testid=md-block]", minimum: 3
+    end
+  end
+
+  test "a run holding a comment is never folded away" do
+    sign_in_and_stub
+    stub_contents(PATH, HEAD_SHA, long_document)
+    stub_contents(PATH, BASE_SHA, long_document.sub("Paragraph 1.", "The old first line."))
+    # A thread on line 25 — deep inside what would otherwise fold whole.
+    stub_github_graphql(:ReviewThreads, data: threads_data_on_line(25))
+
+    get markdown_path
+
+    thread = css_select("#thread_PRRT_deep").first
+    assert thread, "the thread should be on the page at all"
+    assert_equal 0, thread.ancestors("details[data-testid=unchanged-run]").size,
+                 "a hidden comment is a lost comment"
+  end
+
+  test "an added file has no unchanged parts, so nothing folds" do
+    sign_in_and_stub
+    stub_contents("docs/troubleshooting.md", HEAD_SHA,
+                  "# Troubleshooting\n\nIf the build fails, check the log.\n")
+
+    get markdown_path
+
+    within_file("docs/troubleshooting.md") do
+      assert_select "[data-testid=md-block][data-change=added]", 2
+      assert_select "[data-testid=md-block][data-change=unchanged]", 0
+      assert_select "[data-testid=unchanged-run]", 0
+    end
+  end
+
+  test "a file GitHub sent no diff for is shown whole rather than folded away" do
+    # Every block is unchanged, so "fold what didn't change" would fold the
+    # whole document. The reviewer opened it to read it.
+    sign_in_and_stub
+    stub_contents("docs/install.md", HEAD_SHA, long_document)
+
+    get markdown_path
+
+    within_file("docs/install.md") do
+      assert_select "[data-testid=md-block]", minimum: 10
+      assert_select "[data-testid=unchanged-run]", 0
+    end
+  end
+
   # ---------------------------------------------------------------- threads --
 
   test "an existing RIGHT-side thread renders under the block it belongs to" do
@@ -261,7 +343,7 @@ class PullRequestFilesTest < ActionDispatch::IntegrationTest
     section = css_select("##{key(PATH)}").first
     assert section, "the composer controller needs a root to attach to"
 
-    assert_equal "composer", section["data-controller"]
+    assert_includes section["data-controller"].split, "composer"
     assert_equal "composer_template_#{key(PATH)}", section["data-composer-template-id"]
     assert_equal OWNER, section["data-composer-owner"]
     assert_equal REPO, section["data-composer-repo"]
@@ -302,6 +384,36 @@ class PullRequestFilesTest < ActionDispatch::IntegrationTest
       assert_equal 0, scope.css("[data-controller~=composer]").size,
                    "a composer scope inside another would bind every action twice"
     end
+  end
+
+  # ---------------------------------------------------------- browser title --
+
+  test "both tabs of a pull request carry the same title, most specific first" do
+    # The actual requirement, and one no screenshot can show: moving along a
+    # tab strip must not rewrite the window title, because nothing changed.
+    sign_in_and_stub
+    stub_github_markdown(body: "<p>A description.</p>")
+
+    get repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
+    overview = title_of(response.body)
+
+    get markdown_path
+    markdown = title_of(response.body)
+
+    assert_equal overview, markdown
+    assert_equal "Rewrite the getting-started guide #42 · acme/docs-site · Prism", markdown
+    assert_no_match(/markdown/i, markdown,
+                    "which tab you are on is on screen; it does not belong in a bookmark")
+  end
+
+  test "the pull request list leads with what it is, then where" do
+    sign_in_as_user
+    stub_github_get("/repos/#{OWNER}/#{REPO}", fixture: :repo)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls", fixture: :pulls)
+
+    get repo_pulls_path(owner: OWNER, repo: REPO)
+
+    assert_equal "Pull requests · acme/docs-site · Prism", title_of(response.body)
   end
 
   # -------------------------------------------------------- tabs and the bar --
@@ -612,6 +724,40 @@ class PullRequestFilesTest < ActionDispatch::IntegrationTest
   end
 
   def key(path) = Review::Page.file_key(path)
+
+  def title_of(body) = Nokogiri::HTML5(body).at_css("title").text
+
+  # Long enough that a single edit at the top leaves runs worth folding.
+  def long_document
+    "# Title\n\n" + (1..30).map { |n| "Paragraph #{n}." }.join("\n\n") + "\n"
+  end
+
+  # One live thread, in the shape the reviewThreads query answers with.
+  def threads_data_on_line(line)
+    comment = {
+      id: "PRRC_deep", databaseId: 918_273, body: "Deep in the untouched middle.",
+      bodyHTML: "<p>Deep in the untouched middle.</p>", state: "SUBMITTED",
+      createdAt: "2026-09-19T10:00:00Z",
+      url: "https://github.com/#{OWNER}/#{REPO}/pull/#{NUMBER}#discussion_r918273",
+      diffHunk: "", outdated: false, viewerCanUpdate: false, viewerCanDelete: false,
+      viewerCanReact: true,
+      author: { login: "octocat", avatarUrl: "https://example.com/a.png",
+                url: "https://github.com/octocat" },
+      replyTo: nil, reactionGroups: []
+    }
+
+    { repository: { pullRequest: {
+      id: "PR_kwDOABCD12MAAAABc9Vk",
+      reviewThreads: { pageInfo: { hasNextPage: false, endCursor: nil }, nodes: [ {
+        id: "PRRT_deep", path: PATH, line: line, originalLine: line,
+        startLine: nil, originalStartLine: nil, diffSide: "RIGHT", startDiffSide: nil,
+        subjectType: "LINE", isResolved: false, isOutdated: false,
+        viewerCanResolve: true, viewerCanUnresolve: false, viewerCanReply: true,
+        resolvedBy: nil,
+        comments: { pageInfo: { hasNextPage: false, endCursor: nil }, nodes: [ comment ] }
+      } ] }
+    } } }
+  end
 
   def with_render_budget(bytes)
     original = Review::PullRequestPage::RENDER_BUDGET_BYTES

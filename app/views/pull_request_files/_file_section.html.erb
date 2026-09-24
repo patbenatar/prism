@@ -12,6 +12,12 @@
   renderer numbers blocks from zero per document, so without the prefix two
   files sharing a first heading share an id.
 
+  The heading is also the file's disclosure control: the chevron collapses the
+  whole file to its heading, so a large pull request reads as an index. The
+  body is `hidden`, not removed — every id stays resolvable, so an anchor or
+  an `n`/`p` jump into a collapsed file can simply reveal it (see
+  `controllers/reveal`).
+
   Outdated and file-level threads sit inside the file rather than once at the
   foot of the page. That is where they were when a page held one file — at the
   top of and after *their* document — and it keeps every thread next to the
@@ -31,12 +37,14 @@
     once in the stylesheet rather than twice here, 30 lines apart, where the
     two copies would drift. %>
 <section id="<%= key %>"
-         class="file-section mb-12"
+         <%# Folded, the file is one bar in an index, and 3rem of air under
+             each bar makes that index read as a scatter. %>
+         class="file-section mb-12 data-[collapsed=true]:mb-2"
          aria-labelledby="filehead-<%= key %>"
          data-testid="file-section"
          data-file-key="<%= key %>"
          data-file-path="<%= page.path %>"
-         data-controller="composer"
+         data-controller="composer file-collapse"
          data-composer-template-id="composer_template_<%= key %>"
          data-composer-owner="<%= @owner %>"
          data-composer-repo="<%= @name %>"
@@ -54,12 +62,34 @@
          data-composer-viewer-login="<%= current_user.login %>"
          data-composer-viewer-avatar="<%= current_user.avatar_url %>">
 
-  <%# ── The file's own bar, pinned under the page's ────────────────────── %>
+  <%# ── The file's own bar, pinned under the page's, and its control ──── %>
   <div class="filehead" data-testid="file-head">
+    <%# A real button rather than a <summary>, because this bar also holds a
+        link out to GitHub and a click on a link inside a <summary> toggles the
+        disclosure as well as following the link. `aria-labelledby` names the
+        file, so a screen reader announces "docs/guide.md, button, expanded"
+        rather than a bare chevron. %>
+    <button type="button" class="filehead-toggle"
+            aria-expanded="true" aria-controls="body_<%= key %>"
+            aria-labelledby="filehead-<%= key %>"
+            data-action="file-collapse#toggle"
+            data-file-collapse-target="toggle"
+            data-testid="file-toggle">
+      <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
+        <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+      </svg>
+    </button>
+
     <span class="<%= status_class %> shrink-0"><%= status_word %></span>
 
-    <h2 class="min-w-0 flex-1 font-mono text-sm break-all" id="filehead-<%= key %>">
-      <% if directory %><span class="text-ink-faint"><%= directory %></span><% end %><span class="font-medium text-ink"><%= basename %></span>
+    <%# The directory goes below `sm`. The chevron costs the bar 28px it did
+        not use to have, and `break-all` was spending them by snapping the
+        basename mid-word ("handbook.m / d") — which is the one part of the
+        path a reviewer actually reads. The full path stays in `title` and in
+        the jump menu. %>
+    <h2 class="min-w-0 flex-1 font-mono text-sm break-all" id="filehead-<%= key %>"
+        title="<%= file.path %>">
+      <% if directory %><span class="hidden text-ink-faint sm:inline"><%= directory %></span><% end %><span class="font-medium text-ink"><%= basename %></span>
     </h2>
 
     <% if file.renamed? %>
@@ -74,7 +104,7 @@
                 target: "_blank", rel: "noopener", data: { testid: "view-on-github" } %>
   </div>
 
-  <div class="pt-4">
+  <div class="pt-4" id="body_<%= key %>" data-file-collapse-target="body">
     <%# ── Why part or all of this file can't take a line comment ───────── %>
     <div class="empty:hidden">
       <% if page.missing_content? %>
@@ -101,8 +131,18 @@
       <%# ── The document ─────────────────────────────────────────────── %>
       <article data-testid="rendered-file" data-file-path="<%= page.path %>"
                aria-label="<%= page.path %>, rendered">
-        <% page.result.blocks.each do |annotated| %>
-          <%= render "block", annotated: annotated, pull_request: pull_request, page: page %>
+        <%# Segments, not blocks: a run the pull request did not touch folds
+            away behind an expander so a small edit is not buried in a long
+            document. Review::CollapsedRuns decides which, and never folds
+            away a block carrying a comment. %>
+        <% page.segments.each do |segment| %>
+          <% if segment.collapsed? %>
+            <%= render "unchanged_run", segment: segment, pull_request: pull_request, page: page %>
+          <% else %>
+            <% segment.blocks.each do |annotated| %>
+              <%= render "block", annotated: annotated, pull_request: pull_request, page: page %>
+            <% end %>
+          <% end %>
         <% end %>
 
         <%# Content deleted from the end of the file has no following block to

@@ -1,0 +1,31 @@
+<%#
+  A stretch of this file that the pull request did not touch, folded away so a
+  small edit in a long document is not buried in the document.
+
+  A native <details>, so it opens with JavaScript off and the blocks inside it
+  are ordinary DOM the whole time: every id resolves, every gutter "+" works
+  the moment the run is open, and nothing is fetched to reveal it. The
+  `collapse` controller only swaps the word Show for Hide.
+
+  The blocks are direct children of the <details> rather than wrapped in a
+  container, because `.md-block` is its own two-column grid and a wrapper
+  would put the revealed blocks' gutters out of line with the rest of the
+  document.
+
+  Review::CollapsedRuns decides what lands here. Nothing carrying a comment
+  ever does.
+
+  Locals: segment (Review::CollapsedRuns::Segment), pull_request,
+          page (Review::Page)
+%>
+<details class="md-run" data-controller="collapse" data-testid="unchanged-run">
+  <summary class="md-run-summary">
+    <span><%= count_of(segment.size, "unchanged block") %></span>
+    <span aria-hidden="true">·</span>
+    <span data-collapse-target="label">Show</span>
+  </summary>
+
+  <% segment.blocks.each do |annotated| %>
+    <%= render "block", annotated: annotated, pull_request: pull_request, page: page %>
+  <% end %>
+</details>

@@ -4,6 +4,40 @@
 # design system's pill vocabulary. Every one of these returns a word as well as
 # a color — nothing in Prism is conveyed by color alone.
 module PullRequestsHelper
+  # ── Browser titles ───────────────────────────────────────────────────────
+  #
+  # Most specific first, always. A browser truncates a title from the end
+  # wherever it shows one, so whatever leads is the part that survives — and
+  # the part worth surviving is the thing that tells twenty open tabs apart,
+  # not the product name they all share. The layout appends "· Prism", so a
+  # view supplies everything before it.
+  #
+  # Nothing here caps the length. Truncation is the browser's business: it is
+  # the only party that knows how much room it has, and it already does the
+  # job in the tab strip, the window title, the history list and the bookmark
+  # bar — each at a different width. Capping here would permanently discard
+  # characters from the places that *do* have room (a bookmark, a history
+  # entry) to fix nothing in the one that doesn't, since a tab label is a
+  # dozen characters wide and no cap short enough to rescue the repository
+  # name would leave a usable title. Ordering is the fix; length is not the
+  # problem.
+  def page_title(*parts) = parts.compact_blank.join(" · ")
+
+  # The title for *either* tab of a pull request — they must match, because a
+  # tab strip is on screen and rewriting the window title as you move along it
+  # says something changed when nothing did. Both views call this rather than
+  # building a string each that happens to agree today.
+  #
+  # Which tab you are on is deliberately absent. It is visible on screen and
+  # in the breadcrumb, so naming it here would spend the most valuable
+  # characters in the title on the one thing the reader can already see.
+  #
+  #   pull_request_page_title(pr, owner: "acme", repo: "docs-site")
+  #   → "Rewrite the getting-started guide #42 · acme/docs-site"
+  def pull_request_page_title(pull_request, owner:, repo:)
+    page_title("#{pull_request.title} ##{pull_request.number}", "#{owner}/#{repo}")
+  end
+
   # The PR's headline state. Draft outranks open, because a draft is not asking
   # to be reviewed yet, and merged outranks closed.
   #

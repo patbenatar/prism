@@ -200,7 +200,6 @@ restated in a `prefers-color-scheme` block (and again under
 
 | Property | Light | Dark | Why |
 | --- | --- | --- | --- |
-| `--tint-strength` | `42%` | `45%` | How much of a block's `-soft` fill shows behind changed content (§7). A tint on a dark canvas reads as less present in peripheral vision, which is exactly where a skim finds it. Set by rendering 30/38/45/52/62 against the light page; above ~52% the dark page stops being a document and becomes a diff. |
 | `--seam-alpha` | `0.55` | `0.9` | The spectrum seam under the top bar. Held back on paper so it reads as a horizon line; at the same opacity on the dark canvas it just looks muddy. |
 
 Adding a colour means adding a pair, not a light value plus an override. If you
@@ -432,6 +431,36 @@ that is ever reached, and no dynamic `import()`.
 The library itself is an ordinary `'self'` script: it is vendored under
 `vendor/javascript/` and loaded from `/assets`, never a CDN.
 
+**The nonce to stamp is the DOCUMENT's, not the meta tag's.** This one shipped
+broken and is worth stating plainly, because it will catch the next person who
+reaches for `csp-nonce` from JavaScript.
+
+`<meta name="csp-nonce">` is not a stable fact about the page. A Turbo Drive
+visit swaps `<body>` and rewrites that meta to the *new* response's nonce, which
+is what the server needs for what it sends next. But a Drive visit does not
+create a new document, and a Content Security Policy belongs to the document:
+the policy still being enforced is the one that arrived with the original full
+page load. After any Drive visit the meta therefore holds a nonce the browser
+has never heard of, and stamping it on a `<style>` gets that element blocked.
+
+So `mermaid_controller.js` reads the meta **once, at module evaluation** — which
+happens during the initial load, the one moment the meta and the enforced policy
+agree — and uses that value for the document's lifetime. A full reload
+re-evaluates the module and picks up the new one.
+
+The failure this caused is worth knowing by sight, because it is invisible to
+every obvious check: the diagram keeps all of its geometry and loses all of its
+paint. Nodes fall back to SVG's default fill, which is **solid black**, borders
+vanish, labels are black on a dark page, and labels sit outside their boxes
+because they were measured in one font and drawn in another. The `<svg>` is
+present and well-formed throughout. `adopt` now asks the browser directly —
+a `<style>` whose CSS was refused has a null `sheet` — and a refusal is treated
+as a failed render, so the block falls back to its source with the visible note
+instead of showing a black diagram.
+
+Note that the same trap applies to anything else that stamps a nonce client
+side, Turbo's own progress-bar `<style>` included.
+
 **`style-src-attr` is still only the label pills.** The SVG a diagram produces
 is walked against an allowlist before it reaches the page and every `style`
 attribute in it is dropped — the diagram's own `classDef` and `style`
@@ -453,6 +482,14 @@ nothing here.
 reads the browser console, which is the only place a violation is reported —
 the page still renders and the blocked thing simply never runs, so a CSP
 mistake otherwise looks like a passing test.
+
+**Exercise it through a Turbo visit, not just `visit`.** Capybara's `visit` is a
+real navigation: a new document, whose enforced policy and `csp-nonce` meta
+necessarily agree. A reviewer almost never arrives that way — they click, which
+is a Turbo Drive visit into the *same* document. Anything nonce-related behaves
+differently on those two paths, and only the second one is what users get. The
+mermaid suite covers both (`turbo_visit`); the diagram bug above was invisible
+to every test that used `visit` alone.
 
 **One directive is not covered by a test.** `form-action https://github.com`
 cannot be exercised: OmniAuth's test mode short-circuits the request phase and
@@ -591,9 +628,8 @@ the layout and should set `content_for :breadcrumb`.
    `.thread` classes. It is the hero because it shows what the product does,
    and it stays honest because it is not a picture. It collapses under the copy
    on a phone and is `aria-hidden`. Because it is built from the real classes,
-   it is also the fastest place to see a theme change: the change bars, the
-   block tint, a thread and the gutter "+" are all on the one signed-out
-   screen.
+   it is also the fastest place to see a theme change: the change bars, a
+   thread and the gutter "+" are all on the one signed-out screen.
 2. **Repositories (`/repos`)** — `.shell`. A search box filtering the rendered
    list client-side (`filter` controller); GitHub returns one page of 100
    sorted by most recent push, which is small enough to search with no round
@@ -634,10 +670,23 @@ the layout and should set `content_for :breadcrumb`.
    treat a same-page anchor as a visit and re-render the body from its
    snapshot cache — which would throw away an open composer. Per-file
    previous/next is gone; `n`/`p` walks the changed blocks of the whole pull
-   request, across file boundaries. File-level comments sit at the top of
-   their own file's section and the outdated section at the end of it, not
-   once at the foot of the page. The pending-review tray is still one per
-   page.
+   request, across file boundaries, and relative to where the reviewer
+   currently is rather than to a remembered position. File-level comments sit
+   at the top of their own file's section and the outdated section at the end
+   of it, not once at the foot of the page. The pending-review tray is still
+   one per page.
+
+   **Two things fold.** The chevron in a file's heading folds that file to its
+   heading, so a large pull request reads as an index; the heading keeps its
+   path, status pill and diffstat, which is the point. And a stretch of a
+   modified file the pull request did not touch folds into a `<details>`
+   reading "N unchanged blocks" — `Review::CollapsedRuns` picks them, showing
+   every change with two blocks of context either side and never folding a
+   block that carries a comment or a removed strip. A file with nothing
+   changed in it folds nothing, because "hide what didn't change" would hide
+   the whole document. Both are ordinary DOM either way, never re-fetched, so
+   an anchor or an `n`/`p` jump into hidden content simply opens it
+   (`controllers/reveal`).
 6. **Error screens** — `GithubErrorHandling` turns `Github::NotFound` into a
    friendly 404 that says GitHub answers the same way for a missing and a
    private repository, `Github::Forbidden` into an org-approval explanation, and
@@ -664,7 +713,7 @@ behavior; these styles already exist and should not be re-cut.
 | Class | What it does |
 | --- | --- |
 | `.md-block` | The per-block grid. Same template as `.reading-shell`, so gutters align. |
-| `.md-block--added` / `--modified` / `--removed` | Sets the change bar's color, and tints `.md-body` very faintly for added and modified. The tint is `--tint-strength` of the soft fill (42% light, 45% dark — §2) — a skim should find the changes without the page becoming a diff. |
+| `.md-block--added` / `--modified` / `--removed` | Sets the change bar's color. **Nothing else** — no fill behind the block, in either scheme. There was one until 2026-09-24, a faint tint of the soft colour so a skim would find the changes; it was removed because it made the Markdown itself harder to read, which is the one thing this screen exists to do. A reviewer reads far more of a document than they skim, and the bars are better at the job anyway: unambiguous at a glance and free to the text. |
 | `.md-gutter` | The gutter cell. |
 | `.md-gutter-bar` | The 3px change bar, full block height. Transparent when unchanged, so an unchanged page is just the document. |
 | `.md-body` | The block's content cell. |
@@ -683,7 +732,7 @@ Rules for workstream D:
 
 - Never convey "commentable" with color alone; the muted "+" is paired with an
   explanation in the composer.
-- An unchanged block gets no tint and no bar. Restraint here is what makes the
+- An unchanged block gets no bar. Restraint here is what makes the
   changed blocks legible.
 - The gutter is `2.5rem` on desktop and `0.75rem` below 640px. At phone width
   the "+" cannot live in the gutter, so it moves to the block's top-left and
@@ -908,7 +957,10 @@ exists only where there is something to toggle to.
 - **A diagram that cannot be drawn is one bad diagram.** The block keeps its
   gutter, the source stays on screen, and `.md-mermaid-error` says so in a
   `removed`-band note with mermaid's own parse error under it in mono, newlines
-  kept, because that error points at the offending column with a caret.
+  kept, because that error points at the offending column with a caret. A
+  diagram whose stylesheet the browser refused counts as one of these: it would
+  otherwise draw in SVG's default paint and look, to everything except an eye,
+  like a diagram that worked. See §4.
 - **It costs nothing when there is nothing to draw.** The library is vendored
   (3.5 MB, 953 KB gzipped — the app adds no `Rack::Deflater`, so whether that
   is what crosses the wire is up to the edge in front of it) and pinned
