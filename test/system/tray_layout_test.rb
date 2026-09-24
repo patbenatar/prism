@@ -102,11 +102,17 @@ class TrayLayoutTest < ApplicationSystemTestCase
     end
   end
 
-  # Everything in the body column is one width — prose, tables, threads and
-  # the composer alike. Prose used to stop at a 72ch reading measure while the
-  # rest ran full width, so a document rendered at two widths and a paragraph
+  # The document is one width all the way down — prose, tables and alerts
+  # alike. Prose used to stop at a 72ch reading measure while everything else
+  # ran full width, so a document rendered at two widths and a paragraph
   # visibly widened the moment a composer opened under it.
-  test "prose and threads are both the full width of the body column" do
+  #
+  # The conversation is the one thing that is deliberately NOT that width: it
+  # steps in by one gutter on each side so a thread is never the same shape as
+  # the prose it is about (DESIGN.md §8). Both halves are measured here,
+  # because either one drifting is a bug: a capped paragraph is the old bug
+  # back, and a full-width thread is the confusion the channel exists to fix.
+  test "the document runs the full body column and the conversation steps in" do
     open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
 
     assert_selector ".thread"
@@ -125,6 +131,11 @@ class TrayLayoutTest < ApplicationSystemTestCase
           body: Math.round(body.clientWidth),
           paddingLeft: Math.round(parseFloat(getComputedStyle(body).paddingLeft)),
           paddingRight: Math.round(parseFloat(getComputedStyle(body).paddingRight)),
+          // The block's own gutter cell, which is the channel the conversation
+          // steps in by — measured rather than restated as a number.
+          gutter: Math.round(
+            body.closest(".md-block").querySelector(".md-gutter").getBoundingClientRect().width
+          ),
           para: para ? Math.round(para.getBoundingClientRect().width) : null,
           bodyChildren: Array.prototype.map.call(body.children, function (el) {
             return el.tagName + "." + (el.className || "");
@@ -135,12 +146,13 @@ class TrayLayoutTest < ApplicationSystemTestCase
 
     available = measured["body"] - measured["paddingLeft"] - measured["paddingRight"]
 
-    assert_in_delta available, measured["thread"], 1,
-                    "the thread is #{measured['thread']}px inside a #{available}px column — " \
-                    "it is still capped at the reading measure"
+    assert_in_delta available - (measured["gutter"] * 2), measured["thread"], 1,
+                    "the conversation is #{measured['thread']}px inside a #{available}px column " \
+                    "with a #{measured['gutter']}px gutter — it is not stepping in by one gutter " \
+                    "on each side"
 
-    # And the prose beside it is the same width, not a narrower measure — this
-    # is the assertion that fails if a reading cap is ever reintroduced.
+    # And the prose beside it runs the whole column, not a narrower measure —
+    # this is the assertion that fails if a reading cap is ever reintroduced.
     assert measured["para"].present?,
            "no paragraph in the block body to compare against: #{measured['bodyChildren']}"
     assert_in_delta available, measured["para"], 1,
