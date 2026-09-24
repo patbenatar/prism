@@ -139,10 +139,25 @@
       Will be posted as a file-level comment quoting this block; it appears at the top of the file, not here.
     </p>
 
+    <%# "Add single comment" is not offered while a review is open, because
+        GitHub does not honour it: `addPullRequestReviewThread` with a
+        `pullRequestId` silently attaches the comment to the open review and
+        hands it back in state PENDING, so a reviewer who asked for a posted
+        comment gets another draft. A disabled button invites them to wonder
+        what they did wrong; an absent one with a line does not.
+
+        Button and line are both always in the DOM, `hidden` set from what the
+        server knew at render time and kept current afterwards by
+        composer#syncPendingReview — a review started from any other composer
+        on this page has to flip this one too. %>
     <div class="composer-foot">
       <button type="button" class="btn btn-ghost btn-sm" data-action="composer#close" data-testid="composer-cancel">Cancel</button>
+      <%= tag.p "Your review is in progress, so this joins it.",
+                 class: "composer-note composer-note--inline", hidden: pending_review.blank?,
+                 data: { composer_target: "reviewOnlyNote", testid: "composer-review-only-note" } %>
       <%= f.button "Add single comment", type: :submit, name: :commit, value: "single",
-                    class: "btn btn-secondary btn-sm", data: { testid: "composer-submit-single", composer_target: "singleButton" } %>
+                    class: "btn btn-secondary btn-sm", hidden: pending_review.present?,
+                    data: { testid: "composer-submit-single", composer_target: "singleButton" } %>
       <%= f.button (pending_review ? "Add review comment" : "Start a review"), type: :submit, name: :commit, value: "review",
                     class: "btn btn-primary btn-sm", data: { testid: "composer-submit-review", composer_target: "reviewButton" } %>
     </div>

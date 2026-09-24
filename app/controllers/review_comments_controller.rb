@@ -22,6 +22,10 @@
 class ReviewCommentsController < ApplicationController
   include GithubErrorHandling
 
+  # Said when GitHub joined a comment to a review we did not know was open —
+  # see joined_review_unasked?.
+  JOINED_REVIEW_NOTICE = "Your review was already in progress, so this joined it."
+
   before_action :set_scope
 
   # Github::GraphQLError is here too: create_thread/add_thread_to_review go
@@ -169,16 +173,55 @@ class ReviewCommentsController < ApplicationController
   # happen here any more; it was only ever a risk of refetching in the first
   # place.
   def render_new_thread(pull_request:, thread:, block_id:)
+    joined_unasked = joined_review_unasked?(thread)
+    flash.now[:notice] = JOINED_REVIEW_NOTICE if joined_unasked
+
     respond_to do |format|
       format.turbo_stream do
         render turbo_stream: [
-          new_thread_stream(thread, block_id: block_id),
+          new_thread_stream(thread, block_id: block_id,
+                             pending_review: joined_unasked ? current_pending_review : pending_review_from_client),
           turbo_stream.update("composer_#{block_id}", ""),
-          pending_tray_stream_from_client(pull_request, joined_review: review_mode?(params[:commit]))
+          tray_stream_after_create(pull_request, joined_unasked: joined_unasked),
+          # Always, not only when there is something to say: an empty render
+          # clears whatever notice the last write left on the page.
+          turbo_stream.update("flash", partial: "shared/flash")
         ]
       end
-      format.html { redirect_to file_path, notice: "Comment posted." }
+      format.html do
+        redirect_to file_path, notice: joined_unasked ? JOINED_REVIEW_NOTICE : "Comment posted."
+      end
     end
+  end
+
+  # GitHub does not refuse a "single" comment while the viewer already has a
+  # pending review open — it silently attaches it to that review and answers
+  # with the comment in state PENDING. So the reviewer asks for a posted
+  # comment and gets a draft, and nothing in the request says so except the
+  # state on the way back.
+  #
+  # This looks redundant beside the UI rule that hides "Add single comment"
+  # while a review is open (DESIGN.md §8), and it is the half of that rule
+  # which cannot live on the client: a page that went stale — a review opened
+  # in another tab, or after this one loaded — still asks for a single
+  # comment, and this is the only moment we find out. Reported rather than
+  # prevented, because by now it has already happened; the comment is safe,
+  # it is just a draft.
+  def joined_review_unasked?(thread)
+    !review_mode?(params[:commit]) && thread.comments.any?(&:pending?)
+  end
+
+  # The ordinary path derives the tray from what the page already knew, with
+  # no GitHub call. When the page turned out to be wrong about the review,
+  # those same hidden fields are wrong too — they carried no review and a
+  # count of zero, while the real one may already hold drafts from wherever
+  # it was opened — so that one rare branch re-reads instead of guessing. A
+  # tray that says "1 pending comment" with no Submit button would be a fresh
+  # inaccuracy inside the one message whose point is to be accurate.
+  def tray_stream_after_create(pull_request, joined_unasked:)
+    return pending_tray_stream(pull_request) if joined_unasked
+
+    pending_tray_stream_from_client(pull_request, joined_review: review_mode?(params[:commit]))
   end
 
   # A file-level thread (L1, independent review 2026-09-19) belongs at the top
@@ -191,8 +234,8 @@ class ReviewCommentsController < ApplicationController
   # `pull_request` is nil here on purpose: `_thread.html.erb` never reads it
   # (every URL it builds comes from `params[:owner]`/`repo`/`number`), so
   # there is nothing to fetch just to satisfy an unused local.
-  def new_thread_stream(thread, block_id:)
-    locals = { thread: thread, pull_request: nil, pending_review: pending_review_from_client, block_id: block_id }
+  def new_thread_stream(thread, block_id:, pending_review:)
+    locals = { thread: thread, pull_request: nil, pending_review: pending_review, block_id: block_id }
 
     if thread.file_level?
       return turbo_stream.prepend(helpers.file_threads_dom_id(params[:path]),
