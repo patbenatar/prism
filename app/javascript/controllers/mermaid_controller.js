@@ -218,6 +218,76 @@ const ALLOWED_ELEMENTS = new Set([
 // attribute and cannot execute.
 const URL_ATTRIBUTES = new Set(["href", "src", "xlink:href"])
 
+// The CSS properties a diagram is allowed to set on one of its own elements.
+//
+// This attribute used to be dropped whole, on the reasoning that mermaid puts
+// its styling in the diagram's <style> element and an attribute could only be
+// untrusted CSS. That was wrong, and wrong in a way that quietly broke real
+// diagrams: mermaid relies on the `style` attribute for painting that has no
+// stylesheet rule behind it at all. A sequence diagram's self-message carries
+// `style="fill: none;"` and nothing else says so, so without it the arc
+// inherits `fill` from the root rule and renders as a filled blob. A pie
+// chart's slice colours are *only* here. So are a state diagram's edge fills,
+// a `classDef`'s `fill … !important`, and the table-cell layout of a journey
+// diagram's HTML labels.
+//
+// So the attribute stays and its contents are filtered instead. Two things make
+// that safe. The properties below are the ones that paint a shape or set type;
+// what is deliberately absent is everything that could escape the figure —
+// `position`, `z-index`, `transform`, `content`, `animation`, `background`,
+// `pointer-events`, `cursor`, `filter`, `clip-path`, `mask`. And values are
+// checked for `url()`, which is restricted to same-document fragments, so a
+// repository cannot use a diagram to fetch anything.
+//
+// Nothing about the policy changes: `style-src-attr` is already
+// `'unsafe-inline'`, because a nonce cannot apply to an attribute. See
+// DESIGN.md §4 — that section used to say the label pills were the only inline
+// style Prism emits, and now says this too.
+const STYLE_PROPERTIES = new Set([
+  // Paint.
+  "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width",
+  "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin",
+  "stroke-miterlimit", "stroke-opacity", "opacity", "color", "paint-order",
+  "shape-rendering", "vector-effect", "marker-start", "marker-mid", "marker-end",
+  // Type.
+  "font", "font-family", "font-size", "font-style", "font-variant",
+  "font-weight", "letter-spacing", "word-spacing", "line-height",
+  "text-anchor", "text-align", "text-decoration", "text-overflow",
+  "dominant-baseline", "alignment-baseline", "white-space", "word-break",
+  "overflow-wrap",
+  // The box a <foreignObject> label lays itself out in.
+  "display", "visibility", "width", "height", "min-width", "max-width",
+  "min-height", "max-height", "margin", "margin-top", "margin-right",
+  "margin-bottom", "margin-left", "padding", "padding-top", "padding-right",
+  "padding-bottom", "padding-left", "vertical-align", "text-indent", "overflow"
+])
+
+// A `url()` in a value may point inside this same diagram and nowhere else, so
+// a diagram cannot become a beacon. This matches a `url(` that is *not*
+// followed by a fragment, so "no match" means every reference is a local one.
+const FOREIGN_URL = /url\(\s*(?!["']?#)/i
+
+// Filters a `style` attribute in place.
+//
+// The browser has already parsed it — this runs on a DOMParser document, so the
+// declarations arrive normalised and anything malformed has been dropped
+// already. That means we never build CSS text out of repository content: we
+// read the properties the parser accepted and remove the ones we do not want.
+// `!important` survives, which matters, because that is how a `classDef` colour
+// beats the diagram's own stylesheet.
+function sanitizeStyle(element) {
+  const style = element.style
+
+  for (const property of [ ...style ]) {
+    const value = style.getPropertyValue(property)
+    if (!STYLE_PROPERTIES.has(property) || FOREIGN_URL.test(value)) {
+      style.removeProperty(property)
+    }
+  }
+
+  if (style.length === 0) element.removeAttribute("style")
+}
+
 // A fragment into this same document, or a page you could have clicked in the
 // Markdown around it. Deliberately no `javascript:`, `data:` or `blob:`.
 const SAFE_URL = /^(?:https?:\/\/|mailto:|#)/i
@@ -258,11 +328,9 @@ function sanitizeAttributes(element) {
       continue
     }
 
-    // Untrusted CSS, dropped rather than trusted. Mermaid puts `classDef` and
-    // `style` directives into the diagram's <style> element, not here, so the
-    // only thing lost is the width — which `adopt` re-applies.
+    // Not dropped wholesale — see `sanitizeStyle`.
     if (attributeName === "style") {
-      element.removeAttributeNode(attribute)
+      sanitizeStyle(element)
       continue
     }
 
@@ -529,6 +597,12 @@ export default class extends Controller {
     sanitizeAttributes(root)
     sanitize(root)
     namespaceIds(root)
+
+    // How big the drawing is on the page is Prism's decision, not the
+    // diagram's: mermaid sizes the root with `width="100%"` and a `max-width`,
+    // which shrinks a wide diagram into an illegible thumbnail. Everything
+    // *inside* keeps its painting declarations; only the root loses its style.
+    root.removeAttribute("style")
 
     const adopted = document.importNode(root, true)
     // Importing makes new elements; re-stamp rather than trust the copy.

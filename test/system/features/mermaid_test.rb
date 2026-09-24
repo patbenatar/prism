@@ -105,6 +105,13 @@ class MermaidTest < ApplicationSystemTestCase
       classDef evil fill:#fff}body{display:none;
       class E evil;
     ```
+
+    ```mermaid
+    flowchart TD
+        F[One] --> G[Two]
+        style F position:fixed,z-index:99999,fill:#00ff00
+        style G cursor:pointer,stroke:#ff0000
+    ```
   MARKDOWN
 
   # The shape that broke in production (patbenatar/prism#19): a decision
@@ -132,6 +139,7 @@ class MermaidTest < ApplicationSystemTestCase
         participant G as GitHub
         participant P as Prism
         G->>P: pull_request event
+        P->>P: Verify signature
         P-->>G: 200, immediately
     ```
   MARKDOWN
@@ -186,8 +194,13 @@ class MermaidTest < ApplicationSystemTestCase
         for (const element of arguments[0].querySelectorAll("*")) {
           if (element.localName.toLowerCase() === "script") bad.push("script")
           for (const attribute of element.attributes) {
-            if (attribute.name.toLowerCase().startsWith("on")) bad.push(attribute.name)
-            if (attribute.name.toLowerCase() === "style") bad.push("style attribute")
+            const key = attribute.name.toLowerCase()
+            if (key.startsWith("on")) bad.push(attribute.name)
+            // A style attribute is how mermaid paints; what must not be in one
+            // is a reference to anything off this page.
+            if (key === "style" && /url\\(\\s*["']?(?!#)/i.test(attribute.value)) {
+              bad.push(`off-site url in style: ${attribute.value}`)
+            }
             if (/javascript:/i.test(attribute.value)) bad.push(attribute.value)
           }
         }
@@ -280,18 +293,28 @@ class MermaidTest < ApplicationSystemTestCase
           for (const attribute of element.attributes) {
             const key = attribute.name.toLowerCase()
             if (key.startsWith("on")) bad.push(`handler ${key}`)
-            if (key === "style") bad.push("style attribute")
-            if (/^\s*(javascript|data|blob|vbscript):/i.test(attribute.value)) {
+            // A style attribute is how mermaid paints, so it is allowed — but
+            // only declarations that paint, and only references into this same
+            // diagram. See STYLE_PROPERTIES in mermaid_controller.js.
+            if (key === "style" && /url\\(\\s*["']?(?!#)/i.test(attribute.value)) {
+              bad.push(`off-site url in style: ${attribute.value}`)
+            }
+            if (/^\\s*(javascript|data|blob|vbscript):/i.test(attribute.value)) {
               bad.push(`url ${attribute.value}`)
             }
             if (key === "id" && !attribute.value.startsWith("user-content-")) {
               bad.push(`bare id ${attribute.value}`)
             }
           }
+          // Nothing a diagram declares may take it out of its own frame.
+          if (getComputedStyle(element).position !== "static") {
+            bad.push(`positioned ${name}`)
+          }
         }
         return bad
       })()
     JS
+
     assert_empty findings
 
     # The page's own elements are still the page's. A node called
@@ -516,6 +539,42 @@ class MermaidTest < ApplicationSystemTestCase
              "#{scheme}: diagram #{index}'s label sits outside its own box " \
              "(#{diagram["labelRect"].inspect} vs #{diagram["nodeRect"].inspect}) — it was " \
              "measured in one font and drawn in another"
+    end
+
+    assert_self_messages_unfilled(scheme)
+  end
+
+  # A sequence diagram's self-message is an arc that leaves a lifeline and comes
+  # back to it: stroked, and filled with nothing.
+  #
+  # Mermaid says so with `style="fill: none;"` on the path and in no other way —
+  # its `.messageLine0` rule sets only the stroke. Dropping the `style`
+  # attribute therefore left the arc inheriting `fill` from the diagram's root
+  # rule, which drew each self-message as a solid blob the colour of the
+  # document's ink.
+  def assert_self_messages_unfilled(scheme)
+    loops = page.evaluate_script(<<~JS)
+      [...document.querySelectorAll("[data-testid=mermaid-figure] svg")]
+        .flatMap((svg) => [...svg.querySelectorAll("path, line")])
+        .filter((el) => {
+          const from = el.getAttribute("data-from")
+          return from && from === el.getAttribute("data-to")
+        })
+        .map((el) => ({
+          fill: getComputedStyle(el).fill,
+          stroke: getComputedStyle(el).stroke,
+          style: el.getAttribute("style")
+        }))
+    JS
+
+    refute_empty loops, "#{scheme}: the fixture should contain a self-message to check"
+
+    loops.each do |loop|
+      assert_equal "none", loop["fill"],
+                   "#{scheme}: a self-message should be an unfilled arc, and this one is " \
+                   "filled with #{loop["fill"]} (style=#{loop["style"].inspect})"
+      refute_equal "none", loop["stroke"],
+                   "#{scheme}: a self-message still has to be drawn"
     end
   end
 
