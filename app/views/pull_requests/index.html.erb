@@ -1,4 +1,4 @@
-<% content_for :title, "#{@repo.full_name} pull requests" %>
+<% content_for :title, page_title("Pull requests", @repo.full_name) %>
 
 <% content_for :breadcrumb do %>
   <span class="truncate font-medium text-ink"><%= @repo.full_name %></span>

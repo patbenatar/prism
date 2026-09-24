@@ -17,7 +17,7 @@
   differ per file and a composer nested inside a second composer scope would
   fire every action twice. `#file_view` keeps the two page-wide controllers.
 %>
-<% content_for :title, "Markdown · #{@owner}/#{@name}##{@number}" %>
+<% content_for :title, pull_request_page_title(@pull_request, owner: @owner, repo: @name) %>
 
 <% content_for :breadcrumb do %>
   <%= link_to "#{@owner}/#{@name}", repo_pulls_path(owner: @owner, repo: @name),
@@ -29,7 +29,7 @@
   <span class="hidden text-xs text-ink sm:inline">Markdown</span>
 <% end %>
 
-<div id="file_view" data-controller="gutter block-nav file-nav">
+<div id="file_view" data-controller="gutter block-nav file-nav reveal">
 
   <%# ── Pull request header and tabs ───────────────────────────────────── %>
   <div class="reading-shell pt-5">

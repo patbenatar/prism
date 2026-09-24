@@ -176,14 +176,18 @@
   --color-on-light: #16182b;      /* ink for a pale fill */
   --color-on-dark: #ffffff;       /* ink for a deep fill */
 
-  /* How much of a block's -soft fill shows behind changed content. Dark
-     needs a little more of it: a tint on a dark canvas reads as less present
-     in peripheral vision than the same delta on paper, which is exactly
-     where a skim finds it. 45% was picked by rendering 30/38/45/52/62 side
-     by side against the light page, not by formula — above ~52% the dark
-     page stops being a document and starts being a diff. */
-  --tint-strength: 42%;
+  /* Changed blocks carry NO background fill, in either scheme.
+     ---------------------------------------------------------------------
+     They used to: a tint of the block's `-soft` colour, faint on paper and a
+     little stronger on the dark canvas, so a skim would find the changes.
+     It was removed (2026-09-24) because it made the Markdown itself harder to
+     read — which is the one thing this screen exists to do. Prose over a wash
+     is prose you work at, and a reviewer reads far more of a document than
+     they skim.
 
+     The change bars in the gutter carry the state on their own, and they are
+     better at it: they are unambiguous at a glance, they cost the text
+     nothing, and an unchanged page is just the document. Don't put it back. */
   /* The spectrum seam under the top bar. On paper it is held back so it
      reads as a horizon line rather than a rainbow; on a dark canvas the same
      opacity leaves it muddy. */
@@ -193,14 +197,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --tint-strength: 45%;
     --seam-alpha: 0.9;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --tint-strength: 45%;
   --seam-alpha: 0.9;
 }
 
@@ -593,11 +595,18 @@
   .md-block--modified .md-gutter-bar { @apply bg-modified; }
   .md-block--removed  .md-gutter-bar { @apply bg-removed; }
 
-  /* A very faint tint behind changed blocks so a skim finds them without the
-     page turning into a diff. `--tint-strength` is 42% on paper and 45% on
-     the dark canvas — see the token for why, and for how the two were set. */
-  .md-block--added .md-body    { background: color-mix(in oklab, var(--color-added-soft) var(--tint-strength), transparent); }
-  .md-block--modified .md-body { background: color-mix(in oklab, var(--color-modified-soft) var(--tint-strength), transparent); }
+  /* Changed blocks carry NO background fill, in either scheme.
+     ---------------------------------------------------------------------
+     They used to: a tint of the block's `-soft` colour, faint on paper and a
+     little stronger on the dark canvas, so a skim would find the changes.
+     It was removed (2026-09-24) because it made the Markdown itself harder to
+     read — which is the one thing this screen exists to do. Prose over a wash
+     is prose you work at, and a reviewer reads far more of a document than
+     they skim.
+
+     The change bars in the gutter carry the state on their own, and they are
+     better at it: they are unambiguous at a glance, they cost the text
+     nothing, and an unchanged page is just the document. Don't put it back. */
 
   .md-body {
     @apply min-w-0 px-3 py-0.5;
@@ -686,6 +695,53 @@
      rather than beside it in the markup — written twice, the two drift. */
   .file-section {
     scroll-margin-top: calc(var(--topbar-height) + var(--filebar-height, 2.5rem));
+  }
+
+  /* ── Folding a file away ───────────────────────────────────────────────
+     The chevron in the file heading. Collapsing leaves the heading — path,
+     status pill, diffstat — so a pull request with a dozen files reads as an
+     index. `data-collapsed` on the <section> is the state of record; see
+     `file_collapse_controller`. */
+  .filehead-toggle {
+    @apply -ml-1 shrink-0 cursor-pointer rounded-md p-1 text-ink-faint
+           transition-transform duration-150 hover:bg-sunk hover:text-ink;
+  }
+
+  [data-collapsed="true"] .filehead-toggle {
+    @apply -rotate-90;
+  }
+
+  /* ── Folding away what didn't change ───────────────────────────────────
+     A run of blocks this pull request did not touch, so a two-line edit in a
+     long document isn't buried in the document. A native <details>: the
+     blocks inside stay ordinary DOM, so every id resolves and every gutter
+     "+" works the moment it opens.
+
+     It reads as a fold in the page rather than a panel — a line of muted text
+     with a hairline running off to the right. The blocks it contains are
+     direct children, so each keeps its own gutter grid and lines up with the
+     document above and below. */
+  .md-run {
+    @apply my-1;
+  }
+
+  .md-run-summary {
+    @apply flex cursor-pointer list-none items-center gap-2 py-1.5 font-display text-xs
+           font-medium text-ink-faint hover:text-ink-soft;
+    padding-left: calc(var(--gutter-width) + 0.75rem);
+  }
+
+  .md-run-summary::after {
+    content: "";
+    @apply h-px flex-1 bg-line;
+  }
+
+  @media (max-width: 640px) {
+    /* The gutter narrows to 0.75rem below 640px (see `.md-block`), and this
+       has to narrow with it or the fold stops lining up with the text. */
+    .md-run-summary {
+      padding-left: 1.5rem;
+    }
   }
 
   /* Sits directly under the app top bar. The offset is the token, so the

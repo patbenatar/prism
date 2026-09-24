@@ -128,6 +128,16 @@ module Review
 
     # --- counts and navigation ----------------------------------------------
 
+    # The document split into the stretches the view shows openly and the ones
+    # it puts behind an expander. See Review::CollapsedRuns for the rules.
+    def segments
+      @segments ||= result.nil? ? [] : CollapsedRuns.call(result.blocks, removed_file: result.removed_file?)
+    end
+
+    # Whether any of it is actually hidden — the file bar has nothing to say
+    # about a file that collapsed nothing.
+    def collapsed_blocks = segments.select(&:collapsed?).sum(&:size)
+
     def changed_block_count
       return 0 if result.nil?
 

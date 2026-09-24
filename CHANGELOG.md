@@ -2,6 +2,12 @@
 
 Newest first. Written for people using Prism, not for how it is built.
 
+## 2026-09-24
+
+- **Fixed: diagrams were unpainted after clicking through to a file.** A
+  diagram reached by navigating within Prism drew as solid black boxes with
+  black labels. It now takes the page's own colours however you got there.
+
 ## 2026-09-23
 
 - **Mermaid diagrams are drawn**, not shown as source. A ```mermaid fence in a

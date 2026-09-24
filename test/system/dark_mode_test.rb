@@ -101,7 +101,7 @@ class DarkModeTest < ApplicationSystemTestCase
     end
   end
 
-  test "every token, the seam and the block tint change with the theme" do
+  test "every token and the seam change with the theme" do
     sign_in_as(@user)
     visit repos_path
     assert_selector "[data-testid=top-bar]"
@@ -180,8 +180,10 @@ class DarkModeTest < ApplicationSystemTestCase
             SPECTRUM.flat_map { |band| [ band, "#{band}-soft" ] } +
             %w[on-brand]
 
+    # `--tint-strength` used to be here. The tint behind changed blocks was
+    # removed (2026-09-24) because it made the Markdown harder to read; the
+    # gutter change bars carry the state on their own now, in both schemes.
     snapshot = names.to_h { |name| [ name.to_sym, token_color("--color-#{name}") ] }
-    snapshot[:tint_strength] = root_css_variable("--tint-strength")
     snapshot[:seam_opacity] = computed_style(".topbar-seam", "opacity")
     snapshot.compact
   end

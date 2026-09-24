@@ -1,4 +1,4 @@
-<% content_for :title, "#{@pull_request.title} · #{@owner}/#{@name}##{@number}" %>
+<% content_for :title, pull_request_page_title(@pull_request, owner: @owner, repo: @name) %>
 
 <% content_for :breadcrumb do %>
   <%= link_to "#{@owner}/#{@name}", repo_pulls_path(owner: @owner, repo: @name),
