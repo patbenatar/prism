@@ -213,9 +213,76 @@ class PendingReviewTest < ApplicationSystemTestCase
       click_on "Discard"
     end
 
-    assert_selector "[data-testid=rendered-file]"
+    # Discarding redirects to the pull request's overview (PLAN.md's seam:
+    # "review submit/discard → redirect … the page changes too much to
+    # stream"), so this asserts where the reviewer actually lands and that
+    # nothing pending followed them there.
+    #
+    # It used to assert `[data-testid=rendered-file]` here, which passed
+    # against the *outgoing* review screen — Capybara found it before the
+    # redirect had landed — and so said nothing about the discard at all.
+    assert_current_path repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER), wait: 5
+    assert_selector "[data-testid=flash]", text: /Review discarded/i
     assert_no_selector "[data-testid=pending-count]"
     assert_github_requested :delete, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}"
+  end
+
+  # The other way a review empties out: the reviewer deletes the drafts one by
+  # one rather than discarding the review. GitHub keeps the (now empty)
+  # pending review, so the tray stays — and `destroy` is the one write that
+  # still recounts from GitHub rather than from the form, which is the part
+  # only a browser can check.
+  test "deleting the last draft empties the tray, and an empty review is refused before GitHub sees it" do
+    state = { reviews: [ github_fixture(:pending_review) ], threads: [ deletable_draft ] }
+    stub_feature_reviews_dynamic(state, owner: OWNER, repo: REPO, number: NUMBER)
+    stub_feature_review_threads_dynamic(state)
+    stub_delete_comment_dynamic(state)
+
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    assert_selector "[data-testid=pending-count]", text: "1 pending comment"
+
+    accept_confirm { click_on "Delete" }
+
+    assert_no_selector "[data-testid=thread]", wait: 5
+    assert_selector "[data-testid=pending-count]", text: "0 pending comments"
+    expect_github_received(:DeleteComment) { |vars| vars["input"]["id"] == "PRRC_deletable" }
+
+    # Nothing drafted and no summary is not a review GitHub will take, and
+    # Prism says so itself rather than spending the round trip to be told.
+    find("[data-testid=review-submit-open]").click
+    find("[data-testid=review-event-comment]").click
+    click_on "Submit review"
+
+    assert_selector "[data-testid=flash]", text: /a review can't be empty/i, wait: 5
+    assert_github_not_requested :post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events"
+  end
+
+  # COMMENT is the third event and the only one no journey submitted: a
+  # review that neither approves nor blocks. Its own notice, too — "Review
+  # submitted." rather than approved/changes requested.
+  test "submitting as Comment sends COMMENT with the summary" do
+    stub_feature_reviews_sequence([ github_fixture(:pending_review) ])
+    stub_feature_review_threads([ draft_thread("1", PATH) ])
+    stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events",
+                      body: { id: REVIEW_ID, node_id: REVIEW_NODE_ID, state: "COMMENTED",
+                              body: "Read it all; nothing blocking.", user: { login: "prism-dev" },
+                              html_url: "https://github.com/#{OWNER}/#{REPO}/pull/#{NUMBER}",
+                              commit_id: HEAD_SHA }.to_json)
+
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+
+    find("[data-testid=review-submit-open]").click
+    find("[data-testid=review-event-comment]").click
+    find("[data-testid=review-submit-body]").set("Read it all; nothing blocking.")
+    click_on "Submit review"
+
+    assert_current_path repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
+    assert_selector "[data-testid=flash]", text: /Review submitted\./i
+    assert_no_selector "[data-testid=flash]", text: /approved|changes requested/i
+
+    expect_github_received(:post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events") do |body|
+      body["event"] == "COMMENT" && body["body"] == "Read it all; nothing blocking."
+    end
   end
 
   private
@@ -229,6 +296,36 @@ class PendingReviewTest < ApplicationSystemTestCase
                         author_avatar: "https://avatars.githubusercontent.com/u/4242?v=4")
       ]
     )
+  end
+
+  # A draft the viewer is allowed to delete — the shared builder's default is
+  # someone else's comment, which carries no Delete affordance.
+  def deletable_draft
+    feature_thread(
+      node_id: "PRRT_deletable", path: PATH, line: 3,
+      comments: [
+        feature_comment(node_id: "PRRC_deletable", database_id: 900_900, body: "Only draft on the review",
+                        state: "PENDING", author_login: "prism-dev",
+                        viewer_can_update: true, viewer_can_delete: true)
+      ]
+    )
+  end
+
+  # Mutates `state` when the mutation actually arrives, for the same reason
+  # `stub_feature_add_thread_dynamic` does: `destroy` re-reads reviewThreads
+  # to recount the tray, and an eager mutation here would have that read see
+  # the deletion before the request that caused it.
+  def stub_delete_comment_dynamic(state)
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .with { |request| graphql_operation_name(request.body) == "DeleteComment" }
+      .to_return do
+        state[:threads] = []
+        { status: 200,
+          body: { data: { deletePullRequestReviewComment: {
+            pullRequestReviewComment: { id: "PRRC_deletable" }
+          } } }.to_json,
+          headers: GithubStubs::JSON_HEADERS }
+      end
   end
 
   def files_json

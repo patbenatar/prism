@@ -161,6 +161,47 @@ class ReviewOnlyActionsTest < ApplicationSystemTestCase
     end
   end
 
+  # The half of the rule that cannot live on the client. Hiding the single
+  # button keeps an *informed* page from asking for something GitHub will not
+  # do; it does nothing for a page that loaded before the review existed —
+  # opened in another tab, or simply left open. That page still offers "Add
+  # single comment", still sends `pullRequestId`, and GitHub still answers
+  # with a draft. The only honest thing left is to say so, which is the one
+  # moment anyone finds out.
+  test "a page that predates the review says so when GitHub folds the comment into it" do
+    state = { reviews: [], threads: [] }
+    stub_feature_reviews_dynamic(state, owner: OWNER, repo: REPO, number: NUMBER)
+    stub_feature_review_threads_dynamic(state)
+
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    assert_no_selector "[data-testid=pending-count]"
+
+    # Between this page rendering and the click below, a review is opened
+    # somewhere else — so the comment GitHub is about to receive as a
+    # standalone one comes back PENDING.
+    stub_joined_add_thread(state)
+
+    block_id = open_composer_for(first_block)
+    within "#composer_#{block_id}" do
+      assert_selector "[data-testid=composer-submit-single]"
+      area = find("textarea", match: :first)
+      area.click
+      area.send_keys("Meant to post this on its own")
+      click_on "Add single comment"
+    end
+
+    assert_selector "[data-testid=flash]", text: /review was already in progress, so this joined it/i, wait: 5
+    # And the tray it did not have a moment ago, counting the draft it did
+    # not mean to write — resynced from GitHub rather than from the form,
+    # whose hidden fields still said "no review, nothing pending".
+    assert_selector "[data-testid=pending-count]", text: "1 pending comment"
+    assert_selector "[data-testid=thread] .pill-pending", text: "Pending"
+
+    expect_github_received(:AddThread) do |vars|
+      vars["input"].key?("pullRequestId") && !vars["input"].key?("pullRequestReviewId")
+    end
+  end
+
   # The design check for the pair: what the composer and the reply box look
   # like with and without a review in progress, in both schemes, at laptop
   # width. Saved to tmp/screenshots as `review-only-<state>-<theme>.png` —
@@ -252,6 +293,30 @@ class ReviewOnlyActionsTest < ApplicationSystemTestCase
       find("[data-testid=reply-textarea]").click
       yield
     end
+  end
+
+  # GitHub's answer to a standalone comment made while a review is open: the
+  # thread comes back with its comment PENDING, and the review it was folded
+  # into is now the viewer's — so `state` gains both at the moment the
+  # request arrives (never eagerly; see stub_feature_add_thread_dynamic).
+  def stub_joined_add_thread(state)
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .with { |request| graphql_operation_name(request.body) == "AddThread" }
+      .to_return do
+        state[:reviews] = [ github_fixture(:pending_review) ]
+        state[:threads] << joined_thread
+        { status: 200,
+          body: { data: { addPullRequestReviewThread: { thread: joined_thread } } }.to_json,
+          headers: GithubStubs::JSON_HEADERS }
+      end
+  end
+
+  def joined_thread
+    @joined_thread ||= feature_thread(
+      node_id: "PRRT_joined", path: PATH, line: 3,
+      comments: [ feature_comment(node_id: "PRRC_joined", body: "Meant to post this on its own",
+                                   state: "PENDING", author_login: "prism-dev") ]
+    )
   end
 
   def existing_thread

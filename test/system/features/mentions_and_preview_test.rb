@@ -251,6 +251,45 @@ class MentionsAndPreviewTest < ApplicationSystemTestCase
     assert_equal "cc @octocat re #42 ", body["body"]
   end
 
+  # ----------------------------------------------------------- edit form ---
+
+  # The third editor. The composer and the reply box are covered above, and
+  # the edit form wires the same controller in the same way — which is
+  # exactly why it is worth one test: it is the surface most likely to be
+  # forgotten when that wiring changes, and it already lost a hidden field
+  # once (docs/testing.md, "A real bug this tier found").
+  test "the mention menu works when editing a comment, and the picked login is what gets saved" do
+    own = feature_comment(node_id: "PRRC_own", database_id: 900_300, body: "Original wording.",
+                          author_login: "prism-dev", viewer_can_update: true, viewer_can_delete: true)
+    stub_feature_review_threads([ feature_thread(node_id: "PRRT_own", path: PATH, line: 3, comments: [ own ]) ])
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+
+    click_on "Edit"
+
+    edited = feature_comment(node_id: "PRRC_own", database_id: 900_300, body: "Original wording. cc @octocat",
+                             author_login: "prism-dev", viewer_can_update: true, viewer_can_delete: true)
+    stub_github_graphql(:UpdateComment,
+                        data: { updatePullRequestReviewComment: { pullRequestReviewComment: edited } })
+
+    within "[data-testid=comment-edit-form]" do
+      area = find("[data-testid=comment-edit-textarea]")
+      area.click
+      area.send_keys(" cc @oc")
+
+      assert_selector "[role=listbox] [role=option]", text: /octocat/i, wait: 5
+      area.send_keys(:down)
+      area.send_keys(:enter)
+
+      click_on "Save"
+    end
+
+    assert_selector "[data-testid=comment]", text: "cc @octocat", wait: 5
+    expect_github_received(:UpdateComment) do |vars|
+      vars["input"]["pullRequestReviewCommentId"] == "PRRC_own" &&
+        vars["input"]["body"] == "Original wording. cc @octocat "
+    end
+  end
+
   # --------------------------------------------------------------- preview ---
 
   test "the Preview tab renders through GitHub's /markdown and Write keeps the text" do
