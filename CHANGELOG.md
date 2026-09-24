@@ -4,6 +4,10 @@ Newest first. Written for people using Prism, not for how it is built.
 
 ## 2026-09-24
 
+- **Fixed: a sequence diagram's self-messages drew as filled blobs.** The arc
+  that leaves a lifeline and returns to it is now a thin stroked curve, as it
+  should be. The same fix restores pie chart slice colours, state diagram edges
+  and `classDef` fills, which were all being dropped.
 - **Fixed: diagrams were unpainted after clicking through to a file.** A
   diagram reached by navigating within Prism drew as solid black boxes with
   black labels. It now takes the page's own colours however you got there.

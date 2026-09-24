@@ -461,15 +461,41 @@ instead of showing a black diagram.
 Note that the same trap applies to anything else that stamps a nonce client
 side, Turbo's own progress-bar `<style>` included.
 
-**`style-src-attr` is still only the label pills.** The SVG a diagram produces
-is walked against an allowlist before it reaches the page and every `style`
-attribute in it is dropped — the diagram's own `classDef` and `style`
-directives live in its stylesheet, not in attributes, so nothing is lost. The
-drawing's size is set from its `viewBox` as plain `width`/`height` attributes.
-One fallback path, for a diagram type that somehow produces no `viewBox`, sets
-`max-width` through CSSOM from a number matched against `[\d.]+` — CSSOM is not
-an inline style attribute as far as CSP is concerned, and the value cannot
-carry anything but digits.
+**`style-src-attr` covers the label pills and a diagram's painting.** This
+paragraph used to say the pills were the only thing, on the reasoning that a
+diagram keeps its styling in its stylesheet and a `style` attribute could only
+be untrusted CSS. That was wrong twice over, and the second time shipped.
+
+Mermaid paints with the `style` attribute for things that have no stylesheet
+rule behind them at all. A sequence diagram's self-message carries
+`style="fill: none;"` and nothing else says so, so dropping it left the arc
+inheriting `fill` from the diagram's root rule and drawing as a solid blob the
+colour of the document's ink. A pie chart's slice colours are only there. So
+are a state diagram's edge fills, a `classDef`'s `fill … !important`, and the
+table-cell layout of a journey diagram's HTML labels.
+
+So the attribute survives and its *contents* are filtered, against
+`STYLE_PROPERTIES` in `mermaid_controller.js`: properties that paint a shape or
+set type, and nothing that could leave the figure — no `position`, `z-index`,
+`transform`, `content`, `animation`, `background`, `pointer-events`, `cursor`,
+`filter`, `clip-path` or `mask`. A `url()` in a value must point at a fragment
+of this same document, so a diagram cannot be used as a beacon. The filtering is
+done through the CSSOM on the parsed declaration rather than by building CSS
+text, so no repository string is ever concatenated into a stylesheet, and
+`!important` survives, which is how a `classDef` colour beats the diagram's own
+stylesheet.
+
+Nothing about the policy changed for this: `style-src-attr` was already
+`'unsafe-inline'`, because a nonce cannot apply to an attribute. What changed is
+the honest account of who relies on it.
+
+The root `<svg>` is the exception and still loses its `style` outright, because
+how big the drawing is on the page is Prism's decision rather than the
+diagram's: the size comes from the `viewBox` as plain `width`/`height`
+attributes. One fallback path, for a diagram type that somehow produces no
+`viewBox`, sets `max-width` through CSSOM from a number matched against
+`[\d.]+` — CSSOM is not an inline style attribute as far as CSP is concerned,
+and the value cannot carry anything but digits.
 
 **The nonce is random per request**, not derived from the session id as Rails
 suggests. A signed-out visitor has no session id, which would render `nonce-`
@@ -972,7 +998,8 @@ exists only where there is something to toggle to.
   "strict"` (never `loose` or `antiscript`), `htmlLabels: false`, and
   `bindFunctions` is never called, so no `click` directive can attach anything.
   On top of that the controller walks the SVG against an element allowlist,
-  drops every `on*` and `style` attribute, allows only `http(s)`, `mailto` and
+  drops every `on*` attribute, filters each `style` attribute down to the
+  properties that paint (§4), allows only `http(s)`, `mailto` and
   `#` in anything that names a resource, and namespaces every `id` to
   `user-content-` — rewriting `url(#…)`, `href="#…"` and the `#id` selectors in
   the diagram's own stylesheet to match — for the reason `Markdown::Sanitizer`
