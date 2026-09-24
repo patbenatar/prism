@@ -752,7 +752,7 @@ said. Three rules hold the family together:
 | `.composer-card` | The composer, the reply box and the edit form: tabs, textarea and buttons in one frame. `:focus-within` puts the brand ring around the **whole card**, because the card is the input. |
 | `.composer-card--compact` | The reply box at rest: one line saying "Reply…", with the tabs and the buttons folded away until focus lands inside. `:focus-within` is the whole mechanism — no JavaScript, works from the keyboard, cannot get stuck open. A page can hold a dozen threads, and a full editor under each one is a wall of chrome around a document nobody has replied to yet. |
 | `.composer-head` / `.composer-tab` | The Write/Preview pair. Real `role="tab"` buttons in a `role="tablist"`; `markdown_preview_controller` keeps `tab-active` and `aria-selected` in step. No `aria-controls`: several composers can be open on one page, so a panel id could not be unique. |
-| `.composer-note` / `--warn` / `--error` | The only things the composer says before you write: why a block can't be anchored (`--warn`), what a file-level comment will do, the error from the last attempt (`--error`, `role="alert"`). |
+| `.composer-note` / `--warn` / `--error` / `--inline` | What the composer says instead of making you find out: why a block can't be anchored (`--warn`), what a file-level comment will do, the error from the last attempt (`--error`, `role="alert"`). `--inline` drops the block padding so a note can stand in a button's place inside `.composer-foot` — see the review-only rule below. |
 | `.composer-foot` | The button row. `flex-wrap`, so Cancel / Add single comment / Start a review stack instead of overflowing at 390px. |
 | `.composer-textarea` | The textarea — serif, because you are writing prose about prose. Standalone it is a bordered `field-input` (the tray's review summary); inside `.composer-card` it gives up its own frame and the card carries it. |
 | `.tray` / `.tray-inner` | The pending-review bar. **Fixed**, not sticky — see below. `.tray-inner` is capped at `--measure-read` so it lines up with the document above it. Render it into `content_for :tray`, which the layout yields after `<main>`. |
@@ -775,6 +775,38 @@ fields. `anchorNote` survives for the one thing worth saying — *why* a block
 cannot be anchored at all — and is hidden when there is nothing to say.
 `composer_controller.js` fills it on open; `_composer_form` fills it from
 `uncommentable_reason` on the error re-render, where no JS runs.
+
+**While a review is open, the standalone actions are gone, not disabled.**
+GitHub refuses both of them: `addPullRequestReviewThread` with a
+`pullRequestId` — the "Add single comment" path — silently attaches the
+comment to the open review and answers with it in state `PENDING`, and an
+immediate REST reply fails 422 with *"user_id can only have one pending review
+per pull request"*, because a standalone reply implicitly opens a second
+review. So "Add single comment" and "Reply" are **absent** while one is open,
+with a `.composer-note--inline` where each of them was ("Your review is in
+progress, so this joins it"). A disabled control invites the reviewer to
+wonder what they did wrong; an absent one with a sentence explains itself.
+
+Both the buttons and the notes stay in the DOM with `hidden` toggled, never
+rendered conditionally, because the state changes mid-session: starting a
+review from one composer has to flip every reply box already on the page and
+the `<template>` the next composer is cloned from. `composer_controller`'s
+`applyReviewOnly` does that from the existing `pending-review:changed` event
+— the same one that already swaps the review button's label — and runs again
+over each fresh clone. Cmd+Enter follows the same rule: it submits the review
+button when the single one is hidden, or it would post exactly the comment the
+UI has stopped offering.
+
+A page can still go stale — a review opened in another tab — and ask for a
+single comment anyway, and the client cannot know. `ReviewCommentsController`
+catches that on the way back instead: the mutation returns the comment, and if
+a request that asked for `single` gets one in state `PENDING`, GitHub joined it
+to a review we did not know about. That write streams a notice into `#flash`
+("Your review was already in progress, so this joined it") and re-reads the
+tray rather than deriving it from the hidden fields, which were wrong too. It
+is the only write that re-reads, and only in that branch. `#flash` is a stable
+wrapper in the layout for exactly this — `shared/_flash` renders nothing when
+there is no flash, so it has no id of its own to aim at.
 
 **The composer's error path is an `update`, not a `replace`.**
 `composer_<block_id>` is the file view's own empty slot and `_composer_form`'s

@@ -96,7 +96,12 @@ export default class extends Controller {
 
     event.preventDefault()
     const form = event.target.closest("form")
-    const button = form?.querySelector('[data-composer-target="singleButton"]')
+    // While a review is open the single-comment button is gone, so Cmd+Enter
+    // has to submit the review button instead — submitting the hidden one
+    // would post exactly the comment the UI has stopped offering.
+    const button =
+      form?.querySelector('[data-composer-target="singleButton"]:not([hidden])') ||
+      form?.querySelector('[data-composer-target="reviewButton"]')
     button ? form.requestSubmit(button) : form?.requestSubmit()
   }
 
@@ -137,6 +142,27 @@ export default class extends Controller {
     })
     this.element.querySelectorAll('[data-composer-target="pendingCount"]').forEach((field) => {
       field.value = this.pendingCount
+    })
+    this.applyReviewOnly(this.element)
+  }
+
+  // GitHub refuses both standalone writes while a review is open: a "single"
+  // comment comes back as a PENDING draft on that review, and an immediate
+  // reply 422s with "user_id can only have one pending review per pull
+  // request". So while one is open those two buttons are removed and a line
+  // takes their place. Called with the whole page when the state changes
+  // under composers that are already open, and with a freshly cloned
+  // fragment before it is inserted.
+  applyReviewOnly(root) {
+    const reviewOnly = !!this.pendingReviewNodeId
+
+    root
+      .querySelectorAll('[data-composer-target="singleButton"], [data-composer-target="replySingleButton"]')
+      .forEach((button) => {
+        button.hidden = reviewOnly
+      })
+    root.querySelectorAll('[data-composer-target="reviewOnlyNote"]').forEach((note) => {
+      note.hidden = !reviewOnly
     })
   }
 
@@ -270,6 +296,7 @@ export default class extends Controller {
     // up to date with whatever pending-review:changed has told us since.
     const reviewButton = fragment.querySelector('[data-composer-target="reviewButton"]')
     if (reviewButton) reviewButton.textContent = this.pendingReviewNodeId ? "Add review comment" : "Start a review"
+    this.applyReviewOnly(fragment)
   }
 
   parseAnchor(json) {

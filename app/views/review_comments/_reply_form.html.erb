@@ -79,9 +79,19 @@
       </div>
     </div>
 
+    <%# No immediate "Reply" while a review is open: a standalone reply
+        implicitly opens a second review, and GitHub answers REST
+        `/comments/:id/replies` with 422 "user_id can only have one pending
+        review per pull request". Same treatment as the composer's single
+        button — gone, with a line where it was, flipped live by
+        composer#syncPendingReview. %>
     <div class="composer-foot">
+      <%= tag.p "Your review is in progress, so this joins it.",
+                 class: "composer-note composer-note--inline", hidden: pending_review.blank?,
+                 data: { composer_target: "reviewOnlyNote", testid: "reply-review-only-note" } %>
       <%= f.button "Reply", type: :submit, name: :review, value: "0",
-                    class: "btn btn-secondary btn-sm", data: { testid: "reply-submit" } %>
+                    class: "btn btn-secondary btn-sm", hidden: pending_review.present?,
+                    data: { testid: "reply-submit", composer_target: "replySingleButton" } %>
       <% if thread.viewer_can_reply %>
         <%= f.button (pending_review ? "Add to review" : "Start a review with this reply"),
                       type: :submit, name: :review, value: "1",

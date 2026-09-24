@@ -54,7 +54,12 @@
       <%= render "shared/top_bar" %>
     <% end %>
 
-    <%= render "shared/flash" %>
+    <%# A stable wrapper so a Turbo Stream can put a message here after a
+        write — `_flash` itself renders nothing when there is no flash, so it
+        has no id of its own to aim at. ReviewCommentsController#create
+        updates this on every comment posted, which also clears a notice left
+        over from an earlier one. %>
+    <div id="flash"><%= render "shared/flash" %></div>
 
     <main class="flex-1" id="main">
       <%= yield %>

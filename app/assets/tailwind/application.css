@@ -961,6 +961,16 @@
     @apply pt-2 font-medium text-removed;
   }
 
+  /* A note that stands in a button's place rather than above the textarea:
+     "your review is in progress, so this joins it", where "Add single
+     comment" is while a review is open. Same voice as .composer-note, without
+     the block padding — .composer-foot is a flex row, and the padding would
+     push the remaining buttons out of line. Declared after .composer-note so
+     the override lands whatever order the compiler emits. */
+  .composer-note--inline {
+    @apply px-0 pb-0;
+  }
+
   .composer-foot {
     @apply flex flex-wrap items-center justify-end gap-2 px-2.5 pb-2.5 pt-1;
   }

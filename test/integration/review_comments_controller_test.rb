@@ -214,6 +214,55 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
     assert_match(%r{action="/acme/docs-site/pulls/42/reviews/80002/submit"}, response.body)
   end
 
+  # The stale-tab case the UI rule cannot reach: this page never knew a review
+  # was open, so it asked for a single comment, and GitHub quietly made it a
+  # draft on that review. The only signal is the state on the comment coming
+  # back.
+  test "a single comment GitHub silently joined to a review says so and resyncs the tray" do
+    sign_in_as(@user)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
+    joined = new_thread_data(node_id: "PRRT_joined", state: "PENDING", body: "Just a note.")
+    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: joined } })
+    stub_review_threads([ joined ])
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", body: [ github_fixture(:pending_review) ].to_json)
+
+    post repo_pull_comments_path(owner: OWNER, repo: REPO, number: NUMBER),
+         params: { path: PATH, line: 3, side: "RIGHT", subject_type: "line",
+                   body: "Just a note.", commit: "single", block_id: "block_1",
+                   pending_count: "0" },
+         as: :turbo_stream
+
+    assert_response :success
+
+    # Told, not left to find out later.
+    assert_match(/turbo-stream action="update" target="flash"/, response.body)
+    assert_match("Your review was already in progress, so this joined it.", response.body)
+
+    # And the tray now shows the review that was really open, with the true
+    # count read back rather than the zero the page carried.
+    assert_match(/turbo-stream action="replace" target="pending_tray"/, response.body)
+    assert_match("1 pending comment", response.body)
+    assert_match(%r{action="/acme/docs-site/pulls/42/reviews/80002/submit"}, response.body)
+  end
+
+  test "a single comment that stayed a single comment says nothing and costs no extra reads" do
+    sign_in_as(@user)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
+    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: new_thread_data } })
+
+    post repo_pull_comments_path(owner: OWNER, repo: REPO, number: NUMBER),
+         params: { path: PATH, line: 3, side: "RIGHT", subject_type: "line",
+                   body: "Sentence case please.", commit: "single", block_id: "block_1",
+                   pending_count: "0" },
+         as: :turbo_stream
+
+    assert_response :success
+    assert_no_match("Your review was already in progress", response.body)
+    assert_github_not_requested :get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews"
+    refute github_graphql_requests.any? { |request| request[:operation] == "ReviewThreads" },
+           "the ordinary single-comment path must stay free of a resync"
+  end
+
   # Test gap flagged by the independent review (2026-09-19): the multi-line
   # branch of build_anchor had no coverage through a controller. The shared
   # docs/guide.md fixture's second hunk (@@ -11,5 +13,6 @@) makes head lines
