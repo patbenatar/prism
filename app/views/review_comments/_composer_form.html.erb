@@ -18,7 +18,10 @@
   one thing worth saying: why a block cannot be anchored at all.
 
   Locals:
-    pull_request:        (required) Github::Types::PullRequest
+    pull_request:        Github::Types::PullRequest, or nil on the error
+                          re-render when GitHub is the thing that failed and
+                          re-reading it would fail again. Only its number is
+                          ever read, and `params[:number]` carries that.
     path:                (required) String
     pending_review:       Github::Types::Review or nil — decides the review
                           button's starting label
@@ -38,6 +41,7 @@
     error:                String or nil
 %>
 <% pull_request       = local_assigns.fetch(:pull_request) %>
+<% number              = pull_request&.number || params[:number] %>
 <% path                = local_assigns.fetch(:path) %>
 <% pending_review      = local_assigns[:pending_review] %>
 <% block_id            = local_assigns[:block_id] %>
@@ -70,7 +74,7 @@
        data-no-patch="<%= Review::NotCommentable.new(reason: :no_patch).explanation %>"
        data-file-removed="<%= Review::NotCommentable.new(reason: :file_removed).explanation %>"></div>
 
-  <%= form_with url: repo_pull_comments_path(owner: params[:owner], repo: params[:repo], number: pull_request.number),
+  <%= form_with url: repo_pull_comments_path(owner: params[:owner], repo: params[:repo], number: number),
                 method: :post,
                 data: { turbo: true, testid: "composer-form",
                         action: "turbo:submit-start->composer#showProvisional turbo:submit-end->composer#removeProvisional" } do |f| %>

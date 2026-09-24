@@ -19,10 +19,14 @@ require "application_system_test_case"
 #      (see its own comment on render_repo_error_stream). An integration test
 #      can read that stream; it cannot tell you the composer still opens
 #      afterwards.
-#   3. A turbo_stream response carrying a 403/404 status is applied at all.
-#      Turbo decides that on the content type alone, but "the framework
+#   3. A turbo_stream response carrying a 403/404/503 status is applied at
+#      all. Turbo decides that on the content type alone, but "the framework
 #      currently happens to do that" is exactly the kind of assumption worth
 #      pinning in a test rather than in a comment.
+#
+# And one more, which is really the point of all three: the reviewer's own
+# words survive. A refusal that costs someone the paragraph they just wrote is
+# the worst outcome on this path, and it is the only one they cannot undo.
 class WriteErrorsTest < ApplicationSystemTestCase
   include FeatureHelpers
 
@@ -55,7 +59,7 @@ class WriteErrorsTest < ApplicationSystemTestCase
 
   # The pull request disappearing under a reviewer is a 404 from the very
   # first call `create` makes, so the comment never reaches GitHub at all.
-  test "a pull request GitHub can no longer find says so in the composer, writes nothing, and leaves the block usable" do
+  test "a pull request GitHub can no longer find says so in the composer, writes nothing, and keeps the words" do
     stub_feature_review_threads([])
     open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
 
@@ -71,36 +75,75 @@ class WriteErrorsTest < ApplicationSystemTestCase
       click_on "Add single comment"
     end
 
-    assert_selector "#composer_#{block_id} [data-testid=inline-error]",
+    assert_selector "[data-testid=composer-error]",
                     text: /Not found on GitHub, or you don't have access to it/i, wait: 5
     assert_no_selector "[data-testid=provisional-comment]"
     assert_no_selector "[data-testid=thread]"
     assert_empty github_graphql_requests.select { |request| request[:operation] == "AddThread" },
                  "nothing may be written to GitHub when the pull request 404s"
 
-    # The page is still a review screen: GitHub recovers, and the same block
-    # takes a comment without a reload.
-    #
-    # Two clicks, not one, and deliberately so: the error card lives *in* the
-    # composer slot, and composer#open reads "this slot has something in it"
-    # as "this composer is open", so the first "+" dismisses the error and the
-    # second opens the editor. Worth knowing — the reviewer's original text is
-    # gone by then, which is not true of the 422 path (errors_test), where the
-    # composer comes back with the words still in it.
+    # The paragraph is still there. This is the whole point: the reviewer did
+    # nothing wrong, and retyping it is the one cost of this failure they
+    # cannot get back.
+    assert_field type: "textarea", with: "This one is going nowhere."
+
+    # And the composer is a working composer, not a message where one used to
+    # be — GitHub recovers and the same open composer posts, with no "+" to
+    # click again and nothing to retype.
     stub_github_get(PULL_PATH, fixture: :pull)
     thread = feature_thread(node_id: "PRRT_retry", path: PATH, line: 3,
-                            comments: [ feature_comment(node_id: "PRRC_retry", body: "Second time lucky.") ])
+                            comments: [ feature_comment(node_id: "PRRC_retry", body: "This one is going nowhere.") ])
     stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: thread } })
     stub_feature_review_threads([ thread ])
 
-    block.hover
-    block.find(".md-add", match: :first).click
-    assert_no_selector "#composer_#{block_id} [data-testid=inline-error]"
+    within("#composer_#{block_id}") { click_on "Add single comment" }
 
-    comment_on_block(block, body: "Second time lucky.")
+    assert_selector "[data-testid=thread]", text: "This one is going nowhere.", wait: 5
+    expect_github_received(:AddThread) do |vars|
+      vars["input"]["path"] == PATH && vars["input"]["body"] == "This one is going nowhere."
+    end
+  end
 
-    assert_selector "[data-testid=thread]", text: "Second time lucky.", wait: 5
-    expect_github_received(:AddThread) { |vars| vars["input"]["path"] == PATH }
+  # GitHub having a bad five seconds is not the pull request being gone, and
+  # it is the one failure where "try again" is honest advice. Before this it
+  # was an unrescued Github::Unavailable — a Rails 500, which Turbo paints
+  # straight over the review screen, taking the unsent comment with it.
+  test "GitHub falling over mid-comment keeps the review screen, the words, and says to try again" do
+    stub_feature_review_threads([])
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+
+    block = find("[data-testid=md-block][data-commentable=true]", match: :first)
+    block_id = open_composer_for(block)
+
+    stub_github_error(:get, PULL_PATH, status: 503, message: "Service unavailable")
+
+    within "#composer_#{block_id}" do
+      area = find("textarea", match: :first)
+      area.click
+      area.send_keys("Worth keeping through an outage.")
+      click_on "Add single comment"
+    end
+
+    assert_selector "[data-testid=composer-error]", text: /unavailable|try again/i, wait: 5
+    assert_field type: "textarea", with: "Worth keeping through an outage."
+
+    # Still the review screen, not an error page: the document is where it
+    # was and the reviewer has lost nothing but a few seconds.
+    assert_selector "[data-testid=rendered-file] h1", text: "Guide"
+    assert_current_path repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER)
+    assert_empty github_graphql_requests.select { |request| request[:operation] == "AddThread" },
+                 "nothing may be written to GitHub when GitHub is the thing that failed"
+
+    stub_github_get(PULL_PATH, fixture: :pull)
+    thread = feature_thread(node_id: "PRRT_recovered", path: PATH, line: 3,
+                            comments: [ feature_comment(node_id: "PRRC_recovered",
+                                                         body: "Worth keeping through an outage.") ])
+    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: thread } })
+    stub_feature_review_threads([ thread ])
+
+    within("#composer_#{block_id}") { click_on "Add single comment" }
+
+    assert_selector "[data-testid=thread]", text: "Worth keeping through an outage.", wait: 5
   end
 
   # A token revoked while a review is open. The refusal arrives on a Turbo
@@ -149,6 +192,25 @@ class WriteErrorsTest < ApplicationSystemTestCase
     assert_selector "[data-testid=inline-error]", text: /GitHub refused that request/i, wait: 5
     assert_no_selector "#thread_PRRT_forbidden"
     assert_current_path repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER)
+    assert_selector "[data-testid=rendered-file] h1", text: "Guide"
+  end
+
+  # Resolve again, with GitHub itself down rather than refusing: the thread
+  # carries the explanation, the rest of the page is untouched, and the answer
+  # says to try again rather than reading like the thread is gone.
+  test "a thread Prism cannot reach because GitHub is down says so without taking the page with it" do
+    comment = feature_comment(node_id: "PRRC_down", database_id: 900_900, body: "Still here?")
+    thread = feature_thread(node_id: "PRRT_down", path: PATH, line: 3, comments: [ comment ])
+    stub_feature_review_threads([ thread ])
+
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    assert_selector "[data-testid=thread-resolve]"
+
+    stub_github_error(:post, "/graphql", status: 503, message: "Service unavailable")
+
+    click_on "Resolve"
+
+    assert_selector "[data-testid=inline-error]", text: /unavailable|try again/i, wait: 5
     assert_selector "[data-testid=rendered-file] h1", text: "Guide"
   end
 

@@ -47,14 +47,16 @@ class ReviewCommentsController < ApplicationController
   rescue_from Github::LineNotCommentable, Github::Unprocessable, Github::RateLimited, Github::GraphQLError,
               ArgumentError, with: :handle_write_error
 
-  # Github::NotFound/Forbidden shadow GithubErrorHandling's own full-page
-  # handlers on purpose (registered after `include`, so Rails checks these
-  # first): a revoked token or a deleted pull request mid-write should not
-  # blow away a Turbo Stream response the way a full-page render would. Each
-  # action already knows which container it was writing into, so the error
-  # replaces that instead of the whole screen; a plain HTML request still
-  # gets GithubErrorHandling's page.
-  rescue_from Github::NotFound, Github::Forbidden, with: :handle_repo_error
+  # Github::NotFound/Forbidden/Unavailable shadow GithubErrorHandling's own
+  # full-page handlers on purpose (registered after `include`, so Rails checks
+  # these first): a revoked token, a deleted pull request, or GitHub falling
+  # over mid-write should not blow away a Turbo Stream response the way a
+  # full-page render would — Turbo paints a 500 body straight over the review
+  # screen, taking the reviewer's unsent text with it. Each action already
+  # knows which container it was writing into, so the error lands there
+  # instead of on the whole screen; a plain HTML request still gets
+  # GithubErrorHandling's page.
+  rescue_from Github::NotFound, Github::Forbidden, Github::Unavailable, with: :handle_repo_error
 
   # Registered last, so it wins over nothing else: Github::Unconfirmed is not
   # a failure and must not be rendered as one. See handle_unconfirmed_write.
@@ -442,10 +444,11 @@ class ReviewCommentsController < ApplicationController
   end
 
   # Registered after `include GithubErrorHandling`, so this wins for
-  # Github::NotFound/Forbidden. Each write action already knows which
-  # container it was writing into; replace that instead of the whole page for
-  # a Turbo Stream request, and fall back to the full explanation page
-  # (`shared/not_found` / `shared/forbidden`) for a plain HTML one.
+  # Github::NotFound/Forbidden/Unavailable. Each write action already knows
+  # which container it was writing into; the error lands there instead of on
+  # the whole page for a Turbo Stream request, and falls back to the full
+  # explanation page (`shared/not_found` / `shared/forbidden` /
+  # `shared/unavailable`) for a plain HTML one.
   def handle_repo_error(error)
     respond_to do |format|
       format.turbo_stream { render_repo_error_stream(error) }
@@ -453,42 +456,57 @@ class ReviewCommentsController < ApplicationController
     end
   end
 
-  # `composer_<block_id>` is D's own empty slot div — its content, not itself,
-  # is what a successful open() or a server render fills in, so replacing it
-  # outright would discard the id the JS controller looks it up by on every
-  # later `document.getElementById` call, leaving the composer permanently
-  # unreachable at that block for the rest of the page's life. `thread_<id>`
-  # and `comment_<id>`, by contrast, are partials that declare that same id
-  # on their own root (`_thread.html.erb`, `shared/_comment_card.html.erb`
-  # via `_comment.html.erb`), so replacing them re-establishes it and is
-  # fine.
+  # `create` is the one action with somewhere better to put the explanation
+  # than a card: the composer itself, re-rendered with the reviewer's own
+  # words still in it. That is what the 422 path has always done, and the
+  # reason it has to be true here too is that this failure is not the
+  # reviewer's fault at all — losing a typed paragraph because GitHub had a
+  # bad five seconds is the worst outcome on this whole path.
+  #
+  # Everything else replaces `thread_<id>` or `comment_<id>`: partials that
+  # declare their own id on their root (`_thread.html.erb`,
+  # `shared/_comment_card.html.erb` via `_comment.html.erb`), so replacing
+  # them re-establishes it.
   def render_repo_error_stream(error)
+    return render_composer_error_stream(error) if action_name == "create"
+
     target = repo_error_target
     return redirect_to(file_path, alert: error.user_message) if target.nil?
 
-    action = target.start_with?("composer_") ? :update : :replace
-    render turbo_stream: turbo_stream.public_send(
-      action, target, partial: "review_comments/inline_error", locals: { message: error.user_message }
-    ), status: error.is_a?(Github::Forbidden) ? :forbidden : :not_found
+    render turbo_stream: turbo_stream.replace(
+      target, partial: "review_comments/inline_error", locals: { message: error.user_message }
+    ), status: write_error_status(error)
   end
 
   # Whichever container each action already knows it was writing into —
   # nil means there is nothing specific to replace, so the caller redirects.
+  # `create` is absent because it never gets here (see above).
   def repo_error_target
     case action_name
-    when "create" then "composer_#{params[:block_id]}"
     when "reply", "destroy" then "thread_#{params[:thread_id]}" if params[:thread_id].present?
     when "update" then "comment_#{params[:id]}"
     end
   end
 
   def render_full_repo_error_page(error)
-    error.is_a?(Github::Forbidden) ? github_forbidden(error) : github_not_found(error)
+    case error
+    when Github::Forbidden then github_forbidden(error)
+    when Github::Unavailable then github_unavailable(error)
+    else github_not_found(error)
+    end
   end
 
-  # Only ever reached from create's error branch (see handle_write_error), so
-  # this uses the same no-refetch pending_review_from_client the success path
-  # does, not current_pending_review.
+  # GithubErrorHandling asks this for the "try again" link on the unavailable
+  # page, because a write's own URL is not a URL a browser can GET.
+  def github_retry_path = file_path
+
+  # `create`'s answer to every failure it can render in place: a 422 from
+  # GitHub, a bad anchor param, and — since the reviewer's words are no less
+  # worth keeping when the fault is GitHub's — a 404, a 403 or a 5xx, which
+  # reach the same place through render_repo_error_stream.
+  #
+  # Uses the same no-refetch pending_review_from_client the success path does,
+  # not current_pending_review.
   #
   # `update`, not `replace`: `composer_<block_id>` is D's own empty slot div,
   # and `_composer_form.html.erb`'s root carries no id of its own (by
@@ -499,17 +517,41 @@ class ReviewCommentsController < ApplicationController
   # rest of the page's life — caught by a system test exercising this exact
   # path in a real browser (2026-09-19).
   def render_composer_error(error)
-    pull_request = github.pull_request(@owner, @repo, @number)
-
     respond_to do |format|
-      format.turbo_stream do
-        render turbo_stream: turbo_stream.update(
-          "composer_#{params[:block_id]}",
-          partial: "review_comments/composer_form",
-          locals: composer_error_locals(pull_request, pending_review_from_client, user_message(error))
-        ), status: :unprocessable_content
-      end
+      format.turbo_stream { render_composer_error_stream(error) }
       format.html { redirect_to file_path, alert: user_message(error) }
+    end
+  end
+
+  def render_composer_error_stream(error)
+    render turbo_stream: turbo_stream.update(
+      "composer_#{params[:block_id]}",
+      partial: "review_comments/composer_form",
+      locals: composer_error_locals(composer_error_pull_request, pending_review_from_client, user_message(error))
+    ), status: write_error_status(error)
+  end
+
+  # `create`'s first act is to fetch the pull request, so the error being
+  # rendered here may well *be* that fetch failing — asking again would raise
+  # inside the rescue handler and turn the explanation back into the 500 it
+  # exists to replace. The composer reads nothing off it but the number, and
+  # params carry that, so nil is a survivable answer.
+  def composer_error_pull_request
+    github.pull_request(@owner, @repo, @number)
+  rescue Github::Error
+    nil
+  end
+
+  # The status a Turbo form submission gets back. Turbo applies a turbo_stream
+  # response whatever the status (it decides on the content type alone), so
+  # this is for everything else that reads it — the browser's network panel, a
+  # no-JS client, and anything sitting in front of Rails.
+  def write_error_status(error)
+    case error
+    when Github::Unavailable then :service_unavailable
+    when Github::Forbidden then :forbidden
+    when Github::NotFound then :not_found
+    else :unprocessable_content
     end
   end
 

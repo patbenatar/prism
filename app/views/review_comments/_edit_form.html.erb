@@ -39,7 +39,7 @@
     <div class="relative" data-markdown-preview-target="writePane" role="tabpanel">
       <%= f.text_area :body, value: comment.body, rows: 3, id: nil, class: "composer-textarea w-full",
                        data: { testid: "comment-edit-textarea", markdown_preview_target: "textarea", autocomplete_target: "textarea",
-                                action: "input->composer#autosize keydown->autocomplete#keydown input->autocomplete#input blur->autocomplete#close input->markdown-preview#dirty" },
+                                action: "input->composer#autosize keydown->autocomplete#keydown keydown->composer#submitOnEnter input->autocomplete#input blur->autocomplete#close input->markdown-preview#dirty" },
                        aria: { label: "Edit comment" } %>
       <div data-autocomplete-target="list"
            class="absolute z-20 mt-1 max-h-56 w-max min-w-72 max-w-full overflow-auto rounded-lg border border-line bg-surface py-1 text-sm shadow-lg shadow-ink/5"

@@ -22,10 +22,12 @@ class ReactionsController < ApplicationController
   rescue_from Github::Unprocessable, Github::RateLimited, Github::GraphQLError, with: :handle_error
 
   # Registered after `include GithubErrorHandling`, so this wins for
-  # Github::NotFound/Forbidden: both actions already know the comment's node
-  # id, so a Turbo Stream request gets that comment replaced with an inline
-  # explanation instead of the whole page GithubErrorHandling would render.
-  rescue_from Github::NotFound, Github::Forbidden, with: :handle_repo_error
+  # Github::NotFound/Forbidden/Unavailable: both actions already know the
+  # comment's node id, so a Turbo Stream request gets that comment replaced
+  # with an inline explanation instead of the whole page GithubErrorHandling
+  # would render — and, for Unavailable, instead of the 500 Turbo would paint
+  # over the review screen.
+  rescue_from Github::NotFound, Github::Forbidden, Github::Unavailable, with: :handle_repo_error
 
   rescue_from Github::Unconfirmed, with: :handle_unconfirmed
 
@@ -102,9 +104,29 @@ class ReactionsController < ApplicationController
       format.turbo_stream do
         render turbo_stream: turbo_stream.replace(
           "comment_#{params[:id]}", partial: "review_comments/inline_error", locals: { message: error.user_message }
-        ), status: error.is_a?(Github::Forbidden) ? :forbidden : :not_found
+        ), status: repo_error_status(error)
       end
-      format.html { error.is_a?(Github::Forbidden) ? github_forbidden(error) : github_not_found(error) }
+      format.html { render_full_repo_error_page(error) }
     end
   end
+
+  def repo_error_status(error)
+    case error
+    when Github::Unavailable then :service_unavailable
+    when Github::Forbidden then :forbidden
+    else :not_found
+    end
+  end
+
+  def render_full_repo_error_page(error)
+    case error
+    when Github::Forbidden then github_forbidden(error)
+    when Github::Unavailable then github_unavailable(error)
+    else github_not_found(error)
+    end
+  end
+
+  # GithubErrorHandling asks this for the "try again" link on the unavailable
+  # page: a POST of a reaction is not a URL a browser can GET.
+  def github_retry_path = file_path
 end
