@@ -94,6 +94,23 @@ class SignInAndBrowseTest < ApplicationSystemTestCase
     assert_no_selector "[data-testid=rendered-file]", text: "# Guide"
   end
 
+  # Cancelling on GitHub's consent screen. OmniAuth's own failure phase
+  # handles this — `failure_raise_out_environments = []` in the initializer is
+  # what keeps it from being a 500 in development and test — and nothing ever
+  # drove it end to end: the integration test GETs `/auth/failure` directly,
+  # which would still pass if the middleware never redirected there.
+  test "declining on GitHub lands back on sign in, explained, and signs nobody in" do
+    mock_github_auth_failure(:access_denied)
+
+    visit sign_in_path
+    click_on "Continue with GitHub"
+
+    assert_current_path sign_in_path
+    assert_selector "[data-testid=flash]", text: /didn't finish/i
+    assert_text "Review a pull request's Markdown"
+    assert_no_selector "[data-testid=account-menu]"
+  end
+
   test "a signed-out deep link redirects to sign in and returns you there once you're in" do
     sign_in_for_feature(@user)
     open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)

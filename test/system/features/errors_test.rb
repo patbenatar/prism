@@ -72,9 +72,31 @@ class ErrorsTest < ApplicationSystemTestCase
 
     open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
 
-    assert_selector "[data-testid=rate-limit-banner]"
+    # Not just that a banner is there: when it lifts is the only thing on it
+    # a reviewer can act on, and the test is named for it.
+    assert_selector "[data-testid=rate-limit-banner]", text: /try again in \d+ minutes/i
     assert_selector "[data-testid=rendered-file] h1", text: "Guide"
     assert_no_selector "[data-testid=thread]"
+  end
+
+  # The 403 page (`shared/forbidden`) is what an organization that has not
+  # approved Prism looks like — the most likely first thing a new reviewer at
+  # a company sees — and nothing at any tier had ever rendered it. The 404
+  # sibling is covered (edge_files_test, pull_requests_test); this one was
+  # reachable only in production.
+  test "a repository GitHub refuses explains itself and offers a way back" do
+    stub_github_get("/user/repos", fixture: :repos)
+    stub_github_error(:get, "/repos/#{OWNER}/#{REPO}", status: 403,
+                      message: "Resource protected by organization SAML enforcement")
+    sign_in_for_feature(@user)
+
+    visit repo_pulls_path(owner: OWNER, repo: REPO)
+
+    assert_selector "[data-testid=empty-state]", text: /GitHub refused this request/i
+    assert_text(/may not have access to this repository/i)
+
+    click_on "Back to repositories"
+    assert_selector "[data-testid=repo-list]"
   end
 
   test "a 401 on any GitHub call signs the reviewer out with a flash" do
