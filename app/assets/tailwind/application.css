@@ -824,18 +824,26 @@
      holds the Write/Preview tabs, the textarea and the buttons, and takes the
      focus ring as one control.
 
-     Three rules hold the whole section together:
+     Four rules hold the whole section together:
 
-     1. **Nothing is announced by a fill.** A thread stays on the base surface
-        in every state; what changes is a 3px band down its left edge, in the
-        spectrum colour of that state — the same language the gutter's change
-        bar speaks two columns to the left. The tinted panels this replaced
-        (a blue wash for a draft, grey for resolved) read as a different kind
-        of object sitting on the document rather than a part of it.
-     2. **No rule above a thing, only between things.** The composer no longer
-        hangs under a hairline; its own border is the edge. Inside a thread,
-        the hairlines separate one comment from the next and nothing else.
-     3. **Destructive is quiet until you reach for it.** Edit and delete are
+     1. **A comment is a different kind of object from a paragraph, and it
+        says so twice: in its voice and in its surface.** The body speaks in
+        the display face, and the whole conversation sits in a recessed
+        channel. See "the conversation channel" below — that is the rule a
+        reviewer reads at scrolling speed; the three under it say what a
+        comment looks like once you have stopped.
+     2. **State is announced by a band, not by a fill.** The channel's own
+        fill is constant — it means "conversation", not "draft" — so what a
+        thread's state changes is a 3px band beside it, in the spectrum
+        colour of that state, the same language the gutter's change bar
+        speaks two columns to the left. The tinted panels this replaced (a
+        blue wash for a draft, grey for resolved) made the *same* object
+        change colour under you as it settled.
+     3. **No rule above a thing, only between things.** The composer no longer
+        hangs under a hairline; the channel's own border is the edge. Inside a
+        thread, the hairlines separate one comment from the next and nothing
+        else.
+     4. **Destructive is quiet until you reach for it.** Edit and delete are
         equal-weight icon buttons in the card's top right; delete only takes
         the removed colour on hover and focus. A red button sitting next to a
         ghost one made deleting look like the expected move.
@@ -849,91 +857,140 @@
      A thread used to start at the document's left edge, end at its right
      edge, and hold serif prose in between, so a conversation between a
      heading and a list read as part of the document — and nothing said which
-     of the two it belonged to. The surface tokens were carrying the whole
-     distinction on their own, and `surface` on `canvas` is a 2% step that
-     disappears at reading distance.
+     of the two it belonged to.
 
-     So the conversation gets a column of its own. Threads and the composer
-     step in by one gutter on each side, which leaves the document holding the
-     outer edge all the way down and makes the conversation a visibly
-     different shape rather than a differently tinted one. The blocks
-     themselves stay untinted (§7) — this changes what is around a thread, not
-     what is behind the prose.
+     The first fix stepped the conversation in by one gutter on each side and
+     hung a brand rail down the indent. It was the right instinct in the wrong
+     currency: 40px of an 848px column is a 5% narrowing, and a 3px rail at
+     35% opacity is invisible at reading distance, so the page still asked the
+     reviewer to work out which of two identical-looking columns of prose was
+     which. **Geometry was moved while the typography, which is what the eye
+     actually reads, was left identical.** Everything below follows from that.
 
-     The inset is `--gutter-width` rather than a number chosen by eye: the page
-     already steps by that amount, so a thread lines up with a channel that
-     exists instead of inventing one.
+     So a conversation now differs from a paragraph in three ways at once, and
+     the first two are the ones that carry:
 
-     The rail is a 3px rounded bar, which is what a vertical band means
-     everywhere else in Prism — `.md-gutter-bar` for a block's change state,
-     `.thread--*` for a thread's own state. Three columns, three questions:
-     did this change, is there a conversation here, what state is this thread
-     in. Its colour is `brand` at 35%, and it is brand for two reasons: the
-     conversation is Prism's own layer over somebody else's document, and
-     every band in the spectrum already means something else.
+     1. **Its voice.** The comment body is the display face — see
+        `.comment-body` below. DESIGN.md §3 already says the document speaks in
+        serif and the tool speaks in grotesk; a comment is the tool, and it was
+        the only part of the tool still dressed as the document.
+     2. **Its surface.** The whole channel is a recessed well on `sunk`, with
+        a `line` border and real padding. A block of the document never has a
+        fill behind it (§7, and that stays true — this is a fill behind the
+        *conversation*, not behind the prose), so "has a background" is a
+        question a reviewer answers without reading a word.
+     3. **Its shape.** The one-gutter inset survives, because the page already
+        steps by that amount and the conversation now lines up with a channel
+        that exists. It is no longer load-bearing on its own.
 
-     NOT `line-strong`, which was tried first and is wrong: `.md-prose
-     blockquote` is `border-l-2 border-line-strong pl-4`, so a grey rule with
-     prose to the right of it is the document's own quoting language. A
-     conversation drawn that way reads as a very large blockquote — which is
-     the confusion this rule exists to remove, not a smaller version of it.
+     The well is `sunk` rather than `surface` on purpose: `surface` over
+     `canvas` is a 2% step, and it is also what every panel on every other
+     screen is, so a thread drawn that way reads as a row in a list. `sunk` is
+     a well on paper and a lift on the dark canvas — the one relationship dark
+     mode flips (§2) — and either way it is the page making room for something
+     that is not the page. The border is the part that does not depend on that
+     step being visible: in forced-colors, at low contrast, or on a bad panel,
+     the edge still holds.
+
+     The rail this replaced was `brand` at 35% and NOT `line-strong`, because
+     `.md-prose blockquote` is `border-l-2 border-line-strong pl-4` and a grey
+     rule with prose to the right of it is the document's own quoting
+     language. That trap is still live and now catches a second thing: a quote
+     *inside* a comment (`.comment-body blockquote`, below) has to stop
+     speaking it too, or the reviewer reads one blockquote nested in another.
 
      `:has(> *)` rather than `:not(:empty)`: both containers are always in the
      DOM so a streamed-in thread has somewhere to land, and the ERB ones hold
      whitespace, which `:empty` does not forgive. An empty channel draws
-     nothing. */
+     nothing — no border, no fill, no padding. */
   .md-threads:has(> *),
   .md-composer:has(> *),
   .file-threads-list:has(> *) {
-    @apply relative py-0.5 pl-4;
+    @apply relative my-5 rounded-xl border border-line bg-sunk px-4 py-3;
     margin-left: var(--gutter-width);
     margin-right: var(--gutter-width);
   }
 
-  .md-threads:has(> *)::before,
-  .md-composer:has(> *)::before,
-  .file-threads-list:has(> *)::before {
-    content: "";
-    @apply absolute inset-y-0 left-0 w-[3px] rounded-full bg-brand/35;
+  /* A composer opening under an existing thread is the same conversation, so
+     the two containers close into one well rather than stacking two.
+
+     `:has(+ .md-composer > *)` and not the `:has(+ .md-composer:has(> *))`
+     that reads more naturally: **`:has()` may not be nested inside `:has()`**,
+     and a browser drops the whole rule as an invalid selector rather than
+     ignoring the inner one. Tailwind compiles it happily, so the failure is
+     silent and shows up only as a seam across the middle of the well. The
+     relative selector says the same thing — a next-sibling `.md-composer`
+     with a child — in one level. */
+  .md-threads:has(> *):has(+ .md-composer > *) {
+    @apply mb-0 rounded-b-none border-b-0 pb-0;
   }
 
-  /* A composer opening under an existing thread is the same conversation, so
-     the two containers close up and their rails read as one. */
   .md-threads:has(> *) + .md-composer:has(> *) {
-    @apply mt-0;
+    @apply mt-0 rounded-t-none border-t-0;
   }
 
   /* At phone width the step in is the phone gutter, and only on the left:
      there is no room to give back 2.5rem on each side of a 322px column, and
      the left edge is the one that answers the question. A six-message thread
-     has to stay comfortable at 390px. */
+     has to stay comfortable at 390px, which is also why the padding only
+     drops by 4px — the room for conversation is the point of this screen. */
   @media (max-width: 640px) {
     .md-threads:has(> *),
     .md-composer:has(> *),
     .file-threads-list:has(> *) {
-      @apply pl-2;
+      @apply px-3;
       margin-left: 0.75rem;
       margin-right: 0;
     }
   }
 
-  /* ── The thread ───────────────────────────────────────────────────────── */
+  /* ── The thread ───────────────────────────────────────────────────────
+     The thread has no frame of its own. It used to be a `surface` card with
+     its own border and radius, which inside the channel would be a box in a
+     box: two edges 16px apart, neither of which is the one that matters. The
+     channel is the object; a thread is a run of comments inside it, and two
+     threads on one block are separated the way two comments are, by a rule
+     and some air. */
   .thread {
-    @apply my-3 overflow-hidden rounded-xl border border-line bg-surface;
+    @apply relative my-0;
   }
 
-  /* Written one class more specific than `.thread` on purpose: an override of
-     equal specificity is not guaranteed to survive the compiler's ordering
-     (see §7's cascade note), and this one has to beat `border-line`. */
-  .thread.thread--pending  { @apply border-l-[3px] border-l-pending; }
-  .thread.thread--outdated { @apply border-l-[3px] border-l-modified; }
-  .thread.thread--resolved { @apply border-l-[3px] border-l-resolved; }
+  .thread + .thread {
+    @apply mt-3 border-t border-line pt-3;
+  }
+
+  /* The state band. A 3px rounded bar in the channel's left padding, beside
+     the thread it belongs to — the same vertical-band language as
+     `.md-gutter-bar` two columns to the left, and the same shape as the rail
+     that used to run down the whole channel.
+
+     A pseudo-element rather than a `border-left`: the channel is `rounded-xl`
+     and has no `overflow-hidden` (it cannot have — a reply box's autocomplete
+     listbox is absolutely positioned and would be clipped), so a square
+     border on the first child pokes through the well's rounded corner. It
+     also has to be per-thread rather than per-channel, because a block can
+     carry a resolved thread and an open draft at once and one repainted edge
+     could only tell you about one of them. `-left-2` puts it inside the
+     channel's 16px padding (12px at phone) without touching the border. */
+  .thread--pending::before,
+  .thread--outdated::before,
+  .thread--resolved::before {
+    content: "";
+    @apply absolute inset-y-0 -left-2 w-[3px] rounded-full;
+  }
+
+  .thread--pending::before  { @apply bg-pending; }
+  .thread--outdated::before { @apply bg-modified; }
+  .thread--resolved::before { @apply bg-resolved; }
 
   /* Badges (Outdated / Resolved / On removed content) and the resolve toggle.
      Rendered only when it has something to say, so an ordinary thread opens
-     straight onto its first comment with no strip above it. */
+     straight onto its first comment with no strip above it. No horizontal
+     padding on this or any row below it: the channel carries it now, so a
+     comment's text lines up with the channel's own edge instead of sitting in
+     a second, narrower column inside it. */
   .thread-head {
-    @apply flex flex-wrap items-center gap-2 px-3 pb-0 pt-2 font-display text-xs text-ink-faint;
+    @apply flex flex-wrap items-center gap-2 px-0 pb-0 pt-0 font-display text-xs text-ink-faint;
   }
 
   /* The comments themselves. The hairline belongs to the gap between two
@@ -947,19 +1004,18 @@
   /* The reply box's room inside the thread. No rule above it — the composer
      card's own border already separates it from the conversation. */
   .thread-foot {
-    @apply px-3 pb-3 pt-2;
+    @apply px-0 pb-0 pt-3;
   }
 
   /* ── One comment ──────────────────────────────────────────────────────── */
   .comment-card {
-    @apply px-3.5 py-3;
+    @apply px-0 py-2;
   }
 
   /* `font-display` here and on the rows below is not decoration: a thread
      renders inside the block body, which is `.md-prose`, so everything in it
      inherits the reading serif unless it says otherwise. The document speaks
-     in serif; the tool speaks in grotesk, and a comment's chrome is the tool.
-     Its body keeps the serif, because that part really is prose. */
+     in serif; the tool speaks in grotesk, and a comment's chrome is the tool. */
   .comment-head {
     @apply flex flex-wrap items-center gap-x-2 gap-y-1 font-display text-xs text-ink-faint;
   }
@@ -969,7 +1025,43 @@
   }
 
   .comment-body {
-    @apply mt-2;
+    @apply mt-1.5;
+  }
+
+  /* **The body speaks in the tool's voice too, and this is the load-bearing
+     rule of §8.** A comment body used to render `comment-body md-prose
+     md-prose-compact` — the same Source Serif 4 at 0.95rem as the document
+     two millimetres above it — so the one thing a reviewer reads at scrolling
+     speed said "document". It is `.md-prose` still, because the HTML inside
+     it came from GitHub and we cannot add a class to it: lists, tables, code,
+     links, task lists, alerts and footnotes all have to keep working. Only
+     the face, the size and the figures change.
+
+     Two classes on the selector, and not by taste: `.md-prose` sets
+     `font-family` and is declared *later* in this file than `.comment-body`,
+     so a single-class override loses the tie. `.thread .comment-body` also
+     reaches the provisional card `composer_controller` builds in JavaScript
+     and the sample comment on the sign-in screen, both of which render the
+     same two classes inside a `.thread`.
+
+     0.875rem, not 0.95: the grotesk has the larger x-height of the two faces,
+     so it reads a touch bigger than its em size next to the serif. The pair
+     was measured on screen at 1440 and 390 rather than picked from the scale.
+
+     A quote inside a comment gets the brand rule, not `line-strong`. GitHub
+     wraps a quoted passage in `<blockquote>` and reviewers quote the document
+     constantly, so at `line-strong` the reviewer reads the document's own
+     quoting language inside a comment — the exact confusion the channel
+     exists to remove, one level down. */
+  .thread .comment-body,
+  .composer-card .composer-preview {
+    font-family: var(--font-display);
+    @apply text-[0.875rem] leading-[1.65];
+    font-variant-numeric: normal;
+  }
+
+  .thread .comment-body blockquote {
+    @apply border-l-2 border-brand/30 pl-3 text-ink-faint;
   }
 
   /* Edit / delete / open-on-GitHub, top right of the card. `button_to` wraps
@@ -1103,8 +1195,14 @@
     @apply flex flex-wrap items-center justify-end gap-2 px-2.5 pb-2.5 pt-1;
   }
 
+  /* The field matches what it produces. It used to be `font-prose` at 0.95rem
+     — "you are writing prose about prose" — which was true of the old comment
+     body and stopped being true the moment the body moved to the display face:
+     you typed in one face and watched it render in another, in a card eight
+     pixels away. Same face, same size, same leading as `.comment-body`, so
+     Write, Preview and the posted comment are three views of one thing. */
   .composer-textarea {
-    @apply field-input min-h-[5.5rem] resize-y font-prose text-[0.95rem] leading-relaxed;
+    @apply field-input min-h-[5.5rem] resize-y font-display text-[0.875rem] leading-[1.65];
   }
 
   /* Inside the card the textarea gives up its own frame — the card carries it.
@@ -1160,7 +1258,7 @@
   }
 
   .thread .thread-summary {
-    @apply px-3.5 py-2 font-display text-xs font-normal text-ink-faint hover:text-ink;
+    @apply px-0 py-1 font-display text-xs font-normal text-ink-faint hover:text-ink;
   }
 
   /* ═══ Fixed bottom tray ══════════════════════════════════════════════════
