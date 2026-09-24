@@ -234,7 +234,7 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
           take_screenshot
 
           heights[:broken] = state_shot(width, "not working") do
-            webhook_subscriptions(:docs_site).mark_broken!("GitHub rejected the token")
+            webhook_subscriptions(:docs_site).abandon!("GitHub rejected the token")
             visit repo_pulls_path(owner: OWNER, repo: REPO)
             assert_selector "[data-testid=repo-watch-state]", text: "Not working"
           end

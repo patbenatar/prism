@@ -55,15 +55,83 @@ class WebhookSubscriptionTest < ActiveSupport::TestCase
     assert_nil WebhookSubscription.for_repository(nil, "not-a-full-name")
   end
 
-  test "marking broken records why and stops it being actable" do
+  # ── Suspending, recovering, and giving up ──────────────────────────────
+
+  # The bug this replaced: a single refusal killed the subscription for good,
+  # the user signed in again and fixed the token without knowing anything was
+  # wrong, and nothing ever looked again.
+  test "a refusal suspends rather than kills, and the subscription keeps acting" do
     subscription = webhook_subscriptions(:docs_site)
 
-    subscription.mark_broken!("GitHub rejected the token")
+    subscription.suspend!("GitHub refused this account's token")
+
+    assert subscription.suspended?
+    assert_not subscription.broken?
+    assert subscription.actable?, "a suspended subscription must still be tried"
+    assert_equal "GitHub refused this account's token", subscription.broken_reason
+    assert subscription.broken_at.present?
+    assert_equal 1, subscription.consecutive_failures
+  end
+
+  test "success clears the suspension and the failure count" do
+    subscription = webhook_subscriptions(:docs_site)
+    3.times { subscription.suspend!("nope") }
+
+    subscription.mark_active!
+
+    assert subscription.active?
+    assert_nil subscription.broken_reason
+    assert_equal 0, subscription.consecutive_failures
+  end
+
+  test "giving up takes the agreed number of consecutive refusals" do
+    subscription = webhook_subscriptions(:docs_site)
+    limit = WebhookSubscription::MAX_CONSECUTIVE_FAILURES
+
+    (limit - 1).times { subscription.suspend!("nope") }
+
+    assert subscription.suspended?, "gave up too early"
+    assert subscription.actable?
+
+    subscription.suspend!("nope")
+
+    assert subscription.broken?
+    assert_not subscription.actable?, "an abandoned subscription must not keep calling GitHub"
+  end
+
+  # Otherwise an old, long-fixed problem adds itself to a new one and trips
+  # the threshold early.
+  test "a success in between resets the count toward giving up" do
+    subscription = webhook_subscriptions(:docs_site)
+
+    (WebhookSubscription::MAX_CONSECUTIVE_FAILURES - 1).times { subscription.suspend!("nope") }
+    subscription.mark_active!
+    subscription.suspend!("nope")
+
+    assert subscription.suspended?
+    assert_equal 1, subscription.consecutive_failures
+  end
+
+  test "a permanent failure stops immediately, whatever the count" do
+    subscription = webhook_subscriptions(:docs_site)
+
+    subscription.abandon!("the repository is gone")
 
     assert subscription.broken?
     assert_not subscription.actable?
-    assert_equal "GitHub rejected the token", subscription.broken_reason
-    assert subscription.broken_at.present?
+  end
+
+  test "a fresh token revives a suspended subscription but not an abandoned one" do
+    suspended = webhook_subscriptions(:docs_site)
+    suspended.suspend!("GitHub refused this account's token")
+    abandoned = webhook_subscriptions(:broken)
+    abandoned.abandon!("gave up")
+
+    suspended.revive_after_new_token!
+    abandoned.revive_after_new_token!
+
+    assert suspended.active?
+    assert abandoned.broken?, "a new token is no evidence that a repeated failure is fixed"
   end
 
   test "a user with no token cannot be acted as" do

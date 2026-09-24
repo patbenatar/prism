@@ -19,6 +19,7 @@ class User < ApplicationRecord
   # work — and what makes it stop working when it is revoked.
   has_many :webhook_subscriptions, dependent: :destroy
 
+
   normalizes :login, with: ->(value) { value.to_s.strip }
   normalizes :token_scopes, with: ->(value) { normalize_scopes(value) }
 
@@ -45,6 +46,19 @@ class User < ApplicationRecord
     user.last_signed_in_at = Time.current
 
     user.save!
+
+    # A fresh sign-in is the fix for the commonest way webhook watching
+    # breaks, and the person doing it is usually here for something else
+    # entirely, with no idea a delivery was refused days ago. So apply it
+    # rather than wait to be asked.
+    #
+    # Keyed on the sign-in, not on the token changing. GitHub may hand back
+    # the same token when the grant is unchanged, and Active Record compares
+    # decrypted values for dirty tracking, so "did access_token change?" is
+    # false exactly when someone signs in to fix things and nothing was
+    # re-issued. Completing the OAuth dance is itself the proof the token
+    # works — that is the event worth reacting to.
+    user.revive_webhook_subscriptions!
     user
   end
 
@@ -88,4 +102,14 @@ class User < ApplicationRecord
   def html_url = "https://github.com/#{login}"
 
   def to_s = login
+
+  # Clears a suspension caused by GitHub refusing this account, now that it
+  # plainly is not refusing it any more.
+  #
+  # Only suspended subscriptions: one Prism gave up on after repeated
+  # failures stays given up on, because a working sign-in is no evidence that
+  # whatever exhausted its patience has changed.
+  def revive_webhook_subscriptions!
+    webhook_subscriptions.suspended.find_each(&:revive_after_new_token!)
+  end
 end

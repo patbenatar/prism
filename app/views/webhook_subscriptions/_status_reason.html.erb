@@ -5,8 +5,9 @@
     `_status_pill`, and shared by the same two screens for the same reason. %>
 <% if subscription.broken? %>
   <p class="mt-1 text-sm text-removed" data-testid="broken-reason">
-    <%= subscription.broken_reason %> Prism has stopped trying. Sign in again, or
-    remove and re-add the repository once access is back.
+    <%= subscription.broken_reason %> Prism tried
+    <%= WebhookSubscription::MAX_CONSECUTIVE_FAILURES %> times and has stopped.
+    Stop watching this repository and add it again to start over.
   </p>
 <% elsif subscription.callback_stale? %>
   <%# Silent failure otherwise: GitHub keeps POSTing to an address nothing
@@ -17,5 +18,16 @@
     but Prism now answers on <code class="font-mono text-xs break-all"><%= Webhooks::CallbackUrl.current_or_nil %></code>.
     Nothing is arriving. Re-register to point the existing webhook at the new address —
     the secret and history are kept.
+  </p>
+<% elsif subscription.suspended? %>
+  <%# Deliberately undramatic, and it asks for nothing. This state fixes
+      itself: the next delivery retries, and signing in again replaces the
+      token immediately. Telling people to "remove and re-add the repository"
+      — which the old copy did, for a state that recovered on its own — sent
+      them to do work that was never needed. %>
+  <p class="mt-1 text-sm text-ink-soft" data-testid="suspended-reason">
+    <%= subscription.broken_reason %> Prism will try again on the next pull request
+    in this repository, and signing in to Prism again fixes it straight away.
+    If you have signed in since, it is already sorted.
   </p>
 <% end %>

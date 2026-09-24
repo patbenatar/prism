@@ -104,7 +104,7 @@ class AuthenticationTest < ActionDispatch::IntegrationTest
     assert_redirected_to sign_in_path
     assert_nil session[:user_id]
     assert_nil @user.reload.access_token
-    assert_match(/sign in again/i, flash[:alert])
+    assert_match(/GitHub refused your sign-in/i, flash[:alert])
   end
 
   test "a signed-in user visiting sign in is sent onwards" do

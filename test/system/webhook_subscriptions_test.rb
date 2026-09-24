@@ -109,8 +109,37 @@ class WebhookSubscriptionsSystemTest < ApplicationSystemTestCase
     assert_requested :patch, "https://api.github.com/repos/acme/docs-site/hooks/555"
   end
 
+  # The state the production bug left people in: the screen used to tell them
+  # to remove and re-add the repository, which was work they never needed to
+  # do, for something that fixes itself.
+  test "a suspended subscription reads as retrying, not as something to fix" do
+    # Suspended *after* signing in on purpose: signing in heals it, which the
+    # next test covers. This is the state someone sees when the refusal came
+    # after their last sign-in.
+    sign_in_as @user
+    webhook_subscriptions(:docs_site).suspend!("GitHub refused this account's token")
+
+    visit webhook_subscriptions_path
+
+    assert_selector "[data-testid=subscription-suspended]", text: "Retrying"
+    assert_selector "[data-testid=suspended-reason]", text: /try again on the next pull request/
+    assert_selector "[data-testid=suspended-reason]", text: /signing in to Prism again/i
+    assert_no_selector "[data-testid=broken-reason]"
+    assert_no_text "remove and re-add"
+  end
+
+  test "signing in again clears a suspension without anyone asking" do
+    webhook_subscriptions(:docs_site).suspend!("GitHub refused this account's token")
+
+    sign_in_as @user
+    visit webhook_subscriptions_path
+
+    assert_selector "[data-testid=subscription-row]", text: "Active"
+    assert_no_selector "[data-testid=subscription-suspended]"
+  end
+
   test "a broken subscription says so on the screen" do
-    webhook_subscriptions(:docs_site).mark_broken!("GitHub rejected the token")
+    webhook_subscriptions(:docs_site).abandon!("GitHub rejected the token")
 
     sign_in_as @user
     visit webhook_subscriptions_path

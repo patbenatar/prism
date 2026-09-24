@@ -11,23 +11,43 @@ module Webhooks
   #
   # ## Failure policy
   #
-  # The distinction that matters is transient versus permanent, because a
-  # permanent failure retried on a schedule is how an integration gets banned
-  # (docs/research/github-api.md §3.8: *"Continuing to make requests while you
-  # are rate limited may result in the banning of your integration."*).
+  #   RateLimited / Unavailable  transient in the moment. Back off and retry
+  #                              this delivery (docs/research/github-api.md
+  #                              §3.8 — retrying a rate limit too eagerly is
+  #                              how an integration gets banned).
+  #   Unauthorized               GitHub refused the token. **Suspend, don't
+  #                              kill.** See below.
+  #   Forbidden                  the account lost access, or an org has not
+  #                              approved the OAuth app. Also fixable by a
+  #                              person; same treatment.
+  #   NotFound                   the repository or pull request is gone, or is
+  #                              no longer visible to this account. Record the
+  #                              delivery and leave the subscription alone —
+  #                              one missing pull request says nothing about
+  #                              the repository.
   #
-  #   RateLimited / Unavailable  transient. Back off and retry.
-  #   Unauthorized               the token was revoked. Nothing will fix
-  #                              itself; mark the subscription broken and stop.
-  #   Forbidden                  the account lost access, or an org blocked the
-  #                              OAuth app. Same treatment.
-  #   NotFound                   the repository or pull request is gone, or the
-  #                              account can no longer see it. Record and stop.
+  # ## Why a token failure suspends rather than kills
+  #
+  # This used to mark the subscription permanently broken, reasoning that
+  # "nothing about the failure is transient". That reasoning holds for a
+  # deleted repository and is wrong for a token, because a token is the one
+  # thing the user *can* fix — and does, by signing in again, usually without
+  # ever knowing anything was wrong. Under the old design nothing looked
+  # again, and a repository stopped being watched for good over a failure that
+  # had already repaired itself. It happened in production to two of three
+  # subscriptions.
+  #
+  # So a refusal suspends. The subscription keeps acting; the next delivery
+  # retries, and a success clears it. Retrying costs nothing extra — the
+  # deliveries arrive whether or not we are in a position to use them — and a
+  # fresh token also revives it immediately, without waiting for one (see
+  # User#revive_webhook_subscriptions). Only after
+  # WebhookSubscription::MAX_CONSECUTIVE_FAILURES refusals in a row do we
+  # conclude nobody is coming back and stop.
   #
   # Nothing here signs anybody out: Authentication#handle_revoked_token does
   # that when a *person* hits a 401, and a background job has no session to
-  # end. Marking the subscription broken is the job's equivalent, and the
-  # subscriptions screen explains it.
+  # end.
   class ProcessDeliveryJob < ApplicationJob
     queue_as :default
 
@@ -43,25 +63,32 @@ module Webhooks
       delivery = WebhookDelivery.find(webhook_delivery_id)
       subscription = delivery.webhook_subscription
 
-      return delivery.record!("ignored", "subscription is broken") if subscription.broken?
+      # `broken` now means we gave up for good. `suspended` deliberately falls
+      # through: retrying is the whole mechanism by which it recovers.
+      return delivery.record!("ignored", "subscription was abandoned after repeated failures") if subscription.broken?
 
       # The token can disappear between the delivery arriving and this job
       # running: any 401 anywhere in the app clears it (User#revoke_token!).
-      # Acting is impossible and will stay impossible until someone signs in
-      # again, so break the subscription now rather than on the next delivery.
+      # Nothing can be done until the user signs in again — but they very well
+      # might, so this suspends rather than ends it.
       unless subscription.user&.token?
-        return break_subscription(delivery, subscription, "the subscriber's GitHub token is gone")
+        return suspend_subscription(delivery, subscription, "the subscriber is signed out of Prism")
       end
 
       result = Announcer.new(
         subscription: subscription, pull_request_number: delivery.pull_request_number
       ).call
 
+      # GitHub accepted us, so whatever was wrong before is not wrong now.
+      # `skipped` is the one result that proves nothing — it means we never
+      # asked GitHub anything.
+      subscription.mark_active! unless result.status == :skipped
+
       delivery.record!("processed", "#{result.status}: #{result.detail}")
     rescue Github::Unauthorized => error
-      break_subscription(delivery, subscription, "GitHub rejected the token", error)
+      suspend_subscription(delivery, subscription, "GitHub refused this account's token", error)
     rescue Github::Forbidden => error
-      break_subscription(delivery, subscription, "GitHub refused access", error)
+      suspend_subscription(delivery, subscription, "GitHub refused access", error)
     rescue Github::NotFound => error
       # Not necessarily fatal for the subscription — a single pull request can
       # 404 while the repository is fine — so record it and leave the
@@ -71,10 +98,21 @@ module Webhooks
 
     private
 
-    def break_subscription(delivery, subscription, reason, error = nil)
+    # Records the refusal and keeps the subscription in play. WebhookSubscription
+    # decides when enough consecutive refusals mean stopping for good, so the
+    # delivery log has to read the state back rather than assume it.
+    def suspend_subscription(delivery, subscription, reason, error = nil)
       detail = error ? "#{reason}: #{error.user_message}" : reason
-      subscription&.mark_broken!(detail)
-      delivery&.record!("failed", "#{detail} — subscription marked broken")
+      subscription&.suspend!(detail)
+
+      outcome =
+        if subscription&.broken?
+          "gave up after #{WebhookSubscription::MAX_CONSECUTIVE_FAILURES} consecutive failures"
+        else
+          "will retry on the next delivery"
+        end
+
+      delivery&.record!("failed", "#{detail} — #{outcome}")
     end
   end
 end

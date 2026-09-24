@@ -28,10 +28,16 @@ module Github
     def user_message = message
   end
 
-  # 401. The token was revoked, expired, or had its grant removed. Always fatal
-  # for the session: clear the stored token and send the user back to sign in.
+  # 401. Always fatal for the session: clear the stored token and send the user
+  # back to sign in.
+  #
+  # The old wording here said the sign-in had "expired", which taught people
+  # something untrue. OAuth App tokens do not expire (docs/research/github-api.md
+  # §1.3) — one stops working because it was revoked, or because
+  # re-authorizing the app somewhere else re-issued it. So say only what we
+  # actually know: GitHub refused this token, and signing in replaces it.
   class Unauthorized < Error
-    def user_message = "Your GitHub sign-in expired. Please sign in again."
+    def user_message = "GitHub refused your sign-in. Signing in again will replace it."
   end
 
   # 403 that is not a rate limit — the token lacks the scope, or the user lacks

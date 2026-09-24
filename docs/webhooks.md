@@ -65,11 +65,52 @@ where GitHub records it either way. What matters is that the person whose
 name is on it agreed to that before it happened, and the subscribe screen is
 where that happens.
 
-If that token is later revoked, the next delivery marks the subscription
-**broken** (`webhook_subscriptions.status`), the job stops, and the screen
-explains what happened. Nothing retries — a revoked token will not un-revoke
-itself, and hammering GitHub with a dead credential is how an integration gets
-banned.
+If GitHub later refuses that token, the subscription is **suspended**, not
+killed. See "Recovering from a refusal" below — watching a repository is meant
+to be something you set up once.
+
+### Recovering from a refusal
+
+`webhook_subscriptions.status` has three values, and the middle one is the
+point:
+
+| | |
+| --- | --- |
+| `active` | GitHub last accepted us. |
+| `suspended` | GitHub last refused us, over something a person can fix — almost always a token. **It still acts**: the next delivery retries, and a success clears it. |
+| `broken` | Over for good: `MAX_CONSECUTIVE_FAILURES` (20) consecutive refusals. Only removing and re-adding the repository revives it. |
+
+Two things heal a suspension, and neither needs anyone to notice it happened:
+
+1. **The next delivery.** A suspended subscription is still tried. Retrying
+   costs nothing extra — the events arrive whether or not we are in a
+   position to use them — and a success resets both the status and the
+   failure count.
+2. **Signing in to Prism.** `User.from_omniauth` revives every suspended
+   subscription for that account the moment a sign-in completes. Keyed on the
+   sign-in and *not* on the token changing: GitHub hands back the same token
+   when the grant is unchanged, and Active Record compares decrypted values
+   for dirty tracking, so "the token changed" is false in exactly the case
+   where somebody signs in to put things right. Completing the OAuth dance is
+   itself proof the token works.
+
+Re-registering a webhook clears it too, for the same reason — GitHub just
+accepted a write as that user.
+
+**This used to be a one-way door**, and it was the wrong shape. The reasoning
+in the code was "nothing about the failure is transient", which is true of a
+deleted repository and false of a token: a token is the one thing the user
+*can* fix, and does, usually without ever knowing anything was wrong. In
+production two of three subscriptions sat permanently dead while a working
+token sat in the database, deliveries logging `ignored: subscription is
+broken`. The migration that introduced `suspended` converted every existing
+`broken` row to it, because every one of them had got there this way.
+
+A note on the wording, too: Prism used to say "Your GitHub sign-in expired."
+OAuth App tokens **do not expire** (`docs/research/github-api.md` §1.3) — one
+stops working because it was revoked, or because re-authorizing the app
+somewhere else re-issued it. Saying "expired" taught people to expect
+short-lived access and to go looking for a setting that does not exist.
 
 ### Idempotency
 
@@ -498,7 +539,7 @@ say so in their own comments):
 
 | Table | Holds |
 | --- | --- |
-| `webhook_subscriptions` | which repositories Prism watches, whose token it uses, the encrypted per-hook secret, the GitHub hook id, the callback URL actually registered (so a moved tunnel is visible rather than silent), and whether the subscription is broken |
+| `webhook_subscriptions` | which repositories Prism watches, whose token it uses, the encrypted per-hook secret, the GitHub hook id, the callback URL actually registered (so a moved tunnel is visible rather than silent), and its status — `active` / `suspended` / `broken` — with the consecutive-failure count behind it |
 | `webhook_deliveries` | one row per accepted delivery: GUID (uniquely indexed — this *is* the replay protection), event, action, pull request number, outcome. No payload. |
 | `pull_request_announcements` | per pull request: `present` / `absent` / `declined`. Exists only to tell "we removed our block" from "the author did". |
 

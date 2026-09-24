@@ -22,7 +22,33 @@ class WebhookSubscription < ApplicationRecord
   has_many :webhook_deliveries, dependent: :destroy
   has_many :pull_request_announcements, dependent: :destroy
 
-  STATUSES = %w[active broken].freeze
+  # Three states, and the middle one is the point.
+  #
+  #   active     GitHub last accepted us.
+  #   suspended  GitHub last refused us, over something a person can fix —
+  #              almost always a token. **It still acts.** The next delivery
+  #              retries, and a success puts it back to `active`.
+  #   broken     Genuinely over: we gave up after MAX_CONSECUTIVE_FAILURES
+  #              consecutive refusals. Nothing but re-adding revives it.
+  #
+  # This used to be two states with `broken` as a one-way door, and that was
+  # the wrong shape. The commonest failure by far is a token GitHub refuses
+  # once; the owner signs in again, the new token works, and under the old
+  # design nothing ever looked again. Watching a repository has to survive
+  # that without anyone noticing, so the recovery is automatic on both sides:
+  # the next delivery retries (see Webhooks::ProcessDeliveryJob) and a fresh
+  # token revives it immediately (see User).
+  ACTIVE = "active"
+  SUSPENDED = "suspended"
+  BROKEN = "broken"
+  STATUSES = [ ACTIVE, SUSPENDED, BROKEN ].freeze
+
+  # How many consecutive refusals before we stop. Generous on purpose: each
+  # one costs a single GitHub call on a delivery that was arriving anyway, and
+  # any success resets it, so the only thing this protects against is a token
+  # nobody ever comes back to fix. A repository that is actually deleted stops
+  # delivering on its own, because the hook dies with it.
+  MAX_CONSECUTIVE_FAILURES = 20
 
   # Stored in GitHub's own casing, because owner/name end up in a link a human
   # reads. GitHub itself is case-insensitive about them and will deliver
@@ -36,7 +62,10 @@ class WebhookSubscription < ApplicationRecord
   validates :secret, presence: true
   validates :status, inclusion: { in: STATUSES }
 
-  scope :active, -> { where(status: "active") }
+  scope :active, -> { where(status: ACTIVE) }
+  scope :suspended, -> { where(status: SUSPENDED) }
+  # Everything a delivery should still be attempted for.
+  scope :working, -> { where(status: [ ACTIVE, SUSPENDED ]) }
   scope :named, ->(owner, name) {
     where("lower(owner) = ? AND lower(name) = ?", owner.to_s.downcase, name.to_s.downcase)
   }
@@ -61,25 +90,57 @@ class WebhookSubscription < ApplicationRecord
 
   def full_name = "#{owner}/#{name}"
 
-  def active? = status == "active"
+  def active? = status == ACTIVE
 
-  def broken? = status == "broken"
+  def suspended? = status == SUSPENDED
 
-  # Stop acting as this user on this repository. Called when GitHub tells us the
-  # token is dead or the account lost access — retrying either would burn rate
-  # limit forever and never succeed, because nothing about the failure is
-  # transient.
-  def mark_broken!(reason)
-    update!(status: "broken", broken_reason: reason.to_s.truncate(500), broken_at: Time.current)
+  def broken? = status == BROKEN
+
+  # GitHub refused us over something a person can fix. Records why, counts it,
+  # and keeps the subscription in play — the next delivery will try again.
+  #
+  # Only after MAX_CONSECUTIVE_FAILURES in a row do we conclude that nobody is
+  # coming to fix it and stop.
+  def suspend!(reason)
+    failures = consecutive_failures.to_i + 1
+
+    update!(
+      status: failures >= MAX_CONSECUTIVE_FAILURES ? BROKEN : SUSPENDED,
+      broken_reason: reason.to_s.truncate(500),
+      broken_at: Time.current,
+      last_failure_at: Time.current,
+      consecutive_failures: failures
+    )
   end
 
+  # Stop for good, for a failure that a retry cannot help.
+  def abandon!(reason)
+    update!(status: BROKEN, broken_reason: reason.to_s.truncate(500), broken_at: Time.current,
+            last_failure_at: Time.current)
+  end
+
+  # GitHub accepted us. Clears the failure history so an old, fixed problem
+  # cannot add itself to a new one and trip the give-up threshold.
   def mark_active!
-    update!(status: "active", broken_reason: nil, broken_at: nil)
+    return self if active? && consecutive_failures.to_i.zero?
+
+    update!(status: ACTIVE, broken_reason: nil, broken_at: nil, consecutive_failures: 0)
+    self
   end
 
-  # The token can be revoked without anyone telling us; User#revoke_token!
+  # Called when a fresh token lands for this user. Only revives what was
+  # suspended: a subscription we gave up on stays given up on, because the
+  # thing that broke it was not the token.
+  def revive_after_new_token!
+    mark_active! if suspended?
+  end
+
+  # `suspended` is deliberately included: a suspended subscription is exactly
+  # one we should keep trying. `broken` is not.
+  #
+  # The token can also be revoked without anyone telling us; User#revoke_token!
   # clears it the moment GitHub answers 401 anywhere in the app.
-  def actable? = active? && user&.token?
+  def actable? = !broken? && user&.token?
 
   # GitHub is still POSTing to an address Prism no longer answers on.
   #
