@@ -845,6 +845,78 @@
      form control the pointer centrally (§5), and a local copy would only be
      something to forget to update. */
 
+  /* ── The conversation channel ─────────────────────────────────────────
+     A thread used to start at the document's left edge, end at its right
+     edge, and hold serif prose in between, so a conversation between a
+     heading and a list read as part of the document — and nothing said which
+     of the two it belonged to. The surface tokens were carrying the whole
+     distinction on their own, and `surface` on `canvas` is a 2% step that
+     disappears at reading distance.
+
+     So the conversation gets a column of its own. Threads and the composer
+     step in by one gutter on each side, which leaves the document holding the
+     outer edge all the way down and makes the conversation a visibly
+     different shape rather than a differently tinted one. The blocks
+     themselves stay untinted (§7) — this changes what is around a thread, not
+     what is behind the prose.
+
+     The inset is `--gutter-width` rather than a number chosen by eye: the page
+     already steps by that amount, so a thread lines up with a channel that
+     exists instead of inventing one.
+
+     The rail is a 3px rounded bar, which is what a vertical band means
+     everywhere else in Prism — `.md-gutter-bar` for a block's change state,
+     `.thread--*` for a thread's own state. Three columns, three questions:
+     did this change, is there a conversation here, what state is this thread
+     in. Its colour is `brand` at 35%, and it is brand for two reasons: the
+     conversation is Prism's own layer over somebody else's document, and
+     every band in the spectrum already means something else.
+
+     NOT `line-strong`, which was tried first and is wrong: `.md-prose
+     blockquote` is `border-l-2 border-line-strong pl-4`, so a grey rule with
+     prose to the right of it is the document's own quoting language. A
+     conversation drawn that way reads as a very large blockquote — which is
+     the confusion this rule exists to remove, not a smaller version of it.
+
+     `:has(> *)` rather than `:not(:empty)`: both containers are always in the
+     DOM so a streamed-in thread has somewhere to land, and the ERB ones hold
+     whitespace, which `:empty` does not forgive. An empty channel draws
+     nothing. */
+  .md-threads:has(> *),
+  .md-composer:has(> *),
+  .file-threads-list:has(> *) {
+    @apply relative py-0.5 pl-4;
+    margin-left: var(--gutter-width);
+    margin-right: var(--gutter-width);
+  }
+
+  .md-threads:has(> *)::before,
+  .md-composer:has(> *)::before,
+  .file-threads-list:has(> *)::before {
+    content: "";
+    @apply absolute inset-y-0 left-0 w-[3px] rounded-full bg-brand/35;
+  }
+
+  /* A composer opening under an existing thread is the same conversation, so
+     the two containers close up and their rails read as one. */
+  .md-threads:has(> *) + .md-composer:has(> *) {
+    @apply mt-0;
+  }
+
+  /* At phone width the step in is the phone gutter, and only on the left:
+     there is no room to give back 2.5rem on each side of a 322px column, and
+     the left edge is the one that answers the question. A six-message thread
+     has to stay comfortable at 390px. */
+  @media (max-width: 640px) {
+    .md-threads:has(> *),
+    .md-composer:has(> *),
+    .file-threads-list:has(> *) {
+      @apply pl-2;
+      margin-left: 0.75rem;
+      margin-right: 0;
+    }
+  }
+
   /* ── The thread ───────────────────────────────────────────────────────── */
   .thread {
     @apply my-3 overflow-hidden rounded-xl border border-line bg-surface;
