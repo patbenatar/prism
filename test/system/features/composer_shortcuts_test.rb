@@ -126,6 +126,61 @@ class ComposerShortcutsTest < ApplicationSystemTestCase
     end
   end
 
+  # The shortcut used to exist in the block composer alone. A reply and an
+  # edit are the same editor by every other measure — same card, same tabs,
+  # same autocomplete — so Cmd/Ctrl+Enter inserting a newline in two of the
+  # three was a gap, not a decision. GitHub submits all three.
+  test "Ctrl+Enter sends a reply, the same way it sends a comment" do
+    comment = feature_comment(node_id: "PRRC_reply_root", database_id: 900_100, body: "Worth a second look.")
+    thread = feature_thread(node_id: "PRRT_reply_kbd", path: PATH, line: 3, comments: [ comment ])
+    stub_feature_reviews_sequence([])
+    stub_feature_review_threads([ thread ])
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+
+    stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/comments/900100/replies",
+                     fixture: :reply)
+
+    within "#thread_PRRT_reply_kbd" do
+      area = find("[data-testid=reply-textarea]")
+      area.click
+      area.send_keys("Agreed, from the keyboard.")
+      area.send_keys([ :control, :enter ])
+    end
+
+    # Wait for the reply GitHub answered with to land before reading the
+    # request registry: send_keys returns the moment the keys are dispatched,
+    # and the submit it triggers is still in flight.
+    assert_selector "#thread_comments_PRRT_reply_kbd", text: "Good catch, fixed in the next push.", wait: 5
+
+    assert_equal "Agreed, from the keyboard.",
+                 github_request_body(:post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/comments/900100/replies")["body"],
+                 "the reply GitHub received, not one the test invented"
+  end
+
+  test "Ctrl+Enter saves an edit" do
+    comment = feature_comment(node_id: "PRRC_editable", database_id: 900_200, body: "Frist draft.",
+                               author_login: "prism-dev", viewer_can_update: true)
+    thread = feature_thread(node_id: "PRRT_edit_kbd", path: PATH, line: 3, comments: [ comment ])
+    stub_feature_reviews_sequence([])
+    stub_feature_review_threads([ thread ])
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+
+    saved = feature_comment(node_id: "PRRC_editable", database_id: 900_200, body: "First draft.",
+                             author_login: "prism-dev", viewer_can_update: true)
+    stub_github_graphql(:UpdateComment,
+                        data: { updatePullRequestReviewComment: { pullRequestReviewComment: saved } })
+
+    within "#comment_PRRC_editable" do
+      click_on "Edit"
+      area = find("[data-testid=comment-edit-textarea]")
+      area.set("First draft.")
+      area.send_keys([ :control, :enter ])
+    end
+
+    assert_selector "#comment_PRRC_editable", text: "First draft.", wait: 5
+    expect_github_received(:UpdateComment) { |vars| vars["input"]["body"] == "First draft." }
+  end
+
   private
 
   def files_json

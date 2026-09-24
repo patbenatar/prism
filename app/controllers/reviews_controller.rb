@@ -20,7 +20,18 @@
 class ReviewsController < ApplicationController
   before_action :set_scope
 
-  rescue_from Github::Unprocessable, Github::RateLimited, with: :handle_review_error
+  # Both actions redirect on success, so they redirect on failure too — there
+  # is no fragment to answer in place with, and the reviewer's own words are
+  # not at stake here the way they are in a composer.
+  #
+  # NotFound/Forbidden/Unavailable are on this list rather than handled by
+  # GithubErrorHandling: a pull request deleted under an open review, a token
+  # that lost its access, or GitHub falling over are all things a reviewer
+  # meets at exactly the moment they press Submit, and none of them was
+  # rescued at all before — every one was a 500 painted over the review
+  # screen by Turbo.
+  rescue_from Github::Unprocessable, Github::RateLimited, Github::NotFound, Github::Forbidden,
+              Github::Unavailable, with: :handle_review_error
 
   # POST .../reviews/:id/submit — :id is the review's REST id.
   #

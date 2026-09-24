@@ -99,6 +99,35 @@ class ErrorsTest < ApplicationSystemTestCase
     assert_selector "[data-testid=repo-list]"
   end
 
+  # The failure that had no page at all. Every read screen went through
+  # GithubErrorHandling, which rescued 404, 403 and the rate limit and let a
+  # 5xx through as a Rails 500 — so a GitHub outage looked to a reviewer
+  # exactly like a bug in Prism, with nothing on the screen to say otherwise
+  # and nothing to do about it.
+  test "GitHub being down is a page that says so, not a 500, and not a missing pull request" do
+    stub_github_get("/user/repos", fixture: :repos)
+    stub_github_error(:get, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", status: 503,
+                      message: "Service unavailable")
+    sign_in_for_feature(@user)
+
+    visit repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER)
+
+    assert_selector "[data-testid=empty-state]", text: /GitHub isn't answering/i
+    # Not the 404's wording. "GitHub has nothing here" would tell a reviewer
+    # their pull request is gone, which is a different thing to be wrong about.
+    assert_no_text(/GitHub has nothing here/i)
+
+    # And the advice is actionable, which is the other half of why this is its
+    # own page: retrying a 404 is pointless, retrying this is the fix.
+    stub_feature_pull_request(owner: OWNER, repo: REPO, number: NUMBER, files_body: files_json, reviews_body: [])
+    stub_feature_contents(PATH, HEAD_SHA, HEAD, owner: OWNER, repo: REPO)
+    stub_feature_review_threads([])
+
+    click_on "Try again"
+
+    assert_selector "[data-testid=rendered-file] h1", text: "Guide"
+  end
+
   test "a 401 on any GitHub call signs the reviewer out with a flash" do
     stub_feature_pull_request(owner: OWNER, repo: REPO, number: NUMBER, files_body: files_json, reviews_body: [])
     stub_feature_contents(PATH, HEAD_SHA, HEAD, owner: OWNER, repo: REPO)

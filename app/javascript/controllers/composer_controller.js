@@ -43,6 +43,13 @@ export default class extends Controller {
   // has no callback for, so `openBlockId` would otherwise still say "open"
   // for a composer the server just emptied — making the next click on the
   // same block's "+" look like a close instead of a reopen.
+  //
+  // "Open" means a composer is in the slot, not that the slot has any child
+  // at all. The server can also put something else there — it used to put a
+  // bare error card in on a 404/403 — and reading that as "open" made the
+  // next "+" a close, so reaching the composer again took two clicks. The
+  // server now hands back the whole composer instead (with the reviewer's
+  // text in it), but the question this asks is the one it always meant.
   open(event) {
     const button = event.currentTarget
     const blockId = button.dataset.blockId
@@ -51,7 +58,7 @@ export default class extends Controller {
     const container = document.getElementById(`composer_${blockId}`)
     if (!container) return
 
-    const alreadyOpenHere = container.childElementCount > 0
+    const alreadyOpenHere = container.querySelector('[data-composer-target="form"]') !== null
 
     if (this.openBlockId && this.openBlockId !== blockId) this.closeBlock(this.openBlockId)
     if (alreadyOpenHere) return this.closeBlock(blockId) // toggle closed
@@ -84,25 +91,52 @@ export default class extends Controller {
     if (this.openBlockId === blockId) this.openBlockId = null
   }
 
-  // data-action="keydown->composer#keydown" on the composer's own textarea.
+  // data-action="keydown->composer#keydown" on the block composer's own
+  // textarea. Escape belongs to the block composer alone — it closes
+  // `openBlockId` — which is why the reply and edit forms bind
+  // `composer#submitOnEnter` below instead of this.
   keydown(event) {
     if (event.key === "Escape") {
       this.close(event)
       return
     }
 
+    this.submitOnEnter(event)
+  }
+
+  // data-action="keydown->composer#submitOnEnter" on the reply and edit
+  // textareas. Cmd/Ctrl+Enter submits all three editors, the way it does on
+  // GitHub — before this it only worked in the block composer, and inserted a
+  // newline in a reply or an edit.
+  submitOnEnter(event) {
     const submitting = (event.metaKey || event.ctrlKey) && event.key === "Enter"
     if (!submitting) return
 
-    event.preventDefault()
     const form = event.target.closest("form")
-    // While a review is open the single-comment button is gone, so Cmd+Enter
-    // has to submit the review button instead — submitting the hidden one
-    // would post exactly the comment the UI has stopped offering.
-    const button =
-      form?.querySelector('[data-composer-target="singleButton"]:not([hidden])') ||
-      form?.querySelector('[data-composer-target="reviewButton"]')
-    button ? form.requestSubmit(button) : form?.requestSubmit()
+    const button = form && this.visibleSubmitButton(form)
+    // Nothing the reviewer could have clicked, so nothing the keyboard should
+    // send either — a thread they may not reply to while a review is open
+    // still renders its box, with both buttons gone.
+    if (!button) return
+
+    event.preventDefault()
+    form.requestSubmit(button)
+  }
+
+  // The button the keyboard stands in for: the one the reviewer can actually
+  // see. While a review is open the single-comment and immediate-reply
+  // buttons are hidden, because GitHub folds both into the review anyway
+  // (see applyReviewOnly), so submitting one would send exactly the request
+  // the UI has stopped offering. The edit form has no composer targets at
+  // all — its single "Save" is the fallback.
+  visibleSubmitButton(form) {
+    const preferred = ["singleButton", "replySingleButton", "reviewButton", "replyReviewButton"]
+    for (const name of preferred) {
+      const button = form.querySelector(`[data-composer-target="${name}"]:not([hidden])`)
+      if (button) return button
+    }
+
+    return form.querySelector('[type="submit"]:not([hidden])')
   }
 
   // data-action="input->composer#autosize" — generic, used by the composer,
