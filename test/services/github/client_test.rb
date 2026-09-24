@@ -864,7 +864,10 @@ class Github::ClientTest < ActiveSupport::TestCase
 
     assert_equal "Bad credentials", error.message
     assert_equal 401, error.status
-    assert_match(/sign in again/i, error.user_message)
+    # Deliberately not "expired": OAuth App tokens don't expire, they get
+    # revoked or re-issued. See Github::Unauthorized.
+    assert_match(/GitHub refused your sign-in/i, error.user_message)
+    assert_no_match(/expired/i, error.user_message)
   end
 
   test "403 with a rate limit body becomes RateLimited and carries the reset time" do

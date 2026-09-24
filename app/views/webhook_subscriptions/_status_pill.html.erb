@@ -4,10 +4,16 @@
     because two screens say it — /subscriptions and the watch control on a
     repository's own page — and a state whose wording differs between them is
     a state the reader has to work out twice. %>
+<%# Order is deliberate. A stale callback outranks a suspension because a
+    suspension heals itself on the next delivery and a stale callback means no
+    delivery is arriving at all — so the suspension cannot heal until the
+    address is fixed first. %>
 <% if subscription.broken? %>
   <span class="pill-removed" data-testid="subscription-broken">Not working</span>
 <% elsif subscription.callback_stale? %>
   <span class="pill-modified" data-testid="subscription-stale">Wrong address</span>
+<% elsif subscription.suspended? %>
+  <span class="pill-pending" data-testid="subscription-suspended">Retrying</span>
 <% else %>
   <span class="pill-added">Active</span>
 <% end %>

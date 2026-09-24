@@ -88,7 +88,9 @@ class RepoWatchTest < ActionDispatch::IntegrationTest
   end
 
   test "a broken subscription shows the same words the subscriptions screen uses" do
-    webhook_subscriptions(:docs_site).mark_broken!("GitHub rejected the token")
+    # `abandon!` replaces the old `mark_broken!`: a refusal now suspends and
+    # retries, and only giving up for good reaches this state.
+    webhook_subscriptions(:docs_site).abandon!("GitHub rejected the token")
     sign_in_and_stub_pulls
 
     get repo_pulls_path(owner: OWNER, repo: REPO)

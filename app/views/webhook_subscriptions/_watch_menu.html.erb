@@ -26,6 +26,12 @@
 <% elsif subscription.callback_stale? %>
   <% state, label = :stale, "Wrong address" %>
   <% tone = "border-modified/30 text-modified hover:bg-modified-soft" %>
+<% elsif subscription.suspended? %>
+  <%# Still watching — GitHub refused us last time and the next delivery
+      retries. Named rather than hidden, but in the quiet tone: it is not a
+      state anyone has to act on. %>
+  <% state, label = :suspended, "Retrying" %>
+  <% tone = "border-pending/30 text-pending hover:bg-pending-soft" %>
 <% else %>
   <% state, label = :active, "Watching" %>
   <% tone = "border-line text-ink hover:border-line-strong hover:bg-sunk" %>

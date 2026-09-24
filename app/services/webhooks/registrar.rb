@@ -55,9 +55,10 @@ module Webhooks
 
       hook = update_or_create_hook(subscription)
       subscription.update!(hook_id: hook.id, callback_url: callback_url)
-      # Whatever broke it, GitHub has just accepted us as this user on this
-      # repository, so the evidence for "broken" is gone.
-      subscription.mark_active! if subscription.broken?
+      # GitHub has just accepted us as this user on this repository, which is
+      # the same proof a successful delivery gives. Clears a suspension and a
+      # give-up alike, and resets the failure count with them.
+      subscription.mark_active!
 
       subscription
     end

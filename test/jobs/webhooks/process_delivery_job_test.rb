@@ -5,6 +5,9 @@ require "test_helper"
 # What Prism actually does to a pull request, per event shape.
 class Webhooks::ProcessDeliveryJobTest < ActiveJob::TestCase
   include WebhookHelpers
+  # For github_auth_hash: the sign-in heal is driven through the real
+  # User.from_omniauth rather than by poking the column.
+  include AuthenticationHelpers
 
   REPO = "acme/docs-site"
   PULL_PATH = "/repos/acme/docs-site/pulls/42"
@@ -187,34 +190,112 @@ class Webhooks::ProcessDeliveryJobTest < ActiveJob::TestCase
 
   # ── Failure handling ───────────────────────────────────────────────────
 
-  test "a revoked token breaks the subscription instead of retrying" do
+  test "a signed-out subscriber suspends the subscription rather than killing it" do
     @subscription.user.revoke_token!
 
     perform(action: "opened")
 
-    assert @subscription.reload.broken?
-    assert_match(/token is gone/, @subscription.broken_reason)
+    assert @subscription.reload.suspended?
+    assert_not @subscription.broken?
     assert_not_requested :get, github_url(PULL_PATH)
   end
 
   # The files listing is the first GitHub call the announcer makes, so that is
-  # where a dead token shows up.
-  test "a 401 from GitHub breaks the subscription and does not raise" do
+  # where a refused token shows up.
+  test "a 401 from GitHub suspends the subscription and does not raise" do
+    stub_github_error(:get, "#{PULL_PATH}/files", status: 401, message: "Bad credentials")
+
+    delivery = build_delivery(action: "opened")
+    Webhooks::ProcessDeliveryJob.perform_now(delivery.id)
+
+    assert @subscription.reload.suspended?
+    assert_not @subscription.broken?
+    assert_equal "failed", delivery.reload.status
+    assert_match(/will retry on the next delivery/, delivery.result)
+  end
+
+  test "a 403 suspends too" do
+    stub_github_error(:get, "#{PULL_PATH}/files", status: 403, message: "Resource not accessible")
+
+    perform(action: "opened")
+
+    assert @subscription.reload.suspended?
+  end
+
+  # ── Recovery ───────────────────────────────────────────────────────────
+
+  # The production bug, end to end: a refusal, then a delivery that works, and
+  # the subscription is watching again with nobody having done anything.
+  test "a suspended subscription recovers on the very next delivery" do
+    stub_github_error(:get, "#{PULL_PATH}/files", status: 401, message: "Bad credentials")
+    perform(action: "opened", delivery_id: "the-refusal")
+
+    assert @subscription.reload.suspended?
+
+    reset_stubs
+    stub_pull(body: "Docs.")
+    stub_patch
+
+    perform(action: "synchronize", delivery_id: "the-recovery")
+
+    assert @subscription.reload.active?
+    assert_nil @subscription.broken_reason
+    assert_equal 0, @subscription.consecutive_failures
+    assert_includes patched_body, MARKER_BEGIN, "the recovered delivery must do its actual work"
+  end
+
+  test "a subscription abandoned after repeated failures stays abandoned" do
+    WebhookSubscription::MAX_CONSECUTIVE_FAILURES.times { @subscription.suspend!("nope") }
+
+    assert @subscription.broken?
+
+    perform(action: "opened")
+
+    assert @subscription.reload.broken?
+    assert_not_requested :any, /api\.github\.com/
+  end
+
+  test "giving up is recorded in the delivery log, so it is not a silent stop" do
+    (WebhookSubscription::MAX_CONSECUTIVE_FAILURES - 1).times { @subscription.suspend!("nope") }
     stub_github_error(:get, "#{PULL_PATH}/files", status: 401, message: "Bad credentials")
 
     delivery = build_delivery(action: "opened")
     Webhooks::ProcessDeliveryJob.perform_now(delivery.id)
 
     assert @subscription.reload.broken?
-    assert_equal "failed", delivery.reload.status
+    assert_match(/gave up after #{WebhookSubscription::MAX_CONSECUTIVE_FAILURES}/, delivery.reload.result)
   end
 
-  test "a 403 breaks the subscription too" do
-    stub_github_error(:get, "#{PULL_PATH}/files", status: 403, message: "Resource not accessible")
+  # Recovering must not cost the record of who asked Prism to stop, or the
+  # audit trail of what it did.
+  test "recovery keeps the declined pull requests and the delivery history" do
+    @subscription.pull_request_announcements.create!(pull_request_number: 99, state: "declined")
+    stub_github_error(:get, "#{PULL_PATH}/files", status: 401, message: "Bad credentials")
+    perform(action: "opened", delivery_id: "refusal")
 
-    perform(action: "opened")
+    reset_stubs
+    stub_pull(body: "Docs.")
+    stub_patch
+    perform(action: "synchronize", delivery_id: "recovery")
 
-    assert @subscription.reload.broken?
+    assert @subscription.reload.active?
+    assert_equal "declined", @subscription.announcement_for(99).state
+    assert_equal 2, @subscription.webhook_deliveries.count
+  end
+
+  # Keyed on the sign-in rather than on the token changing: GitHub hands back
+  # the same token when the grant is unchanged, and Active Record compares
+  # decrypted values, so "the token changed" is false in exactly the case
+  # where someone signs in to put things right.
+  test "signing in again revives every suspended subscription, unchanged token or not" do
+    @subscription.suspend!("GitHub refused this account's token")
+    user = @subscription.user
+
+    User.from_omniauth(github_auth_hash(user, token: user.access_token))
+
+    assert @subscription.reload.active?
+    assert_nil @subscription.broken_reason
+    assert_equal 0, @subscription.consecutive_failures
   end
 
   test "a 404 is recorded but leaves the subscription alone" do

@@ -91,7 +91,9 @@ class ErrorsTest < ApplicationSystemTestCase
     visit repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
 
     assert_current_path sign_in_path
-    assert_selector "[data-testid=flash]", text: /sign-in expired/i
+    # Not "expired": OAuth App tokens don't expire, they get revoked or
+    # re-issued. See Github::Unauthorized.
+    assert_selector "[data-testid=flash]", text: /GitHub refused your sign-in/i
   end
 
   private
