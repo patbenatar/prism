@@ -47,9 +47,20 @@ module Github
       body = { query: document, variables: variables }.to_json
       response = @octokit.post(ENDPOINT, body)
 
-      payload = response.respond_to?(:to_attrs) ? response.to_attrs : response.to_h
+      payload = response.respond_to?(:to_attrs) ? response.to_attrs : response
+      # An empty body (Sawyer answers `nil`), a 204, or a 200 carrying
+      # something that is not JSON at all. `nil.to_h` used to turn the first
+      # two into `{}` here, which every caller then read as "the mutation
+      # returned nothing" and passed on as nil — a 200 with no answer looked
+      # exactly like a successful write of nothing.
+      raise Unconfirmed.new("GitHub's GraphQL API answered with no body.", response_body: response) unless payload.is_a?(Hash)
+
       errors = Array(payload[:errors]).map { |error| error.deep_stringify_keys }
       raise_graphql_error(errors, payload) if errors.any?
+
+      # No `errors` and no `data` key is not an empty result, it is no result.
+      raise Unconfirmed.new("GitHub's GraphQL API answered with neither data nor errors.",
+                            response_body: payload) unless payload.key?(:data)
 
       payload[:data] || {}
     end

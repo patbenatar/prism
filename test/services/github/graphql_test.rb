@@ -102,8 +102,31 @@ class Github::GraphQLTest < ActiveSupport::TestCase
     assert_match(/GraphQL API returned an error/, error.message)
   end
 
-  test "a response with neither data nor errors yields an empty hash" do
+  # This used to assert an empty hash, which is what let the production 500 of
+  # 2026-09-24 happen: a mutation that answered with nothing looked to every
+  # caller exactly like a successful write of nothing, and the nil travelled
+  # until it reached a view. Neither data nor errors is not an empty result,
+  # it is no result.
+  test "a response with neither data nor errors is unconfirmed, not an empty hash" do
     stub_github_graphql(data: nil)
+
+    error = assert_raises(Github::Unconfirmed) { @graphql.call("query Q { x }") }
+
+    assert_match(/neither data nor errors/, error.message)
+  end
+
+  test "a response with an empty body is unconfirmed too" do
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .to_return(status: 200, body: "", headers: GithubStubs::JSON_HEADERS)
+
+    assert_raises(Github::Unconfirmed) { @graphql.call("query Q { x }") }
+  end
+
+  # `data` present and empty is a real, legitimate answer — a query that
+  # matched nothing — and must stay distinguishable from no answer at all.
+  test "a response with an empty data object is still a result" do
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .to_return(status: 200, body: { data: {} }.to_json, headers: GithubStubs::JSON_HEADERS)
 
     assert_equal({}, @graphql.call("query Q { x }"))
   end

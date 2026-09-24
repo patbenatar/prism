@@ -304,7 +304,7 @@ module Github
     def create_thread(pull_request_node_id:, anchor:, body:)
       input = { pullRequestId: pull_request_node_id, body: body }.merge(anchor.to_graphql)
       data = gql(Queries::ADD_THREAD, input: input)
-      build_thread(data.dig(:addPullRequestReviewThread, :thread))
+      confirmed!(build_thread(data.dig(:addPullRequestReviewThread, :thread)), "addPullRequestReviewThread", data)
     end
 
     # Adds a draft comment to an existing pending review. This mutation is the
@@ -313,7 +313,7 @@ module Github
     def add_thread_to_review(review_node_id:, anchor:, body:)
       input = { pullRequestReviewId: review_node_id, body: body }.merge(anchor.to_graphql)
       data = gql(Queries::ADD_THREAD, input: input)
-      build_thread(data.dig(:addPullRequestReviewThread, :thread))
+      confirmed!(build_thread(data.dig(:addPullRequestReviewThread, :thread)), "addPullRequestReviewThread", data)
     end
 
     # Immediate reply to a submitted thread. REST is the simpler call here, and
@@ -329,14 +329,16 @@ module Github
                  input: { pullRequestReviewId: review_node_id,
                           pullRequestReviewThreadId: thread_node_id,
                           body: body })
-      build_comment(data.dig(:addPullRequestReviewThreadReply, :comment))
+      confirmed!(build_comment(data.dig(:addPullRequestReviewThreadReply, :comment)),
+                 "addPullRequestReviewThreadReply", data)
     end
 
     # Works on submitted comments and pending drafts alike.
     def update_comment(comment_node_id, body:)
       data = gql(Queries::UPDATE_COMMENT,
                  input: { pullRequestReviewCommentId: comment_node_id, body: body })
-      build_comment(data.dig(:updatePullRequestReviewComment, :pullRequestReviewComment))
+      confirmed!(build_comment(data.dig(:updatePullRequestReviewComment, :pullRequestReviewComment)),
+                 "updatePullRequestReviewComment", data)
     end
 
     def delete_comment(comment_node_id)
@@ -369,12 +371,12 @@ module Github
 
     def resolve_thread(thread_node_id)
       data = gql(Queries::RESOLVE_THREAD, input: { threadId: thread_node_id })
-      build_thread(hydrate_comments(data.dig(:resolveReviewThread, :thread)))
+      confirmed!(build_thread(hydrate_comments(data.dig(:resolveReviewThread, :thread))), "resolveReviewThread", data)
     end
 
     def unresolve_thread(thread_node_id)
       data = gql(Queries::UNRESOLVE_THREAD, input: { threadId: thread_node_id })
-      build_thread(hydrate_comments(data.dig(:unresolveReviewThread, :thread)))
+      confirmed!(build_thread(hydrate_comments(data.dig(:unresolveReviewThread, :thread))), "unresolveReviewThread", data)
     end
 
     # `content` is REST style ("+1", "heart"); GitHub's GraphQL enum spells the
@@ -382,13 +384,13 @@ module Github
     def add_reaction(comment_node_id, content:)
       data = gql(Queries::ADD_REACTION,
                  input: { subjectId: comment_node_id, content: graphql_reaction(content) })
-      build_comment(data.dig(:addReaction, :subject))
+      confirmed!(build_comment(data.dig(:addReaction, :subject)), "addReaction", data)
     end
 
     def remove_reaction(comment_node_id, content:)
       data = gql(Queries::REMOVE_REACTION,
                  input: { subjectId: comment_node_id, content: graphql_reaction(content) })
-      build_comment(data.dig(:removeReaction, :subject))
+      confirmed!(build_comment(data.dig(:removeReaction, :subject)), "removeReaction", data)
     end
 
     private
@@ -521,6 +523,25 @@ module Github
     end
 
     # -------------------------------------------------------------- mapping ---
+
+    # Every mutation runs its result through this.
+    #
+    # `build_thread`/`build_comment` answer nil for a blank payload, which is
+    # right for a read — a thread really can have no resolvedBy — and wrong for
+    # a write, where it turns "GitHub told us nothing" into a value that looks
+    # like a successful write of nothing. Nil then travels: a nil comment
+    # reached `_comment.html.erb` and 500ed three frames from the call that
+    # produced it (production, 2026-09-24), and a nil thread would have
+    # rendered as silence, which is worse.
+    #
+    # `data` rides along on the error so the log holds what GitHub actually
+    # sent. We do not know why GitHub answers this way; the next occurrence
+    # will say.
+    def confirmed!(value, operation, data)
+      return value unless value.nil?
+
+      raise Unconfirmed.new("GitHub answered #{operation} with no payload.", response_body: data)
+    end
 
     # Sawyer resources become plain symbol-keyed hashes before anything reads
     # them, so a field named like one of Sawyer's own methods cannot shadow data.

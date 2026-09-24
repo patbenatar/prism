@@ -520,6 +520,80 @@ class Github::ClientTest < ActiveSupport::TestCase
     assert_equal people.map(&:login).uniq, people.map(&:login)
   end
 
+  # --------------------------------------------- unconfirmed mutations ---
+
+  # A mutation that answers 200, with no `errors` and no payload, tells us
+  # nothing — not that the write happened and not that it did not. It used to
+  # come back as nil, which every caller read as a value. See the production
+  # 500 of 2026-09-24 in ReviewCommentsControllerTest.
+
+  test "reply_in_review raises rather than returning nil when the mutation answers with no comment" do
+    stub_github_graphql(:AddThreadReply, data: { addPullRequestReviewThreadReply: { comment: nil } })
+
+    error = assert_raises(Github::Unconfirmed) do
+      @client.reply_in_review(review_node_id: "PRR_1", thread_node_id: "PRRT_1", body: "hi")
+    end
+
+    assert_match "addPullRequestReviewThreadReply", error.message
+    # The body rides along, because the only way to learn why GitHub does this
+    # is to have what it sent the next time it happens.
+    assert_equal({ addPullRequestReviewThreadReply: { comment: nil } }, error.response_body)
+  end
+
+  test "create_thread and add_thread_to_review raise on a mutation that returns no thread" do
+    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: nil } })
+
+    assert_raises(Github::Unconfirmed) do
+      @client.create_thread(pull_request_node_id: "PR_1", anchor: Review::Anchor.file("docs/guide.md"), body: "hi")
+    end
+    assert_raises(Github::Unconfirmed) do
+      @client.add_thread_to_review(review_node_id: "PRR_1", anchor: Review::Anchor.file("docs/guide.md"), body: "hi")
+    end
+  end
+
+  test "a GraphQL response with no body at all is unconfirmed, not an empty result" do
+    stub_request(:post, "#{GithubStubs::API}/graphql").to_return(status: 200, body: "", headers: GithubStubs::JSON_HEADERS)
+
+    assert_raises(Github::Unconfirmed) do
+      @client.reply_in_review(review_node_id: "PRR_1", thread_node_id: "PRRT_1", body: "hi")
+    end
+  end
+
+  test "a GraphQL response carrying neither data nor errors is unconfirmed" do
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .to_return(status: 200, body: { extensions: {} }.to_json, headers: GithubStubs::JSON_HEADERS)
+
+    assert_raises(Github::Unconfirmed) do
+      @client.reply_in_review(review_node_id: "PRR_1", thread_node_id: "PRRT_1", body: "hi")
+    end
+  end
+
+  # Not JSON at all — an edge or proxy page behind a 200. This used to be a
+  # NoMethodError on String#to_h from inside the transport.
+  test "a GraphQL response that is not JSON is unconfirmed rather than a NoMethodError" do
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .to_return(status: 200, body: "<html>nope</html>", headers: { "Content-Type" => "text/html; charset=utf-8" })
+
+    assert_raises(Github::Unconfirmed) do
+      @client.reply_in_review(review_node_id: "PRR_1", thread_node_id: "PRRT_1", body: "hi")
+    end
+  end
+
+  # The half that was already right, pinned so it stays that way: GitHub does
+  # send `data` and `errors` together, and that is an error, not a result.
+  test "errors alongside a data payload still raise" do
+    stub_request(:post, "#{GithubStubs::API}/graphql").to_return(
+      status: 200,
+      body: { data: { addPullRequestReviewThreadReply: nil },
+              errors: [ { message: "Could not resolve to a node", type: "NOT_FOUND" } ] }.to_json,
+      headers: GithubStubs::JSON_HEADERS
+    )
+
+    assert_raises(Github::NotFound) do
+      @client.reply_in_review(review_node_id: "PRR_1", thread_node_id: "PRRT_1", body: "hi")
+    end
+  end
+
   # ----------------------------------------------------------- references ---
 
   test "references returns pull requests and issues from the one issues endpoint" do
