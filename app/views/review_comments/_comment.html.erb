@@ -51,7 +51,10 @@
                                        actions: render("review_comments/reaction_picker", comment: comment, thread_id: thread_id) %>
   </div>
 
-  <div class="px-3.5 py-3" data-comment-actions-target="editPane" hidden>
+  <%# Matches `.comment-card`'s own box, so the edit form stands exactly where
+      the comment it replaces stood. The channel carries the side padding
+      (DESIGN.md §8), which is why there is none here. %>
+  <div class="py-2" data-comment-actions-target="editPane" hidden>
     <%= render "review_comments/edit_form", comment: comment, thread_id: thread_id %>
   </div>
 </div>

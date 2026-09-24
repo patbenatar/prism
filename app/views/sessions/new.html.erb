@@ -75,19 +75,22 @@
           <div class="md-body md-prose md-prose-compact">
             <p>Set <code>GITHUB_CLIENT_ID</code> before the first run, or sign-in
               will fail with a blank page.</p>
-          </div>
-        </div>
 
-        <div class="ml-10 mt-1">
-          <div class="thread">
-            <div class="comment-card">
-              <div class="comment-head">
-                <span class="avatar h-6 w-6 bg-brand-soft"></span>
-                <span class="comment-author">you</span>
-                <span>just now</span>
-              </div>
-              <div class="comment-body md-prose md-prose-compact">
-                <p>Worth saying which file it goes in.</p>
+            <%# The conversation inside the block's body, exactly where the real
+                screen puts it, so this sample picks up the channel's own rules
+                (DESIGN.md §8) rather than restating them and drifting. %>
+            <div class="md-threads">
+              <div class="thread">
+                <div class="comment-card">
+                  <div class="comment-head">
+                    <span class="avatar h-6 w-6 bg-brand-soft"></span>
+                    <span class="comment-author">you</span>
+                    <span>just now</span>
+                  </div>
+                  <div class="comment-body md-prose md-prose-compact">
+                    <p>Worth saying which file it goes in.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
