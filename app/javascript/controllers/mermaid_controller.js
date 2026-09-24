@@ -10,10 +10,11 @@ import { Controller } from "@hotwired/stimulus"
 //
 // Three things here are load-bearing and are explained where they happen:
 // the library is fetched only when a fence exists (`loadMermaid`), every
-// <style> mermaid makes is given this request's CSP nonce (`withNoncedStyles`),
-// and the SVG is walked against an allowlist before it reaches the page
-// (`sanitize`) — the diagram source came out of somebody else's repository and
-// Markdown::Sanitizer, which is server-side, never sees it.
+// <style> mermaid makes is given the *document's* CSP nonce rather than the
+// meta tag's current value (`DOCUMENT_NONCE`), and the SVG is walked against an
+// allowlist before it reaches the page (`sanitize`) — the diagram source came
+// out of somebody else's repository and Markdown::Sanitizer, which is
+// server-side, never sees it.
 
 // ── The library ────────────────────────────────────────────────────────────
 //
@@ -36,7 +37,7 @@ function loadMermaid() {
   libraryPromise ||= new Promise((resolve, reject) => {
     const script = document.createElement("script")
     script.src = import.meta.resolve("mermaid")
-    script.nonce = cspNonce()
+    script.nonce = DOCUMENT_NONCE
     script.addEventListener("load", () => resolve(globalThis.mermaid), { once: true })
     script.addEventListener("error", () => reject(new Error("the diagram library didn't load")), {
       once: true
@@ -149,9 +150,46 @@ function nonceStyleTags(markup, nonce) {
   )
 }
 
-function cspNonce() {
-  return document.querySelector('meta[name="csp-nonce"]')?.content || ""
+// Did the diagram's own stylesheet actually take effect?
+//
+// A <style> the policy refused is not an error anywhere: the element is in the
+// DOM, the SVG is in the DOM, and the only difference is that every shape falls
+// back to SVG's default paint — solid black, with labels drawn in a font other
+// than the one they were measured in. That is a broken diagram that looks to
+// every automated check like a working one, which is how it reached production.
+//
+// `sheet` is null on an element whose CSS was never parsed, so this is the
+// browser's own answer to "did you accept this?". Throwing hands the block to
+// `fail`, which shows the source and says so.
+function assertStylesApplied(svg) {
+  const styles = [...svg.querySelectorAll("style")]
+  if (styles.length > 0 && styles.every((style) => !style.sheet)) {
+    throw new Error("the browser refused the diagram's stylesheet")
+  }
 }
+
+// The nonce the DOCUMENT's policy was delivered with — read once, when this
+// module is evaluated, and deliberately never read again.
+//
+// `<meta name="csp-nonce">` is not a stable fact about the page. A Turbo Drive
+// visit swaps <body> and rewrites that meta to the *new* response's nonce, so
+// the server can validate what it sends next. But a Drive visit does not create
+// a new document, and a Content Security Policy belongs to the document: the
+// policy still being enforced is the one that arrived with the original full
+// page load. So after any Drive visit the meta holds a nonce the browser has
+// never heard of, and stamping it on a <style> gets that element blocked.
+//
+// This is what shipped broken. Every test here reached the page with Capybara's
+// `visit` — a real navigation, new document, meta and policy agreeing — while
+// every reviewer reaches it by clicking, which is a Drive visit. The diagram
+// then keeps its geometry and loses all of its paint: black nodes, black
+// labels, and labels measured in one font but drawn in another because the
+// stylesheet that sets the font never applied either.
+//
+// Module evaluation happens once per document, during the initial load, which
+// is exactly when the meta and the enforced policy still agree. `adopt` checks
+// the result rather than trusting this reasoning — see `assertStylesApplied`.
+const DOCUMENT_NONCE = document.querySelector('meta[name="csp-nonce"]')?.content || ""
 
 // ── Sanitizing the SVG ─────────────────────────────────────────────────────
 //
@@ -466,7 +504,7 @@ export default class extends Controller {
     const id = `prism-mermaid-${(sequence += 1)}`
     const stage = renderStage()
 
-    const { svg } = await withNoncedStyles(cspNonce(), () =>
+    const { svg } = await withNoncedStyles(DOCUMENT_NONCE, () =>
       mermaid.render(id, text, stage)
     )
     stage.replaceChildren()
@@ -477,7 +515,7 @@ export default class extends Controller {
   // *separate* document, so nothing runs and nothing loads while it is being
   // examined; only the scrubbed tree is imported into this one.
   adopt(svg) {
-    const nonce = cspNonce()
+    const nonce = DOCUMENT_NONCE
     // The nonce goes in before the parse, not after: parsing is when the
     // stylesheet is created and so when the policy is checked. Our own call
     // site, so no patch — `nonceStyleTags` is enough.
@@ -515,6 +553,7 @@ export default class extends Controller {
     }
 
     this.figureTarget.replaceChildren(adopted)
+    assertStylesApplied(adopted)
     this.errorTarget.hidden = true
     this.addToggle()
     this.state("diagram")
