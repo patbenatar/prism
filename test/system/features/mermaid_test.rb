@@ -28,6 +28,7 @@ class MermaidTest < ApplicationSystemTestCase
   PLAIN_PATH = "docs/plain.md"
   WIDE_PATH = "docs/wide.md"
   HOSTILE_PATH = "docs/hostile.md"
+  RICH_PATH = "docs/how-prism-works.md"
 
   SCREENSHOTS = Rails.root.join("tmp/screenshots")
   LAPTOP = [ 1440, 1000 ].freeze
@@ -103,6 +104,35 @@ class MermaidTest < ApplicationSystemTestCase
       D-->E;
       classDef evil fill:#fff}body{display:none;
       class E evil;
+    ```
+  MARKDOWN
+
+  # The shape that broke in production (patbenatar/prism#19): a decision
+  # diamond, a second flowchart, and a sequence diagram — three renderers, three
+  # stylesheets, on one page.
+  RICH = <<~MARKDOWN
+    # How Prism works
+
+    ```mermaid
+    flowchart TD
+        A[Reviewer opens a pull request] --> B[Prism fetches the files]
+        B --> C{Is the block's line in the diff?}
+        C -->|Yes| D[Gutter offers a comment]
+        C -->|No| E[Gutter offers a file-level comment]
+    ```
+
+    ```mermaid
+    flowchart LR
+        S[Markdown source] --> P[Parse to a tree]
+        P --> R[Rendered, commentable page]
+    ```
+
+    ```mermaid
+    sequenceDiagram
+        participant G as GitHub
+        participant P as Prism
+        G->>P: pull_request event
+        P-->>G: 200, immediately
     ```
   MARKDOWN
 
@@ -356,6 +386,54 @@ class MermaidTest < ApplicationSystemTestCase
     assert_operator overflow, :<=, 1, "the page scrolls sideways at 390px"
   end
 
+  # ── It is actually painted ───────────────────────────────────────────────
+  #
+  # This pair is the regression for the bug that shipped: a diagram whose
+  # stylesheet the browser refused keeps every bit of its geometry and loses all
+  # of its paint — black boxes, black labels, and labels drawn in a font other
+  # than the one they were measured in. Nothing in a screenshot review caught
+  # it, and nothing that asserts "an <svg> exists" ever could.
+
+  test "a diagram is painted in the page's own tokens, in both schemes" do
+    open_rich
+    assert_painted(:light)
+
+    with_color_scheme(:dark) do
+      visit_rich
+      assert_painted(:dark)
+    end
+  end
+
+  test "a diagram reached the way a reviewer reaches it is painted too" do
+    # The bug in production. Every earlier test arrived by `visit` — a real
+    # navigation, so a new document whose CSP and `csp-nonce` meta agree. A
+    # reviewer arrives by clicking, which is a Turbo Drive visit: <body> is
+    # swapped and the meta is rewritten to the new response's nonce, while the
+    # policy being enforced is still the original document's. Stamping the
+    # meta's value then gets every diagram stylesheet blocked.
+    stub_rich
+    sign_in_for_feature(@user)
+    visit repos_path
+    assert_selector "body"
+
+    turbo_visit(repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER,
+                                        anchor: key(RICH_PATH)))
+    assert_painted(:light)
+  end
+
+  test "a diagram reached by a Turbo visit is painted in dark mode too" do
+    stub_rich
+    sign_in_for_feature(@user)
+
+    with_color_scheme(:dark) do
+      visit repos_path
+      assert_selector "body"
+      turbo_visit(repo_pull_markdown_path(owner: OWNER, repo: REPO, number: NUMBER,
+                                          anchor: key(RICH_PATH)))
+      assert_painted(:dark)
+    end
+  end
+
   # ── It follows the colour scheme ─────────────────────────────────────────
 
   test "the diagram is drawn in the active colour scheme and survives a switch" do
@@ -403,6 +481,108 @@ class MermaidTest < ApplicationSystemTestCase
 
   def key(path) = Review::Page.file_key(path)
 
+  # Every diagram on the page took the page's colours, and its labels sit where
+  # the boxes are. `scheme` only names the expectation for the failure message —
+  # the values come from the stylesheet either way.
+  def assert_painted(scheme)
+    assert_selector "[data-testid=mermaid-figure] svg", count: 3, wait: 30
+
+    sunk = token_color("--color-sunk")
+    ink = token_color("--color-ink")
+    paint = diagram_paint
+
+    assert_equal 3, paint.size, "every fence should have drawn"
+
+    paint.each_with_index do |diagram, index|
+      assert diagram["stylesheetApplied"],
+             "#{scheme}: diagram #{index}'s stylesheet was refused, so it is drawing in " \
+             "SVG's default paint — black boxes with black labels"
+    end
+
+    # The flowcharts are the two with nodes; a sequence diagram has none, and
+    # its stylesheet is covered above.
+    paint.first(2).each_with_index do |diagram, index|
+      assert_equal sunk, diagram["nodeFill"],
+                   "#{scheme}: diagram #{index}'s nodes should be filled with --color-sunk"
+      assert_equal ink, diagram["labelFill"],
+                   "#{scheme}: diagram #{index}'s labels should be drawn in --color-ink"
+      refute_equal diagram["nodeFill"], diagram["labelFill"],
+                   "#{scheme}: diagram #{index}'s label is the same colour as the box behind it"
+      refute_equal diagram["figureBackground"], diagram["nodeFill"],
+                   "#{scheme}: diagram #{index}'s nodes are invisible against the frame"
+      refute_equal "rgb(0, 0, 0)", diagram["nodeFill"],
+                   "#{scheme}: diagram #{index} fell back to SVG's default black"
+      assert diagram["labelInsideNode"],
+             "#{scheme}: diagram #{index}'s label sits outside its own box " \
+             "(#{diagram["labelRect"].inspect} vs #{diagram["nodeRect"].inspect}) — it was " \
+             "measured in one font and drawn in another"
+    end
+  end
+
+  # What the browser actually painted, read back per diagram.
+  def diagram_paint
+    page.evaluate_script(<<~JS)
+      [...document.querySelectorAll("[data-testid=mermaid-figure]")].map((figure) => {
+        const svg = figure.querySelector("svg")
+        if (!svg) return { stylesheetApplied: false }
+        const style = svg.querySelector("style")
+        const shape = svg.querySelector("g.node .label-container, g.node rect")
+        const label = svg.querySelector("g.node .nodeLabel, g.node text")
+        const sb = shape && shape.getBoundingClientRect()
+        const lb = label && label.getBoundingClientRect()
+        return {
+          stylesheetApplied: !!(style && style.sheet && style.sheet.cssRules.length > 0),
+          nodeFill: shape ? getComputedStyle(shape).fill : null,
+          labelFill: label ? getComputedStyle(label).fill : null,
+          figureBackground: getComputedStyle(figure).backgroundColor,
+          labelInsideNode: !!(sb && lb && lb.left >= sb.left - 2 && lb.right <= sb.right + 2),
+          nodeRect: sb ? [Math.round(sb.left), Math.round(sb.right)] : null,
+          labelRect: lb ? [Math.round(lb.left), Math.round(lb.right)] : null
+        }
+      })
+    JS
+  end
+
+  # A design token as the browser resolved it — each one is a `light-dark()`
+  # pair, so it has to be painted before it means anything.
+  def token_color(name)
+    page.evaluate_script(<<~JS)
+      (() => {
+        const el = document.createElement("span")
+        el.style.color = "var(#{name})"
+        document.body.appendChild(el)
+        const value = getComputedStyle(el).color
+        el.remove()
+        return value
+      })()
+    JS
+  end
+
+  # A Turbo Drive visit — <body> swapped, document kept — rather than a browser
+  # navigation. This is how every reviewer moves through the app.
+  def turbo_visit(path)
+    page.execute_script("window.Turbo.visit(arguments[0])", path)
+  end
+
+  def stub_rich
+    stub_github_get("/user/repos", fixture: :repos)
+    stub_feature_pull_request(owner: OWNER, repo: REPO, number: NUMBER,
+                              files_body: [ added_file(RICH_PATH) ], reviews_body: [])
+    stub_feature_contents(RICH_PATH, HEAD_SHA, RICH, owner: OWNER, repo: REPO)
+  end
+
+  def open_rich
+    stub_rich
+    sign_in_for_feature(@user)
+    visit_rich
+  end
+
+  def visit_rich
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: RICH_PATH)
+  end
+
+
+
   # The pull request under review: one file with a good diagram, one with a
   # broken fence. Both in the same request on purpose — "a broken diagram must
   # not break the other files" is only worth asserting with another file there.
@@ -427,7 +607,7 @@ class MermaidTest < ApplicationSystemTestCase
   # An added file: every line is in the diff, so every block is commentable.
   def added_file(path)
     body = { DIAGRAM_PATH => DIAGRAM, BROKEN_PATH => BROKEN, PLAIN_PATH => PLAIN,
-             WIDE_PATH => WIDE, HOSTILE_PATH => HOSTILE }.fetch(path)
+             WIDE_PATH => WIDE, HOSTILE_PATH => HOSTILE, RICH_PATH => RICH }.fetch(path)
     lines = body.lines.map(&:chomp)
     patch = ([ "@@ -0,0 +1,#{lines.size} @@" ] + lines.map { |line| "+#{line}" }).join("\n")
 
