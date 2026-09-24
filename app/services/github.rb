@@ -115,6 +115,22 @@ module Github
     def type = errors.first && (errors.first["type"] || errors.first.dig("extensions", "code"))
   end
 
+  # GitHub answered a mutation 2xx, with no `errors`, and with nothing where
+  # the payload should have been — so we know neither that the write happened
+  # nor that it did not.
+  #
+  # This is deliberately not a failure. The write may well have landed, and a
+  # caller that reports "that didn't work" about something that did is worse
+  # than one that says nothing. Callers should show the user the current state
+  # and say it could not be confirmed. `response_body` carries whatever GitHub
+  # actually sent, because the only way to learn why this happens is to have
+  # the body in the log the next time it does.
+  class Unconfirmed < Error
+    def user_message
+      "GitHub didn't confirm that, so it may or may not have gone through."
+    end
+  end
+
   # 5xx, a timeout, or a connection failure. Retryable in principle; v1 just
   # surfaces it.
   class Unavailable < Error

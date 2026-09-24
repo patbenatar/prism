@@ -363,6 +363,86 @@ class ReviewCommentsControllerTest < ActionDispatch::IntegrationTest
 
   # ---------------------------------------------------------------- update --
 
+  # ---------------------------------------------- a write GitHub did not confirm ---
+
+  # Production 500, 2026-09-24: a reply into a pending review 500ed in
+  # `_comment.html.erb` because `addPullRequestReviewThreadReply` answered
+  # 200, with no `errors`, and with `comment: null`. `build_comment(nil)`
+  # returned nil, and nil reached the view three frames later.
+  #
+  # Why GitHub answered that way is still unknown — it is not reproducible
+  # from here without a live token, and the log had only the backtrace. What
+  # is fixed is our half: a mutation that hands back nothing is no longer
+  # read as a successful write of nothing.
+  test "a reply GitHub answers with a null comment never reaches the view" do
+    sign_in_as(@user)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
+    stub_github_graphql(:AddThreadReply, data: { addPullRequestReviewThreadReply: { comment: nil } })
+    stub_review_threads([ new_thread_data(node_id: "PRRT_existing") ])
+
+    post repo_pull_comment_replies_path(owner: OWNER, repo: REPO, number: NUMBER, id: 900_100),
+         params: { thread_id: "PRRT_existing", body: "Into the review.", review: "1" },
+         as: :turbo_stream
+
+    assert_response :success
+    # Not "that failed": the reply may be on GitHub right now. The thread is
+    # re-read and shown as it stands, with a line saying we cannot confirm.
+    assert_match(/turbo-stream action="replace" target="thread_PRRT_existing"/, response.body)
+    assert_match(/turbo-stream action="update" target="flash"/, response.body)
+    assert_match("GitHub didn&#39;t confirm that", response.body)
+  end
+
+  test "a reply GitHub answers with an empty body never reaches the view either" do
+    sign_in_as(@user)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
+    stub_review_threads([ new_thread_data(node_id: "PRRT_existing") ])
+    # Registered after the ReviewThreads stub so it wins for AddThreadReply.
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .with { |request| graphql_operation_name(request.body) == "AddThreadReply" }
+      .to_return(status: 200, body: "", headers: GithubStubs::JSON_HEADERS)
+
+    post repo_pull_comment_replies_path(owner: OWNER, repo: REPO, number: NUMBER, id: 900_100),
+         params: { thread_id: "PRRT_existing", body: "Into the review.", review: "1" },
+         as: :turbo_stream
+
+    assert_response :success
+    assert_match(/turbo-stream action="replace" target="thread_PRRT_existing"/, response.body)
+    assert_match("GitHub didn&#39;t confirm that", response.body)
+  end
+
+  # The thread the reply was for may itself be gone by the time we re-read —
+  # there has to be somewhere to land that is not a 500.
+  test "an unconfirmed reply whose thread has since vanished redirects instead of erroring" do
+    sign_in_as(@user)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews", fixture: :reviews)
+    stub_github_graphql(:AddThreadReply, data: { addPullRequestReviewThreadReply: { comment: nil } })
+    stub_review_threads([])
+
+    post repo_pull_comment_replies_path(owner: OWNER, repo: REPO, number: NUMBER, id: 900_100),
+         params: { thread_id: "PRRT_gone", body: "Into the review.", review: "1" },
+         as: :turbo_stream
+
+    assert_response :redirect
+    assert_match(/GitHub didn't confirm that/, flash[:notice])
+  end
+
+  test "a create GitHub answers with a null thread does not render an empty success" do
+    sign_in_as(@user)
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", fixture: :pull)
+    stub_github_graphql(:AddThread, data: { addPullRequestReviewThread: { thread: nil } })
+
+    post repo_pull_comments_path(owner: OWNER, repo: REPO, number: NUMBER),
+         params: { path: PATH, line: 3, side: "RIGHT", subject_type: "line",
+                   body: "Sentence case please.", commit: "single", block_id: "block_1" },
+         as: :turbo_stream
+
+    assert_response :redirect
+    assert_match(/GitHub didn't confirm that/, flash[:notice])
+  end
+
   test "update edits a comment's body over GraphQL by node id and replaces the comment card" do
     sign_in_as(@user)
     stub_github_graphql(:UpdateComment,

@@ -27,6 +27,8 @@ class ReactionsController < ApplicationController
   # explanation instead of the whole page GithubErrorHandling would render.
   rescue_from Github::NotFound, Github::Forbidden, with: :handle_repo_error
 
+  rescue_from Github::Unconfirmed, with: :handle_unconfirmed
+
   # POST .../comments/:id/reactions — :id is the comment's GraphQL node id.
   def create
     comment = github.add_reaction(params[:id], content: content_param)
@@ -76,6 +78,22 @@ class ReactionsController < ApplicationController
     respond_to do |format|
       format.turbo_stream { redirect_to file_path, alert: error.user_message }
       format.html { redirect_to file_path, alert: error.user_message }
+    end
+  end
+
+  # GitHub accepted the mutation and answered with nothing, so we cannot say
+  # whether it happened (Github::Unconfirmed, raised by
+  # Github::Client#confirmed!). Reloading the page is the honest answer: it
+  # shows the thread as GitHub has it, and the notice says we could not
+  # confirm rather than claiming a failure that may not have occurred.
+  def handle_unconfirmed(_error)
+    path = repo_pull_path(owner: @owner, repo: @repo, number: @number)
+    notice = "GitHub didn't confirm that, so it may or may not have gone through. " \
+             "This is the conversation as GitHub has it now."
+
+    respond_to do |format|
+      format.turbo_stream { redirect_to path, notice: notice }
+      format.html { redirect_to path, notice: notice }
     end
   end
 

@@ -26,6 +26,11 @@ class ReviewCommentsController < ApplicationController
   # see joined_review_unasked?.
   JOINED_REVIEW_NOTICE = "Your review was already in progress, so this joined it."
 
+  # Said when GitHub accepted a write and answered with nothing — see
+  # handle_unconfirmed_write.
+  UNCONFIRMED_NOTICE = "GitHub didn't confirm that, so it may or may not have gone through. " \
+                       "This is the conversation as GitHub has it now."
+
   before_action :set_scope
 
   # Github::GraphQLError is here too: create_thread/add_thread_to_review go
@@ -50,6 +55,10 @@ class ReviewCommentsController < ApplicationController
   # replaces that instead of the whole screen; a plain HTML request still
   # gets GithubErrorHandling's page.
   rescue_from Github::NotFound, Github::Forbidden, with: :handle_repo_error
+
+  # Registered last, so it wins over nothing else: Github::Unconfirmed is not
+  # a failure and must not be rendered as one. See handle_unconfirmed_write.
+  rescue_from Github::Unconfirmed, with: :handle_unconfirmed_write
 
   # POST .../comments
   #
@@ -355,6 +364,52 @@ class ReviewCommentsController < ApplicationController
   end
 
   # ---------------------------------------------------------------- errors ---
+
+  # GitHub answered the mutation with no payload, so we know neither that the
+  # write landed nor that it did not — `Github::Unconfirmed`, raised by
+  # Github::Client#confirmed!.
+  #
+  # This is the one outcome that must not be reported as an error. The reply
+  # may be sitting on GitHub right now, and "that didn't work" about something
+  # that did is the same lie in the other direction as the 500 this replaced:
+  # before, a write that had very likely succeeded rendered an error page
+  # because a nil reached `_comment.html.erb`.
+  #
+  # So claim nothing. Re-read the thread and show it as GitHub has it — if the
+  # reply is there, the user sees it; if it is not, they see that too — with a
+  # line saying we could not confirm. Every other action redirects, which
+  # reloads the page and answers the same question the long way round.
+  def handle_unconfirmed_write(_error)
+    thread = unconfirmed_reply_thread
+
+    respond_to do |format|
+      format.turbo_stream do
+        if thread
+          flash.now[:notice] = UNCONFIRMED_NOTICE
+          render turbo_stream: [
+            turbo_stream.replace("thread_#{thread.node_id}",
+                                  partial: "review_comments/thread", locals: thread_locals(thread, nil)),
+            turbo_stream.update("flash", partial: "shared/flash")
+          ]
+        else
+          redirect_to file_path, notice: UNCONFIRMED_NOTICE
+        end
+      end
+      format.html { redirect_to file_path, notice: UNCONFIRMED_NOTICE }
+    end
+  end
+
+  # Only `reply` can answer in place: it knows which thread it was writing
+  # into. A re-read that itself fails leaves nothing to show, so fall back to
+  # the redirect rather than turning an unconfirmed write into a 500 of its
+  # own.
+  def unconfirmed_reply_thread
+    return nil unless action_name == "reply" && params[:thread_id].present?
+
+    fresh_threads.threads.find { |candidate| candidate.node_id == params[:thread_id] }
+  rescue Github::Error
+    nil
+  end
 
   def handle_write_error(error)
     case action_name
