@@ -94,24 +94,28 @@ module Webhooks
       pull.updated_at.blank? || pull.updated_at < subscription.created_at
     end
 
-    # True when Prism has already answered for this pull request *as it is
-    # now*, so looking again would buy nothing for two GitHub calls.
+    # True when Prism has already answered for this pull request *in exactly
+    # the state GitHub is showing now*, so looking again would buy nothing for
+    # two GitHub calls.
     #
-    # The comparison is sound in both directions. `last_event_at` is stamped
-    # after Prism's own write lands, and GitHub moves `updated_at` on every
-    # change to the pull request — including the description edit an author
-    # makes when they delete Prism's block, which is the one change Prism most
-    # needs to notice. So a row stamped later than GitHub's clock means
-    # nothing has happened since we looked.
+    # Equality against the `updated_at` we recorded, never an ordering against
+    # a timestamp of our own. GitHub moves `updated_at` on every change to a
+    # pull request — including the description edit an author makes when they
+    # delete Prism's block, which is the one change this most needs to notice
+    # — so "the same value we acted on" means "nothing has happened since",
+    # with no assumption that Prism's clock and GitHub's agree. An earlier
+    # version compared `last_event_at >= pull.updated_at`, and under clock
+    # skew in one direction that silently skipped real changes.
     #
-    # A pull request with no row at all, or a row that never recorded an
-    # outcome, is unsettled and gets examined.
+    # A pull request with no row, or a row from before this was recorded, is
+    # unsettled and gets examined — which is also how a row settles for the
+    # first time.
     def settled?(pull)
       announcement = announcements[pull.number]
       return false if announcement.nil?
       return true if announcement.declined?
 
-      announcement.last_event_at.present? && announcement.last_event_at >= pull.updated_at
+      announcement.last_seen_updated_at.present? && announcement.last_seen_updated_at == pull.updated_at
     end
 
     # Queried rather than read off `subscription.pull_request_announcements`,
@@ -124,7 +128,8 @@ module Webhooks
     end
 
     def announce(pull)
-      Announcer.new(subscription: subscription, pull_request_number: pull.number).call.changed?
+      Announcer.new(subscription: subscription, pull_request_number: pull.number,
+                    seen_updated_at: pull.updated_at).call.changed?
     rescue Github::NotFound
       # One pull request can disappear, or stop being visible, while the
       # repository is fine — the delivery path leaves the subscription alone

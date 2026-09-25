@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -28,6 +28,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_090000) do
   create_table "pull_request_announcements", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "last_event_at"
+    t.datetime "last_seen_updated_at"
     t.integer "pull_request_number", null: false
     t.integer "renderable_count", default: 0, null: false
     t.string "state", default: "absent", null: false

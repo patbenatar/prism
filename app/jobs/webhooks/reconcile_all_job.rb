@@ -18,6 +18,11 @@ module Webhooks
   class ReconcileAllJob < ApplicationJob
     queue_as :default
 
+    # No jitter, deliberately. Every subscription's pass is enqueued at the
+    # same instant, which at three subscriptions is three jobs and at three
+    # hundred would be a two-hourly thundering herd against one worker and one
+    # rate limit. Spread them then; adding scheduling machinery now would be
+    # solving a problem Prism does not have.
     def perform
       WebhookSubscription.working.find_each do |subscription|
         ReconcileSubscriptionJob.perform_later(subscription.id)

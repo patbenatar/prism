@@ -8,9 +8,12 @@
       A credential refusal is undone by signing in again — including from this
       state, which it used to be unable to reach. Anything else needs the
       repository added afresh. %>
+  <%# The reason is self-contained on purpose — it says what refused us, when
+      the run started and how many attempts it took, because the delivery log
+      that would otherwise answer that is pruned at a fortnight and we give up
+      at thirty days. See WebhookSubscription#give_up_reason. %>
   <p class="mt-1 text-sm text-removed" data-testid="broken-reason">
     <%= subscription.broken_reason %>
-    Prism kept trying for <%= WebhookSubscription::GIVE_UP_AFTER.inspect %> and has stopped.
     <% if subscription.revivable_by_credential? %>
       Signing in to Prism again starts it watching from scratch, and it will go back over
       the pull requests it missed.

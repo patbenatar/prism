@@ -77,6 +77,94 @@ class Webhooks::ReconcilerTest < ActiveSupport::TestCase
     assert_not_requested :get, github_url("/repos/#{REPO}/pulls/42/files")
   end
 
+  # ── Settling without comparing clocks ──────────────────────────────────
+
+  # The first version of `settled?` compared our `last_event_at` against
+  # GitHub's `updated_at` — one machine's clock against another's. Under skew
+  # in one direction an author's edit landing inside the window reads as
+  # already handled and is silently skipped, which is the exact failure this
+  # workstream exists to remove. Equality against the value we recorded has no
+  # window to be inside.
+  test "a pull request is settled only by the exact state Prism acted on" do
+    announcement_row(42).update!(state: "present",
+                                 last_event_at: 10.years.ago,
+                                 last_seen_updated_at: fixture_updated_at(42))
+    settle(41)
+    stub_open_pulls
+
+    # `last_event_at` is a decade older than GitHub's `updated_at`, which the
+    # old ordering would have read as "never looked". What matters is that the
+    # state is the one we recorded.
+    assert_equal 0, reconcile.examined
+  end
+
+  test "a clock running ahead of GitHub's cannot make a changed pull request look settled" do
+    announcement_row(42).update!(state: "present",
+                                 last_event_at: 1.year.from_now,
+                                 last_seen_updated_at: fixture_updated_at(42) - 1.hour)
+    settle(41)
+    stub_open_pulls
+    stub_pull(42, body: "Tightens the prose.")
+
+    result = reconcile
+
+    assert_equal 1, result.examined, "a different state must be examined however new our own stamp is"
+  end
+
+  test "what Prism saw is recorded with the outcome" do
+    stub_open_pulls
+    stub_pull(42, body: "Tightens the prose.")
+    stub_pull(41, body: "Also docs.")
+
+    reconcile
+
+    assert_equal fixture_updated_at(42), announcement(42).last_seen_updated_at
+  end
+
+  # Our own PATCH moves GitHub's `updated_at` to a value we would have to
+  # spend a call to learn, so the pass that writes records the state it came
+  # in on and the next pass records the settled one. Converging, and it never
+  # claims to have seen a state it did not see.
+  test "a pass that wrote settles on the pass after it" do
+    stub_open_pulls
+    stub_pull(42, body: "Tightens the prose.")
+    stub_pull(41, body: "Also docs.")
+    reconcile
+
+    settled_body = patched_body(42)
+    WebMock.reset!
+    # GitHub's clock moved when our edit landed.
+    moved = github_fixture("pulls").map do |pull|
+      pull["number"] == 42 ? pull.merge("updated_at" => "2026-09-19T08:00:00Z") : pull
+    end
+    stub_open_pulls(payload: moved)
+    stub_pull(42, body: settled_body)
+
+    second = reconcile
+
+    assert_equal 1, second.examined
+    assert_equal 0, second.changed, "the second look must find the link already correct"
+    assert_equal Time.zone.parse("2026-09-19T08:00:00Z"), announcement(42).last_seen_updated_at
+
+    WebMock.reset!
+    stub_open_pulls(payload: moved)
+
+    assert_equal 0, reconcile.examined
+  end
+
+  # Existing rows have no recorded state, so the first pass after the column
+  # was added looks once and settles them. A bounded catch-up, not a
+  # permanent cost.
+  test "a row from before this was recorded is examined once" do
+    announcement_row(42).update!(state: "present", last_event_at: Time.current, last_seen_updated_at: nil)
+    settle(41)
+    stub_open_pulls
+    stub_pull(42, body: "Tightens the prose.")
+
+    assert_equal 1, reconcile.examined
+    assert_equal fixture_updated_at(42), announcement(42).last_seen_updated_at
+  end
+
   test "an author who removed our block is never asked about again" do
     announcement_row(42).update!(state: "declined", last_event_at: 10.years.ago)
     settle(41)
@@ -201,9 +289,15 @@ class Webhooks::ReconcilerTest < ActiveSupport::TestCase
 
   def announcement(number) = announcement_row(number).reload
 
-  # Prism looked at this pull request after GitHub last touched it, so there is
+  # Prism has already acted on exactly the state GitHub is showing, so there is
   # nothing new to see.
   def settle(number)
-    announcement_row(number).update!(state: "present", last_event_at: Time.current)
+    announcement_row(number).update!(state: "present", last_event_at: Time.current,
+                                     last_seen_updated_at: fixture_updated_at(number))
+  end
+
+  def fixture_updated_at(number)
+    payload = github_fixture("pulls").find { |pull| pull["number"] == number }
+    Time.zone.parse(payload.fetch("updated_at"))
   end
 end
