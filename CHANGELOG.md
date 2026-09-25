@@ -2,6 +2,20 @@
 
 Newest first. Written for people using Prism, not for how it is built.
 
+## 2026-09-25
+
+- **Watching a repository now heals itself.** If GitHub refuses Prism's access
+  for a while, the pull requests that were opened or pushed to meanwhile no
+  longer lose their review link for good: Prism re-checks every watched
+  repository's open pull requests on a schedule, and again the moment you sign
+  in, and adds any link that should be there and isn't.
+- **Fixed: watching a busy repository used to stop working before a quiet
+  one.** Prism gave up after a fixed number of failed deliveries, so the more
+  a repository was used, the faster it burned through them. It now gives up
+  only after a month of not working at all, whatever the traffic.
+- **Fixed: a repository Prism had given up on could not be fixed by signing
+  in**, even when a refused sign-in was the recorded reason it stopped.
+
 ## 2026-09-24
 
 - **Fixed: a sequence diagram's self-messages drew as filled blobs.** The arc

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_24_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -222,6 +222,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_140000) do
     t.string "callback_url"
     t.integer "consecutive_failures", default: 0, null: false
     t.datetime "created_at", null: false
+    t.datetime "failing_since"
+    t.string "failure_cause"
     t.bigint "github_repo_id"
     t.bigint "hook_id"
     t.datetime "last_delivery_at"

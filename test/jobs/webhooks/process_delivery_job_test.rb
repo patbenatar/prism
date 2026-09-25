@@ -244,8 +244,8 @@ class Webhooks::ProcessDeliveryJobTest < ActiveJob::TestCase
     assert_includes patched_body, MARKER_BEGIN, "the recovered delivery must do its actual work"
   end
 
-  test "a subscription abandoned after repeated failures stays abandoned" do
-    WebhookSubscription::MAX_CONSECUTIVE_FAILURES.times { @subscription.suspend!("nope") }
+  test "a subscription abandoned after a long outage stays abandoned" do
+    @subscription.abandon!("the repository is gone")
 
     assert @subscription.broken?
 
@@ -255,15 +255,60 @@ class Webhooks::ProcessDeliveryJobTest < ActiveJob::TestCase
     assert_not_requested :any, /api\.github\.com/
   end
 
-  test "giving up is recorded in the delivery log, so it is not a silent stop" do
-    (WebhookSubscription::MAX_CONSECUTIVE_FAILURES - 1).times { @subscription.suspend!("nope") }
+  # Fault 2: a busy repository used to die first, because twenty refusals is a
+  # measure of how many pull requests happened to arrive during an outage, not
+  # of how long the outage was. Fifty deliveries inside one afternoon must not
+  # be enough on their own.
+  test "a burst of refusals in one afternoon does not abandon a busy repository" do
     stub_github_error(:get, "#{PULL_PATH}/files", status: 401, message: "Bad credentials")
 
-    delivery = build_delivery(action: "opened")
-    Webhooks::ProcessDeliveryJob.perform_now(delivery.id)
+    50.times { |n| perform(action: "synchronize", delivery_id: "burst-#{n}") }
+
+    assert @subscription.reload.suspended?
+    assert_not @subscription.broken?, "watching a busy repository must not die faster than a quiet one"
+  end
+
+  test "giving up is recorded in the delivery log, so it is not a silent stop" do
+    @subscription.suspend!("GitHub refused this account's token")
+    stub_github_error(:get, "#{PULL_PATH}/files", status: 401, message: "Bad credentials")
+
+    travel_to (WebhookSubscription::GIVE_UP_AFTER + 1.day).from_now do
+      delivery = build_delivery(action: "opened")
+      Webhooks::ProcessDeliveryJob.perform_now(delivery.id)
+
+      assert @subscription.reload.broken?
+      assert_match(/gave up after/, delivery.reload.result)
+    end
+  end
+
+  # Fault 3: the production row was `broken` with a recorded reason that said
+  # GitHub had refused the token, and a working token could not reach it.
+  test "signing in again revives a subscription a credential broke, and goes back for what it missed" do
+    @subscription.suspend!("GitHub refused this account's token")
+    travel_to (WebhookSubscription::GIVE_UP_AFTER + 1.day).from_now do
+      @subscription.suspend!("GitHub refused this account's token")
+    end
+    user = @subscription.user
 
     assert @subscription.reload.broken?
-    assert_match(/gave up after #{WebhookSubscription::MAX_CONSECUTIVE_FAILURES}/, delivery.reload.result)
+
+    assert_enqueued_with job: Webhooks::ReconcileSubscriptionJob, args: [ @subscription.id ] do
+      User.from_omniauth(github_auth_hash(user, token: user.access_token))
+    end
+
+    assert @subscription.reload.active?
+  end
+
+  # Fault 4: the rescue that suspends the subscription used to persist an
+  # announcement the Announcer had never committed to — `state: "absent"`,
+  # `last_event_at: nil` — which afterwards is indistinguishable from a pull
+  # request Prism genuinely retracted from.
+  test "a refused delivery records no announcement at all" do
+    stub_github_error(:get, "#{PULL_PATH}/files", status: 401, message: "Bad credentials")
+
+    assert_no_difference "PullRequestAnnouncement.count" do
+      perform(action: "opened")
+    end
   end
 
   # Recovering must not cost the record of who asked Prism to stop, or the

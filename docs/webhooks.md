@@ -29,11 +29,23 @@ that removes the last renderable Markdown file takes it away.
 
 ## How it hangs together
 
+Two paths reach the same convergent decision. The upper one is fast and
+unreliable; the lower one is slow and cannot be missed.
+
 ```
 GitHub ──POST /webhooks/github──▶ WebhooksController      (verify · dedupe · 200)
                                         │
                                         ▼  enqueue
                              Webhooks::ProcessDeliveryJob  (Solid Queue, `jobs` service)
+                                        │
+   every 2h · fresh sign-in ·           │
+   re-registration                      │
+        │                               │
+        ▼                               │
+ Webhooks::ReconcileAllJob              │
+        │                               │
+        ▼                               │
+ Webhooks::Reconciler ──────────────────┤   what did we miss?
                                         │
                                         ▼
                                Webhooks::Announcer         what should be true?
@@ -49,7 +61,7 @@ GitHub ──POST /webhooks/github──▶ WebhooksController      (verify · d
 | --- | --- |
 | Endpoint | `app/controllers/webhooks_controller.rb` |
 | Subscribe screen | `app/controllers/webhook_subscriptions_controller.rb` |
-| Job | `app/jobs/webhooks/process_delivery_job.rb` |
+| Jobs | `app/jobs/webhooks/` — `process_delivery_job.rb` (the fast path), `reconcile_all_job.rb` + `reconcile_subscription_job.rb` (the guarantee), both on `subscriber_job.rb` for one shared failure policy |
 | Services | `app/services/webhooks/` |
 | Models | `webhook_subscription.rb`, `webhook_delivery.rb`, `pull_request_announcement.rb` |
 
@@ -65,6 +77,14 @@ where GitHub records it either way. What matters is that the person whose
 name is on it agreed to that before it happened, and the subscribe screen is
 where that happens.
 
+Who that is, is decided in exactly one place — `Webhooks::SubscriberClient` —
+because it is the one assumption in this path that is under active question.
+`docs/research/github-auth-longevity.md` proposes moving webhook work to a
+GitHub App installation token so it stops depending on any human's
+credential. That decision has not been made; when it is, both callers
+(`Announcer` and `Reconciler`) already ask rather than build, so it is one
+method.
+
 If GitHub later refuses that token, the subscription is **suspended**, not
 killed. See "Recovering from a refusal" below — watching a repository is meant
 to be something you set up once.
@@ -77,40 +97,141 @@ point:
 | | |
 | --- | --- |
 | `active` | GitHub last accepted us. |
-| `suspended` | GitHub last refused us, over something a person can fix — almost always a token. **It still acts**: the next delivery retries, and a success clears it. |
-| `broken` | Over for good: `MAX_CONSECUTIVE_FAILURES` (20) consecutive refusals. Only removing and re-adding the repository revives it. |
+| `suspended` | GitHub last refused us, over something a person can fix — almost always a token. **It still acts**: the next delivery and the next reconciliation pass both retry, and a success clears it. |
+| `broken` | We gave up: it has been failing for longer than `GIVE_UP_AFTER` (30 days) with no success in between. Revived by a fresh credential when a credential is what broke it; otherwise only by removing and re-adding the repository. |
 
-Two things heal a suspension, and neither needs anyone to notice it happened:
+Three things heal a suspension, and none of them needs anyone to notice it
+happened:
 
 1. **The next delivery.** A suspended subscription is still tried. Retrying
    costs nothing extra — the events arrive whether or not we are in a
    position to use them — and a success resets both the status and the
-   failure count.
-2. **Signing in to Prism.** `User.from_omniauth` revives every suspended
-   subscription for that account the moment a sign-in completes. Keyed on the
-   sign-in and *not* on the token changing: GitHub hands back the same token
-   when the grant is unchanged, and Active Record compares decrypted values
-   for dirty tracking, so "the token changed" is false in exactly the case
-   where somebody signs in to put things right. Completing the OAuth dance is
-   itself proof the token works.
+   failure clock.
+2. **The reconciliation pass**, every two hours, whether or not anything has
+   happened in the repository. This is what keeps a quiet repository from
+   being treated differently from a busy one; see "Reconciliation" below.
+3. **Signing in to Prism.** `User.from_omniauth` revives every revivable
+   subscription for that account the moment a sign-in completes, and queues a
+   reconciliation pass for each. Keyed on the sign-in and *not* on the token
+   changing: GitHub hands back the same token when the grant is unchanged, and
+   Active Record compares decrypted values for dirty tracking, so "the token
+   changed" is false in exactly the case where somebody signs in to put things
+   right. Completing the OAuth dance is itself proof the token works.
 
 Re-registering a webhook clears it too, for the same reason — GitHub just
-accepted a write as that user.
+accepted a write as that user — and queues a pass, because deliveries were by
+definition going nowhere until the address was fixed.
 
-**This used to be a one-way door**, and it was the wrong shape. The reasoning
-in the code was "nothing about the failure is transient", which is true of a
-deleted repository and false of a token: a token is the one thing the user
-*can* fix, and does, usually without ever knowing anything was wrong. In
-production two of three subscriptions sat permanently dead while a working
-token sat in the database, deliveries logging `ignored: subscription is
-broken`. The migration that introduced `suspended` converted every existing
-`broken` row to it, because every one of them had got there this way.
+### Giving up is measured in time, not in deliveries
+
+`GIVE_UP_AFTER` is thirty days of unbroken failure. It used to be
+`MAX_CONSECUTIVE_FAILURES = 20`, and a count of refusals is a count of
+*deliveries*: during one fourteen-hour token outage a busy repository spent
+all twenty and was abandoned, while a quiet one on exactly the same dead
+token spent six and recovered by itself. **The more a repository was used,
+the faster watching it died** — which is backwards, because those are the
+ones that matter.
+
+Time measures the thing the rule was always reaching for: nobody is coming
+back to fix this. It only works because the reconciliation pass runs on a
+schedule, so the clock ticks at the same rate on a repository with one pull
+request a quarter as on one with fifty a day. `consecutive_failures` is still
+recorded, as a diagnostic — it says how hard we tried, not when to stop.
+
+### `broken` is reachable by the thing that fixes it
+
+`webhook_subscriptions.failure_cause` says which kind of failure stopped us:
+
+| | |
+| --- | --- |
+| `credential` | GitHub refused this account — a revoked token, an org that withdrew its approval of the OAuth app, a subscriber signed out of Prism. **Comes back on the next sign-in**, however long it sat. |
+| `permanent` | Nothing a credential can reach. Only re-adding the repository starts over. |
+
+**This used to be a one-way door twice over**, and it was the wrong shape
+both times. First every refusal killed the subscription outright, on the
+reasoning that "nothing about the failure is transient" — true of a deleted
+repository, false of a token, which is the one thing the user *can* fix, and
+does, usually without ever knowing anything was wrong. In production two of
+three subscriptions sat permanently dead while a working token sat in the
+database, deliveries logging `ignored: subscription is broken`. `suspended`
+fixed that half.
+
+The other half survived: `broken` still revived for nobody, with the same
+reasoning attached to the same words — "a subscription we gave up on stays
+given up on, because the thing that broke it was not the token". Production
+then produced a `broken` subscription whose own `broken_reason` read "GitHub
+refused this account's token", which a healthy token could not reach.
+`failure_cause` is what makes the distinction the comment was already
+claiming to make.
 
 A note on the wording, too: Prism used to say "Your GitHub sign-in expired."
 OAuth App tokens **do not expire** (`docs/research/github-api.md` §1.3) — one
 stops working because it was revoked, or because re-authorizing the app
 somewhere else re-issued it. Saying "expired" taught people to expect
 short-lived access and to go looking for a setting that does not exist.
+
+### Reconciliation — the guarantee behind the fast path
+
+A webhook delivery is the *quick* way to learn a pull request changed. It is
+not a reliable one: GitHub can only deliver to an address that answers, with
+a token it accepts, into a process that is running. When one of those is
+false for a while the events are lost, GitHub does not redeliver them, and
+before `Webhooks::Reconciler` existed nothing in Prism replayed them — the
+`WebhookDelivery` row sat at `failed` forever and that pull request was never
+looked at again. Two real pull requests went a day without their link after
+the token that caused it had already been fixed.
+
+So Prism stops depending on the events arriving. `Webhooks::Reconciler` asks
+GitHub what the repository's open pull requests look like *now* and fixes
+whatever does not match, exactly as if each of them had just produced an
+event. `Announcer` is convergent — it asks "what should be true?", never
+"what changed?" — so re-running it over a pull request that is already right
+is safe, cheap, and says so: `unchanged: link already correct`.
+
+**Reconciliation is the guarantee. Webhooks are the latency.**
+
+It runs from three places, all of them "something happened that could have
+let deliveries go missing":
+
+| Trigger | Where |
+| --- | --- |
+| Every two hours, unprompted | `Webhooks::ReconcileAllJob`, `config/recurring.yml` |
+| A fresh sign-in | `User#revive_webhook_subscriptions!` |
+| Re-registering a moved callback URL | `Webhooks::Registrar#re_register` |
+
+`ReconcileAllJob` fans out one `ReconcileSubscriptionJob` per subscription
+rather than doing the work inline, so one repository that is rate limiting or
+refusing us cannot stop the others being checked.
+
+#### What a pass costs
+
+One call for the list of open pull requests, plus two for each pull request
+it actually examines (that one's files, and its body read fresh immediately
+before any write — see "Where the link goes" on why that read cannot be
+cached).
+
+In the steady state it examines nothing: `Reconciler#settled?` answers from
+rows Prism already has, without asking GitHub, by comparing the
+announcement's `last_event_at` against the pull request's `updated_at`.
+GitHub moves `updated_at` on every change to a pull request, including the
+description edit an author makes when they delete Prism's block — the one
+change reconciliation most needs to notice — so a row stamped later than
+GitHub's clock genuinely means nothing has happened since we looked. **A pass
+over a healthy subscription is one GitHub call.** After an outage it is two
+calls per pull request that moved while Prism was deaf: the work that was
+missed, and no more.
+
+Two bounds keep the bad case bounded:
+
+- **Only pull requests updated since the subscription was created.** Watching
+  starts when you turn it on, which is what the subscribe screen promises —
+  "new pull requests with Markdown will get a link". A pull request untouched
+  since then would never have produced a delivery either, so announcing on it
+  now would not be replaying a missed event; it would be editing a
+  description on a promise nobody made.
+- **At most `Reconciler::MAX_PULLS` (25) examined per pass.** The rest arrive
+  on the next one, newest first. The worst first pass is 1 + 2×25 = 51 calls
+  against a 5,000/hour limit.
 
 ### Idempotency
 
@@ -467,7 +588,17 @@ docker compose exec app bin/rails runner \
   'Webhooks::ProcessDeliveryJob.perform_now(WebhookDelivery.recent.first.id)'
 ```
 
-And to force a fresh look at a pull request without any delivery at all:
+To force a whole subscription back into line — the same thing the scheduled
+pass does, right now:
+
+```bash
+docker compose exec app bin/rails runner '
+  subscription = WebhookSubscription.named("acme", "docs-site").first!
+  pp Webhooks::Reconciler.new(subscription: subscription).call
+'
+```
+
+And to force a fresh look at a single pull request without any delivery at all:
 
 ```bash
 docker compose exec app bin/rails runner '
@@ -504,6 +635,8 @@ docker compose exec -e TEST_DATABASE=prism_test_<you> app \
 | Signature: valid, wrong secret, missing, garbage, body swapped after signing | `test/integration/webhooks_test.rb` |
 | Replays, ignored actions, malformed bodies, oversized bodies | same |
 | Every event shape, idempotency, byte-exact splice, declined, revoked token, rate limits | `test/jobs/webhooks/process_delivery_job_test.rb` |
+| Replaying what a delivery missed, what a pass costs, the bounds on one | `test/services/webhooks/reconciler_test.rb`, `test/jobs/webhooks/reconcile_subscription_job_test.rb`, `test/jobs/webhooks/reconcile_all_job_test.rb` |
+| Giving up by time rather than by delivery count, and reviving a credential failure | `test/models/webhook_subscription_test.rb` |
 | The splice on its own, including CRLF and half-deleted markers | `test/services/webhooks/marker_block_test.rb` |
 | Constant-time signature check | `test/services/webhooks/signature_verifier_test.rb` |
 | Subscribe/unsubscribe including hook deletion | `test/integration/webhook_subscriptions_test.rb`, `test/system/webhook_subscriptions_test.rb` |
@@ -539,7 +672,7 @@ say so in their own comments):
 
 | Table | Holds |
 | --- | --- |
-| `webhook_subscriptions` | which repositories Prism watches, whose token it uses, the encrypted per-hook secret, the GitHub hook id, the callback URL actually registered (so a moved tunnel is visible rather than silent), and its status — `active` / `suspended` / `broken` — with the consecutive-failure count behind it |
+| `webhook_subscriptions` | which repositories Prism watches, whose token it uses, the encrypted per-hook secret, the GitHub hook id, the callback URL actually registered (so a moved tunnel is visible rather than silent), and its status — `active` / `suspended` / `broken` — with `failing_since` (how long, which is what decides giving up) and `failure_cause` (whether a credential can bring it back) behind it |
 | `webhook_deliveries` | one row per accepted delivery: GUID (uniquely indexed — this *is* the replay protection), event, action, pull request number, outcome. No payload. |
 | `pull_request_announcements` | per pull request: `present` / `absent` / `declined`. Exists only to tell "we removed our block" from "the author did". |
 
@@ -562,3 +695,7 @@ fetched uncached so the body we splice into is the body that exists) and one
 primary limit and the 500/hour content-creation limit
 (`docs/research/github-api.md` §3.8), a busy repository is nowhere near
 either.
+
+Reconciliation adds one call per subscription every two hours in the steady
+state, and the same two reads per pull request it finds something to do
+about. See "Reconciliation" above for the bounds.
