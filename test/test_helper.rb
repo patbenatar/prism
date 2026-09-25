@@ -7,6 +7,15 @@ require "webmock/minitest"
 # be stubbed explicitly. Localhost is allowed through for Capybara/Selenium.
 WebMock.disable_net_connect!(allow_localhost: true)
 
+# Github::Credentials will not renew a token without the OAuth App's own
+# credentials, so the refresh path needs them present to be testable at all —
+# and CI has no reason to carry real ones. Fixing them here makes the tests
+# the same everywhere and keeps a developer's actual client secret from
+# arriving in a WebMock assertion. Tests that care about them being *missing*
+# override this with `without_oauth_app_credentials`.
+ENV["GITHUB_CLIENT_ID"] = "test_client_id"
+ENV["GITHUB_CLIENT_SECRET"] = "test_client_secret"
+
 # Shared helpers: GitHub stubbing/fixtures and the OmniAuth sign-in flow.
 Dir[Rails.root.join("test/support/**/*.rb")].sort.each { |file| require file }
 

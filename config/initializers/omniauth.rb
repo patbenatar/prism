@@ -15,7 +15,28 @@ Rails.application.config.middleware.use OmniAuth::Builder do
            # scope that permits writing pull request review comments, and it is
            # what grants private-repo access. `read:org` backs the @-mention
            # list and org repo visibility; `read:user` the profile.
-           scope: "repo,read:org,read:user"
+           #
+           # `offline_access` grants no permission at all. GitHub documents it
+           # as the way to "opt in to receive an expiring token and a refresh
+           # token for an individual sign-in" — per sign-in, whether or not
+           # the OAuth App has "Expire user authorization tokens" switched on.
+           #
+           # Production has that setting on, so the pair arrives with or
+           # without this. Development is a separate registration that may
+           # not, which would leave the whole refresh path dead code locally
+           # and live code in production. Asking explicitly makes the two
+           # agree, and makes the pair something Prism receives because it
+           # asked rather than because of a checkbox in a settings page nobody
+           # working on the code can see.
+           #
+           # Two things follow. It may come back in `extra.scope` and be
+           # stored in `token_scopes`, which is harmless — nothing reads that
+           # list except `can_write_reviews?`, which looks for `repo`. And the
+           # code has to work without it anyway: a non-expiring token arrives
+           # with no refresh token and no expiry, and `User#refreshable?` is
+           # false for the rest of its life. See Github::Credentials, and
+           # docs/research/github-auth-longevity.md §2 for the quotation.
+           scope: "repo,read:org,read:user,offline_access"
 end
 
 # OmniAuth 2 rejects a GET request phase. omniauth-rails_csrf_protection then

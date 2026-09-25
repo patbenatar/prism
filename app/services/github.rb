@@ -28,14 +28,20 @@ module Github
     def user_message = message
   end
 
-  # 401. Always fatal for the session: clear the stored token and send the user
-  # back to sign in.
+  # 401, after renewal has already been tried and has not helped. Fatal for
+  # the session: clear the stored grant and send the user back to sign in.
   #
-  # The old wording here said the sign-in had "expired", which taught people
-  # something untrue. OAuth App tokens do not expire (docs/research/github-api.md
-  # §1.3) — one stops working because it was revoked, or because
-  # re-authorizing the app somewhere else re-issued it. So say only what we
-  # actually know: GitHub refused this token, and signing in replaces it.
+  # Prism's OAuth App *does* issue expiring tokens — eight hours, with a
+  # refresh token — but an expired one never reaches here any more.
+  # Github::Credentials replaces it before the call, and Github::Client
+  # replaces it and replays once if a 401 arrives anyway. What is left is a
+  # grant that is genuinely over: revoked, or a refresh token GitHub has
+  # finished with.
+  #
+  # So the wording stands, and still deliberately avoids "expired": by the
+  # time a person reads this, expiry is the one cause it cannot have been.
+  # Say only what we know — GitHub refused this token, and signing in replaces
+  # it. See docs/research/github-auth-longevity.md §9.
   class Unauthorized < Error
     def user_message = "GitHub refused your sign-in. Signing in again will replace it."
   end

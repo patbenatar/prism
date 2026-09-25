@@ -4,6 +4,15 @@ Newest first. Written for people using Prism, not for how it is built.
 
 ## 2026-09-25
 
+- **You stay signed in.** GitHub's sign-in only lasted eight hours, so anyone
+  who signed in before lunch found Prism refusing to load anything by
+  mid-afternoon — and had to sign in again, every single day. Prism now renews
+  it quietly in the background. You should never see a sign-in screen again
+  unless you sign out or revoke Prism's access on GitHub.
+- **Watched repositories keep working overnight.** The same eight hours is why
+  a repository could stop getting its review links some time after you closed
+  your laptop and start again the next morning. Watching no longer depends on
+  anyone being at their desk.
 - **Watching a repository now heals itself.** If GitHub refuses Prism's access
   for a while, the pull requests that were opened or pushed to meanwhile no
   longer lose their review link for good: Prism re-checks every watched

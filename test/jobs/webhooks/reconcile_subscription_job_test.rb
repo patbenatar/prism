@@ -109,6 +109,28 @@ class Webhooks::ReconcileSubscriptionJobTest < ActiveJob::TestCase
     assert_not_requested :any, /api\.github\.com/
   end
 
+  # The scheduled pass every two hours is what keeps a dormant subscriber's
+  # credential alive: nobody has opened Prism, but something still makes a
+  # GitHub call as them, so the refresh token is spent before the six months
+  # of disuse that would kill it.
+  test "a scheduled pass renews an expired token and reconciles with the new one" do
+    subscriber = @subscription.user
+    subscriber.update!(refresh_token: "ghr_old", access_token_expires_at: 1.minute.ago)
+    stub_github_token_refresh(access_token: "gho_renewed", refresh_token: "ghr_rotated")
+    stub_open_pulls
+    stub_pull(42, body: "Tightens the prose.")
+    stub_pull(41, body: "Also docs.")
+
+    Webhooks::ReconcileSubscriptionJob.perform_now(@subscription.id)
+
+    assert_token_refreshed
+    assert @subscription.reload.active?
+
+    subscriber.reload
+    assert_equal "gho_renewed", subscriber.access_token
+    assert_equal "ghr_rotated", subscriber.refresh_token
+  end
+
   test "a scheduled pass does not resurrect a subscription Prism gave up on" do
     @subscription.abandon!("the repository is gone")
 

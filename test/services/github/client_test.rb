@@ -944,6 +944,117 @@ class Github::ClientTest < ActiveSupport::TestCase
     assert_no_match(/expired/i, error.user_message)
   end
 
+  # ------------------------------------------------------ renewing a token ---
+  #
+  # The fixture user above has no refresh token, which is why the test before
+  # this one still reads the way it always did: nothing to renew, so a 401 is
+  # final. Everything below gives them one.
+
+  test "a token is renewed before the call when it is already past its expiry" do
+    @user.update!(refresh_token: "ghr_old", access_token_expires_at: 1.minute.ago)
+    stub_github_token_refresh(access_token: "gho_renewed")
+    stub_github_get("/user", fixture: :viewer)
+
+    assert_equal "prism-dev", @client.viewer.login
+
+    assert_token_refreshed
+    assert_requested(:get, "#{GithubStubs::API}/user") do |request|
+      request.headers["Authorization"] == "token gho_renewed"
+    end
+  end
+
+  # The token was fresh when the client was built and dead by the time the
+  # request landed — the case the margin narrows but cannot remove, and the
+  # reason the 401 path exists at all.
+  test "a 401 renews the token and replays the request once" do
+    @user.update!(refresh_token: "ghr_old", access_token_expires_at: 4.hours.from_now)
+    stub_github_token_refresh(access_token: "gho_renewed")
+
+    stub_request(:get, "#{GithubStubs::API}/user")
+      .to_return({ status: 401, body: { "message" => "Bad credentials" }.to_json,
+                   headers: { "Content-Type" => "application/json" } },
+                 { status: 200, body: github_fixture_raw(:viewer),
+                   headers: { "Content-Type" => "application/json" } })
+
+    assert_equal "prism-dev", @client.viewer.login
+
+    assert_token_refreshed
+    assert_requested(:get, "#{GithubStubs::API}/user", times: 2)
+    assert_requested(:get, "#{GithubStubs::API}/user", times: 1) do |request|
+      request.headers["Authorization"] == "token gho_renewed"
+    end
+  end
+
+  test "a GraphQL UNAUTHORIZED renews the token and replays the mutation once" do
+    @user.update!(refresh_token: "ghr_old", access_token_expires_at: 4.hours.from_now)
+    stub_github_token_refresh(access_token: "gho_renewed")
+
+    stub_request(:post, "#{GithubStubs::API}/graphql")
+      .to_return({ status: 200,
+                   body: { "errors" => [ { "message" => "Bad credentials", "type" => "UNAUTHORIZED" } ] }.to_json,
+                   headers: { "Content-Type" => "application/json" } },
+                 { status: 200,
+                   body: { "data" => { "resolveReviewThread" => { "thread" => { "id" => "PRRT_1", "isResolved" => true } } } }.to_json,
+                   headers: { "Content-Type" => "application/json" } })
+
+    @client.resolve_thread("PRRT_1")
+
+    assert_token_refreshed
+    assert_requested(:post, "#{GithubStubs::API}/graphql", times: 2)
+  end
+
+  # Exactly one retry. Two 401s with a token GitHub minted seconds ago is a
+  # revoked grant, and retrying that is how you write a loop.
+  test "a second 401 after a successful renewal is final" do
+    @user.update!(refresh_token: "ghr_old", access_token_expires_at: 4.hours.from_now)
+    stub_github_token_refresh(access_token: "gho_renewed")
+    stub_github_error(:get, "/user", status: 401, message: "Bad credentials")
+
+    assert_raises(Github::Unauthorized) { @client.viewer }
+
+    assert_token_refreshed times: 1
+    assert_requested(:get, "#{GithubStubs::API}/user", times: 2)
+  end
+
+  # Refresh failing is the *only* thing that may now mean "sign in again".
+  test "a 401 whose renewal GitHub refuses stays Unauthorized and clears the row" do
+    @user.update!(refresh_token: "ghr_old", access_token_expires_at: 4.hours.from_now)
+    stub_github_token_error("bad_refresh_token")
+    stub_github_error(:get, "/user", status: 401, message: "Bad credentials")
+
+    assert_raises(Github::Unauthorized) { @client.viewer }
+
+    @user.reload
+    assert_not @user.token?
+    assert_not @user.refreshable?
+  end
+
+  # A refresh that could not be *attempted* must not read as a dead grant:
+  # signing somebody out because GitHub's token endpoint had a bad minute
+  # is the failure this whole change exists to stop.
+  test "a 401 whose renewal cannot reach GitHub becomes Unavailable, not a sign-out" do
+    @user.update!(refresh_token: "ghr_old", access_token_expires_at: 4.hours.from_now)
+    stub_github_token_unavailable(status: 503)
+    stub_github_error(:get, "/user", status: 401, message: "Bad credentials")
+
+    assert_raises(Github::Unavailable) { @client.viewer }
+
+    @user.reload
+    assert @user.token?
+    assert @user.refreshable?
+  end
+
+  # A client is built for every request whether or not the page goes near
+  # GitHub. Renewing at construction would spend a refresh token on a page
+  # that never asked GitHub anything.
+  test "constructing a client renews nothing" do
+    @user.update!(refresh_token: "ghr_old", access_token_expires_at: 1.minute.ago)
+
+    Github::Client.new(@user)
+
+    assert_no_token_refresh
+  end
+
   test "403 with a rate limit body becomes RateLimited and carries the reset time" do
     reset_at = 12.minutes.from_now.to_i
     stub_github_error(:get, "/user", status: 403,

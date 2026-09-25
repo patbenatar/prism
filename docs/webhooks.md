@@ -174,10 +174,22 @@ refused this account's token", which a healthy token could not reach.
 claiming to make.
 
 A note on the wording, too: Prism used to say "Your GitHub sign-in expired."
-OAuth App tokens **do not expire** (`docs/research/github-api.md` §1.3) — one
-stops working because it was revoked, or because re-authorizing the app
-somewhere else re-issued it. Saying "expired" taught people to expect
-short-lived access and to go looking for a setting that does not exist.
+That was dropped on the reasoning that OAuth App tokens do not expire, which
+turned out to be false of *Prism's* OAuth App — it has expiring tokens
+enabled, and eight-hour expiry is what caused most of the refusals described
+above (`docs/research/github-auth-longevity.md` §9).
+
+The wording still should not say "expired", but for the opposite reason. Prism
+now renews an expiring token itself, so expiry never reaches a person or a
+subscription: `Github::Credentials` replaces the token before the call and
+`Github::Client` replaces it and replays once if a 401 arrives anyway. A
+credential failure that survives all that is a revoked grant or a refresh
+token GitHub has finished with — genuinely not expiry, and genuinely fixed by
+signing in. The screen says the true thing either way.
+
+The practical consequence for watching is the one this whole document is
+about: a subscription suspended over a refused token now recovers on the next
+delivery or the next reconciliation pass, with nobody signing in at all.
 
 ### Reconciliation — the guarantee behind the fast path
 

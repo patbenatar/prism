@@ -12,10 +12,22 @@
 # Both flavours are provided because the mechanics differ: an integration test
 # drives Rack directly, while a system test has to go through the browser.
 module AuthenticationHelpers
-  # The shape omniauth-github produces. Two details matter and are easy to get
-  # wrong: `uid` is a String, and the granted scope lives under `extra`, not
-  # under `credentials`.
-  def github_auth_hash(user, token: nil, scope: nil)
+  # The shape omniauth-github produces. Three details matter and are easy to
+  # get wrong: `uid` is a String, the granted scope lives under `extra` rather
+  # than under `credentials`, and `credentials` has two genuinely different
+  # shapes depending on whether the OAuth App issues expiring tokens.
+  #
+  # `expiring: false` (the default, and what a non-expiring OAuth App sends):
+  #   credentials = { token:, expires: false }
+  #
+  # `expiring: true` (what production sends):
+  #   credentials = { token:, refresh_token:, expires_at: <Integer>, expires: true }
+  #
+  # The `expires_at` is an Integer of unix seconds, because that is what
+  # omniauth-oauth2 puts there — oauth2's AccessToken computes it as our own
+  # clock plus GitHub's `expires_in`.
+  def github_auth_hash(user, token: nil, scope: nil, expiring: false, refresh_token: "ghr_test_refresh",
+                       expires_in: 28_800)
     OmniAuth::AuthHash.new(
       provider: "github",
       uid: user.github_id.to_s,
@@ -26,10 +38,17 @@ module AuthenticationHelpers
         image: user.avatar_url,
         urls: { "GitHub" => "https://github.com/#{user.login}" }
       },
-      credentials: {
-        token: token || user.access_token || "gho_test_token",
-        expires: false
-      },
+      credentials: expiring ?
+        {
+          token: token || user.access_token || "gho_test_token",
+          refresh_token: refresh_token,
+          expires_at: (Time.current + expires_in).to_i,
+          expires: true
+        } :
+        {
+          token: token || user.access_token || "gho_test_token",
+          expires: false
+        },
       extra: {
         scope: scope || user.token_scopes || "repo,read:org,read:user",
         raw_info: {
