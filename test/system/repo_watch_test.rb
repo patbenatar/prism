@@ -20,6 +20,8 @@ class RepoWatchSystemTest < ApplicationSystemTestCase
     ENV["PRISM_PUBLIC_URL"] = "https://prism.test"
     # Signing in lands on /repos before any test navigates anywhere.
     stub_github_get("/user/repos", fixture: :repos)
+    # Re-registering queues a reconciliation pass, and jobs run inline here.
+    stub_no_open_pull_requests
     sign_in_as @user
   end
 

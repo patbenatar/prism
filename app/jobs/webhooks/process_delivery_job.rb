@@ -9,22 +9,18 @@ module Webhooks
   # GitHub. The payload never reaches this far, so a delivery cannot talk the
   # job into acting on a repository nobody subscribed.
   #
-  # ## Failure policy
+  # The failure policy — which GitHub refusals suspend, which retry, which are
+  # recorded and forgotten — lives in SubscriberJob, because the
+  # reconciliation pass has to make exactly the same judgements about exactly
+  # the same subscription.
   #
-  #   RateLimited / Unavailable  transient in the moment. Back off and retry
-  #                              this delivery (docs/research/github-api.md
-  #                              §3.8 — retrying a rate limit too eagerly is
-  #                              how an integration gets banned).
-  #   Unauthorized               GitHub refused the token. **Suspend, don't
-  #                              kill.** See below.
-  #   Forbidden                  the account lost access, or an org has not
-  #                              approved the OAuth app. Also fixable by a
-  #                              person; same treatment.
-  #   NotFound                   the repository or pull request is gone, or is
-  #                              no longer visible to this account. Record the
-  #                              delivery and leave the subscription alone —
-  #                              one missing pull request says nothing about
-  #                              the repository.
+  # ## This is the fast path, not the guarantee
+  #
+  # A delivery that never arrives, or arrives while the token is refused, used
+  # to be lost outright: the WebhookDelivery row sat at `failed` and nothing
+  # ever looked at that pull request again. Webhooks::Reconciler is what goes
+  # back for it, on a schedule and on a fresh sign-in. So this job can be what
+  # it should be — the quick way to find out, not the only way.
   #
   # ## Why a token failure suspends rather than kills
   #
@@ -34,31 +30,16 @@ module Webhooks
   # thing the user *can* fix — and does, by signing in again, usually without
   # ever knowing anything was wrong. Under the old design nothing looked
   # again, and a repository stopped being watched for good over a failure that
-  # had already repaired itself. It happened in production to two of three
-  # subscriptions.
+  # had already repaired itself. It happened in production.
   #
   # So a refusal suspends. The subscription keeps acting; the next delivery
-  # retries, and a success clears it. Retrying costs nothing extra — the
-  # deliveries arrive whether or not we are in a position to use them — and a
-  # fresh token also revives it immediately, without waiting for one (see
-  # User#revive_webhook_subscriptions). Only after
-  # WebhookSubscription::MAX_CONSECUTIVE_FAILURES refusals in a row do we
-  # conclude nobody is coming back and stop.
-  #
-  # Nothing here signs anybody out: Authentication#handle_revoked_token does
-  # that when a *person* hits a 401, and a background job has no session to
-  # end.
-  class ProcessDeliveryJob < ApplicationJob
-    queue_as :default
-
-    retry_on Github::RateLimited, wait: :polynomially_longer, attempts: 5
-    retry_on Github::Unavailable, wait: :polynomially_longer, attempts: 5
-
-    # A deleted delivery or subscription means someone unsubscribed while this
-    # was queued. There is nothing to do and nothing to report.
-    discard_on ActiveJob::DeserializationError
-    discard_on ActiveRecord::RecordNotFound
-
+  # retries, and a success clears it. A fresh token revives it immediately
+  # (see User#revive_webhook_subscriptions!) and takes a reconciliation pass
+  # with it. Only once it has been failing for longer than
+  # WebhookSubscription::GIVE_UP_AFTER — a measure of time, not of how many
+  # deliveries the repository happened to produce — do we conclude nobody is
+  # coming back and stop.
+  class ProcessDeliveryJob < SubscriberJob
     def perform(webhook_delivery_id)
       delivery = WebhookDelivery.find(webhook_delivery_id)
       subscription = delivery.webhook_subscription
@@ -71,9 +52,7 @@ module Webhooks
       # running: any 401 anywhere in the app clears it (User#revoke_token!).
       # Nothing can be done until the user signs in again — but they very well
       # might, so this suspends rather than ends it.
-      unless subscription.user&.token?
-        return suspend_subscription(delivery, subscription, "the subscriber is signed out of Prism")
-      end
+      return suspend_subscription(delivery, subscription, SIGNED_OUT) unless subscription.user&.token?
 
       result = Announcer.new(
         subscription: subscription, pull_request_number: delivery.pull_request_number
@@ -86,9 +65,9 @@ module Webhooks
 
       delivery.record!("processed", "#{result.status}: #{result.detail}")
     rescue Github::Unauthorized => error
-      suspend_subscription(delivery, subscription, "GitHub refused this account's token", error)
+      suspend_subscription(delivery, subscription, TOKEN_REFUSED, error)
     rescue Github::Forbidden => error
-      suspend_subscription(delivery, subscription, "GitHub refused access", error)
+      suspend_subscription(delivery, subscription, ACCESS_REFUSED, error)
     rescue Github::NotFound => error
       # Not necessarily fatal for the subscription — a single pull request can
       # 404 while the repository is fine — so record it and leave the
@@ -99,17 +78,18 @@ module Webhooks
     private
 
     # Records the refusal and keeps the subscription in play. WebhookSubscription
-    # decides when enough consecutive refusals mean stopping for good, so the
-    # delivery log has to read the state back rather than assume it.
+    # decides when a run of refusals has gone on long enough to mean stopping
+    # for good, so the delivery log has to read the state back rather than
+    # assume it.
     def suspend_subscription(delivery, subscription, reason, error = nil)
-      detail = error ? "#{reason}: #{error.user_message}" : reason
+      detail = error ? refusal_detail(reason, error) : reason
       subscription&.suspend!(detail)
 
       outcome =
         if subscription&.broken?
-          "gave up after #{WebhookSubscription::MAX_CONSECUTIVE_FAILURES} consecutive failures"
+          "gave up after #{WebhookSubscription::GIVE_UP_AFTER.inspect} of failures"
         else
-          "will retry on the next delivery"
+          "will retry on the next delivery or reconciliation pass"
         end
 
       delivery&.record!("failed", "#{detail} — #{outcome}")

@@ -103,13 +103,24 @@ class User < ApplicationRecord
 
   def to_s = login
 
-  # Clears a suspension caused by GitHub refusing this account, now that it
-  # plainly is not refusing it any more.
+  # Clears a failure caused by GitHub refusing this account, now that it
+  # plainly is not refusing it any more — and then goes back for the work that
+  # was missed while it was.
   #
-  # Only suspended subscriptions: one Prism gave up on after repeated
-  # failures stays given up on, because a working sign-in is no evidence that
-  # whatever exhausted its patience has changed.
+  # Both halves matter, and the second one is the one that was missing.
+  # Reviving a subscription only means the *next* delivery will be handled;
+  # the deliveries GitHub sent while the token was dead are gone, and nothing
+  # redelivers them. So a fresh sign-in also queues a reconciliation pass,
+  # which asks GitHub what the repository's open pull requests look like and
+  # fixes whatever Prism should have done and didn't.
+  #
+  # `revivable` rather than `suspended`: a subscription Prism gave up on comes
+  # back too, provided a credential is what broke it. That is exactly the case
+  # a sign-in is evidence about. See WebhookSubscription::CREDENTIAL.
   def revive_webhook_subscriptions!
-    webhook_subscriptions.suspended.find_each(&:revive_after_new_token!)
+    webhook_subscriptions.revivable.find_each do |subscription|
+      subscription.revive_after_new_token!
+      Webhooks::ReconcileSubscriptionJob.perform_later(subscription.id)
+    end
   end
 end

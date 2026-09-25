@@ -82,8 +82,9 @@ module Webhooks
 
     # As the subscriber, always. The edit shows up on GitHub under their name,
     # which is the whole point of asking them to subscribe rather than running
-    # Prism as a bot account nobody recognizes.
-    def client = @client ||= Github::Client.new(subscription.user)
+    # Prism as a bot account nobody recognizes. SubscriberClient is where that
+    # answer lives, and the one thing a move to a GitHub App would replace.
+    def client = @client ||= SubscriberClient.for(subscription)
 
     def result(status, detail) = Result.new(status: status, detail: detail, renderable_count: @renderable&.size || 0)
   end

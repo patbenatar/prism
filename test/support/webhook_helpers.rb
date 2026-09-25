@@ -64,6 +64,16 @@ module WebhookHelpers
     end
   end
 
+  # Reconciliation runs on a fresh sign-in and on a re-registration, and
+  # system tests run jobs inline (see ApplicationSystemTestCase), so a test
+  # that revives a subscription makes a real GitHub call asking for the
+  # repository's open pull requests. An empty list is the "nothing was missed"
+  # answer, and it keeps a test about the screen from having to stub a pull
+  # request it never mentions.
+  def stub_no_open_pull_requests(owner: DEFAULT_REPO.split("/").first, name: DEFAULT_REPO.split("/").last)
+    stub_github_get("/repos/#{owner}/#{name}/pulls", body: [])
+  end
+
   def webhook_signature(body, secret)
     "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", secret, body)
   end

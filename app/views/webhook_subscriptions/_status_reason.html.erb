@@ -4,10 +4,19 @@
     nothing at all when the subscription is fine. Paired with
     `_status_pill`, and shared by the same two screens for the same reason. %>
 <% if subscription.broken? %>
+  <%# Two ways to end up here, and only one of them is the reader's to fix.
+      A credential refusal is undone by signing in again — including from this
+      state, which it used to be unable to reach. Anything else needs the
+      repository added afresh. %>
   <p class="mt-1 text-sm text-removed" data-testid="broken-reason">
-    <%= subscription.broken_reason %> Prism tried
-    <%= WebhookSubscription::MAX_CONSECUTIVE_FAILURES %> times and has stopped.
-    Stop watching this repository and add it again to start over.
+    <%= subscription.broken_reason %>
+    Prism kept trying for <%= WebhookSubscription::GIVE_UP_AFTER.inspect %> and has stopped.
+    <% if subscription.revivable_by_credential? %>
+      Signing in to Prism again starts it watching from scratch, and it will go back over
+      the pull requests it missed.
+    <% else %>
+      Stop watching this repository and add it again to start over.
+    <% end %>
   </p>
 <% elsif subscription.callback_stale? %>
   <%# Silent failure otherwise: GitHub keeps POSTing to an address nothing
@@ -21,13 +30,14 @@
   </p>
 <% elsif subscription.suspended? %>
   <%# Deliberately undramatic, and it asks for nothing. This state fixes
-      itself: the next delivery retries, and signing in again replaces the
-      token immediately. Telling people to "remove and re-add the repository"
-      — which the old copy did, for a state that recovered on its own — sent
-      them to do work that was never needed. %>
+      itself: Prism retries on a schedule as well as on the next delivery, so
+      it no longer depends on the repository being busy enough to produce one.
+      Telling people to "remove and re-add the repository" — which the old
+      copy did, for a state that recovered on its own — sent them to do work
+      that was never needed. %>
   <p class="mt-1 text-sm text-ink-soft" data-testid="suspended-reason">
-    <%= subscription.broken_reason %> Prism will try again on the next pull request
-    in this repository, and signing in to Prism again fixes it straight away.
-    If you have signed in since, it is already sorted.
+    <%= subscription.broken_reason %> Prism keeps retrying in the background — on the next
+    pull request in this repository, and every couple of hours regardless — and signing in
+    to Prism again fixes it straight away. If you have signed in since, it is already sorted.
   </p>
 <% end %>

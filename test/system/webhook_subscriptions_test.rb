@@ -12,6 +12,9 @@ class WebhookSubscriptionsSystemTest < ApplicationSystemTestCase
     @user = users(:prism_dev)
     ENV["PRISM_PUBLIC_URL"] = "https://prism.test"
     stub_github_get("/user/repos", fixture: :repos)
+    # Signing in and re-registering both queue a reconciliation pass, and jobs
+    # run inline here.
+    stub_no_open_pull_requests
   end
 
   teardown { ENV.delete("PRISM_PUBLIC_URL") }
@@ -122,7 +125,10 @@ class WebhookSubscriptionsSystemTest < ApplicationSystemTestCase
     visit webhook_subscriptions_path
 
     assert_selector "[data-testid=subscription-suspended]", text: "Retrying"
-    assert_selector "[data-testid=suspended-reason]", text: /try again on the next pull request/
+    assert_selector "[data-testid=suspended-reason]", text: /on the next pull request in this repository/
+    # Fault 2's other half: retrying must not depend on the repository being
+    # busy enough to produce a delivery.
+    assert_selector "[data-testid=suspended-reason]", text: /every couple of hours regardless/
     assert_selector "[data-testid=suspended-reason]", text: /signing in to Prism again/i
     assert_no_selector "[data-testid=broken-reason]"
     assert_no_text "remove and re-add"
@@ -138,14 +144,62 @@ class WebhookSubscriptionsSystemTest < ApplicationSystemTestCase
     assert_no_selector "[data-testid=subscription-suspended]"
   end
 
-  test "a broken subscription says so on the screen" do
-    webhook_subscriptions(:docs_site).abandon!("GitHub rejected the token")
+  test "a subscription broken by something no credential can reach says to add it again" do
+    webhook_subscriptions(:docs_site).abandon!("The repository is gone from GitHub.")
 
     sign_in_as @user
     visit webhook_subscriptions_path
 
     assert_selector "[data-testid=subscription-broken]", text: "Not working"
-    assert_selector "[data-testid=broken-reason]", text: "GitHub rejected the token"
+    assert_selector "[data-testid=broken-reason]", text: "The repository is gone from GitHub."
+    assert_selector "[data-testid=broken-reason]", text: /add it again/
+    assert_no_text "Signing in to Prism again"
+  end
+
+  # Fault 3 on the screen. `broken` used to be unreachable by the one thing
+  # that fixes it, and the copy said so — "stop watching this repository and
+  # add it again" was the only way out even when the recorded reason was that
+  # GitHub had refused the token. Signing in has to be offered, and has to
+  # work.
+  test "a subscription broken by a refused token comes back on the next sign-in" do
+    subscription = webhook_subscriptions(:docs_site)
+    subscription.suspend!("GitHub refused this account's token.")
+    travel_to (WebhookSubscription::GIVE_UP_AFTER + 1.day).from_now do
+      subscription.suspend!("GitHub refused this account's token.")
+    end
+
+    assert subscription.reload.broken?
+
+    sign_in_as @user
+    visit webhook_subscriptions_path
+
+    # Signing in is itself the fix, so by the time this screen renders the
+    # subscription is already watching again.
+    assert_selector "[data-testid=subscription-row]", text: "Active"
+    assert_no_selector "[data-testid=subscription-broken]"
+  end
+
+  # Reachable inside one long session: the sessions last 30 days, so a
+  # subscription can break and give up without the reader ever signing in
+  # again. The copy has to offer the fix that works rather than the one that
+  # does not.
+  test "a subscription broken by a refused token offers signing in, not re-adding" do
+    sign_in_as @user
+
+    subscription = webhook_subscriptions(:docs_site)
+    subscription.suspend!("GitHub refused access.")
+    travel_to (WebhookSubscription::GIVE_UP_AFTER + 1.day).from_now do
+      subscription.suspend!("GitHub refused access.")
+    end
+
+    assert subscription.reload.broken?
+
+    visit webhook_subscriptions_path
+
+    assert_selector "[data-testid=subscription-broken]", text: "Not working"
+    assert_selector "[data-testid=broken-reason]", text: /Signing in to Prism again/
+    assert_selector "[data-testid=broken-reason]", text: /30 days/
+    assert_no_text "add it again to start over"
   end
 
   private

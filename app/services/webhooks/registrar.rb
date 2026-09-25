@@ -57,8 +57,13 @@ module Webhooks
       subscription.update!(hook_id: hook.id, callback_url: callback_url)
       # GitHub has just accepted us as this user on this repository, which is
       # the same proof a successful delivery gives. Clears a suspension and a
-      # give-up alike, and resets the failure count with them.
+      # give-up alike, and resets the failure clock with them.
       subscription.mark_active!
+
+      # Re-registering means deliveries were going to an address nothing
+      # answered on, so by definition some were lost. Fixing the address does
+      # not bring them back; this does.
+      ReconcileSubscriptionJob.perform_later(subscription.id)
 
       subscription
     end

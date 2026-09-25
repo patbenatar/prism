@@ -1,5 +1,4 @@
-# Solid Queue's scheduler. One task, and it exists so that the only table in
-# Prism that would otherwise grow without bound does not.
+# Solid Queue's scheduler.
 #
 # Development runs it too, so a scheduler that fails to boot shows up here
 # rather than in production.
@@ -8,6 +7,18 @@ default: &default
     class: Webhooks::PruneDeliveriesJob
     schedule: every day at 4am
     description: Drops webhook deliveries older than WebhookDelivery::RETENTION.
+
+  # Watching a repository has to survive a webhook that never arrives, and
+  # they do not arrive when the token is refused, when the callback address
+  # has moved, or when nothing is running to receive them. This is what goes
+  # back for the pull requests that were missed. Two hours because webhooks
+  # are the latency and this is the guarantee — a pass over a healthy
+  # subscription is a single GitHub call, so the interval is chosen for how
+  # long a missed link may go unnoticed, not for cost.
+  reconcile_webhook_subscriptions:
+    class: Webhooks::ReconcileAllJob
+    schedule: every 2 hours
+    description: Re-checks every watched repository's open pull requests against what Prism should have announced.
 
 development:
   <<: *default
