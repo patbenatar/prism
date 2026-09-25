@@ -20,6 +20,13 @@ module Markdown
   # same-document fragment links are rewritten to match so heading anchors and
   # footnotes keep working. `name` is not on the safelist, so it is not a second
   # route to the same collision.
+  #
+  # `media` is on the attribute list for one idiom and carries no risk: GitHub
+  # documents `<picture><source media="(prefers-color-scheme: dark)" …>` as the
+  # way to ship a light and a dark version of a diagram, and stripping it left
+  # every browser taking whichever source came first. A media query only
+  # selects between images Prism has already resolved; it cannot name a URL or
+  # run anything.
   module Sanitizer
     TAGS = %w[
       h1 h2 h3 h4 h5 h6 p br hr blockquote pre code span div
@@ -33,7 +40,7 @@ module Markdown
     ATTRIBUTES = %w[
       href src alt title id class align width height loading decoding
       type checked disabled start reversed value colspan rowspan scope
-      lang dir role rel srcset sizes open cite
+      lang dir role rel srcset sizes media open cite
       data-sourcepos data-math-style data-footnotes data-footnote-ref
       data-footnote-backref data-footnote-backref-idx data-heading-content
       aria-label aria-hidden
