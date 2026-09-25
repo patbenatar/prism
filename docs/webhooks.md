@@ -138,6 +138,15 @@ schedule, so the clock ticks at the same rate on a repository with one pull
 request a quarter as on one with fifty a day. `consecutive_failures` is still
 recorded, as a diagnostic — it says how hard we tried, not when to stop.
 
+Thirty days outlasts the delivery log, which `WebhookDelivery::RETENTION`
+prunes at a fortnight — so by the time anyone asks "why did watching stop?",
+every delivery that could have answered is gone. The answer therefore lives
+on the subscription, which nothing prunes: when it gives up,
+`WebhookSubscription#give_up_reason` rewrites `broken_reason` into a sentence
+that carries what refused us, when the run started, and how many attempts it
+took. That is why the give-up threshold can be generous without the
+explanation going stale.
+
 ### `broken` is reachable by the thing that fixes it
 
 `webhook_subscriptions.failure_cause` says which kind of failure stopped us:
@@ -211,15 +220,34 @@ before any write — see "Where the link goes" on why that read cannot be
 cached).
 
 In the steady state it examines nothing: `Reconciler#settled?` answers from
-rows Prism already has, without asking GitHub, by comparing the
-announcement's `last_event_at` against the pull request's `updated_at`.
-GitHub moves `updated_at` on every change to a pull request, including the
-description edit an author makes when they delete Prism's block — the one
-change reconciliation most needs to notice — so a row stamped later than
-GitHub's clock genuinely means nothing has happened since we looked. **A pass
-over a healthy subscription is one GitHub call.** After an outage it is two
-calls per pull request that moved while Prism was deaf: the work that was
-missed, and no more.
+rows Prism already has, without asking GitHub, by comparing the `updated_at`
+it recorded (`pull_request_announcements.last_seen_updated_at`) against the
+one GitHub is showing now. GitHub moves `updated_at` on every change to a
+pull request, including the description edit an author makes when they delete
+Prism's block — the one change reconciliation most needs to notice — so the
+same value we acted on means nothing has happened since. **A pass over a
+healthy subscription is one GitHub call.** After an outage it is two calls
+per pull request that moved while Prism was deaf: the work that was missed,
+and no more.
+
+**Equality, never an ordering.** The first version of this compared
+`last_event_at >= pull.updated_at` — Prism's clock against GitHub's. That
+holds only while the two agree, which is not something Prism controls or can
+assert: with Prism's clock running ahead, an author's edit landing inside the
+skew window gets an `updated_at` still earlier than our stamp, the pull
+request reads as handled, and a real change is silently skipped. That is the
+failure this whole feature exists to remove, one layer up. Recording the
+observed value and testing it for equality removes the window instead of
+narrowing it.
+
+One consequence, and it is deliberate: a pass that *writes* records the state
+it came in on, because its own `PATCH` moves `updated_at` to a value Prism
+would have to spend another call to learn. So a pull request Prism just acted
+on is examined once more on the next pass, finds `unchanged`, and settles
+then. One extra examination per pull request written to, in exchange for
+never recording a state Prism did not observe. The delivery path passes no
+`updated_at` at all — it does not know one and does not need to — so a link
+placed by a webhook settles on the next reconciliation pass the same way.
 
 Two bounds keep the bad case bounded:
 
@@ -245,6 +273,15 @@ Three separate mechanisms, because they fail differently:
    sent at all.
 3. **`pull_request.edited` is ignored** — Prism's own edit produces one, and
    acting on it would loop forever.
+
+A fourth, smaller one sits under those: a delivery and a reconciliation pass
+can reach the same pull request at the same moment, both find no
+`pull_request_announcements` row, and both build one. The unique index
+catches the loser, and `PullRequestAnnouncement#record!` treats losing as
+ordinary — it adopts the winner's row and writes the outcome onto it, because
+both passes reached the same convergent decision from the same GitHub state
+and an unrescued raise would fail the job, which means a link that never
+appears. The one thing it never writes over is `declined`.
 
 Add/remove cycles converge: the separator before the block is chosen from what
 the text already ends with, so the description does not gain two newlines
@@ -674,7 +711,7 @@ say so in their own comments):
 | --- | --- |
 | `webhook_subscriptions` | which repositories Prism watches, whose token it uses, the encrypted per-hook secret, the GitHub hook id, the callback URL actually registered (so a moved tunnel is visible rather than silent), and its status — `active` / `suspended` / `broken` — with `failing_since` (how long, which is what decides giving up) and `failure_cause` (whether a credential can bring it back) behind it |
 | `webhook_deliveries` | one row per accepted delivery: GUID (uniquely indexed — this *is* the replay protection), event, action, pull request number, outcome. No payload. |
-| `pull_request_announcements` | per pull request: `present` / `absent` / `declined`. Exists only to tell "we removed our block" from "the author did". |
+| `pull_request_announcements` | per pull request: `present` / `absent` / `declined`, plus `last_seen_updated_at` — GitHub's `updated_at` as it was when Prism last acted, which is how reconciliation knows there is nothing new to look at. Exists to tell "we removed our block" from "the author did", and to keep a healthy pass down to one GitHub call. |
 
 `webhook_deliveries` is a debugging aid, not an archive; `WebhookDelivery::RETENTION`
 is a fortnight and `WebhookDelivery.expired` selects what can go.

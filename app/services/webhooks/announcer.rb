@@ -17,11 +17,18 @@ module Webhooks
       def changed? = %i[placed retracted].include?(status)
     end
 
-    attr_reader :subscription, :pull_request_number
+    attr_reader :subscription, :pull_request_number, :seen_updated_at
 
-    def initialize(subscription:, pull_request_number:)
+    # `seen_updated_at` is GitHub's `updated_at` for this pull request as the
+    # caller observed it, when the caller happens to know. Recorded with the
+    # outcome so Webhooks::Reconciler can tell "this is the state we already
+    # acted on" from "something has happened since" without comparing two
+    # machines' clocks. The delivery path does not know it and does not need
+    # to — it passes nil, and the next reconciliation pass fills it in.
+    def initialize(subscription:, pull_request_number:, seen_updated_at: nil)
       @subscription = subscription
       @pull_request_number = pull_request_number
+      @seen_updated_at = seen_updated_at
     end
 
     def call
@@ -31,7 +38,7 @@ module Webhooks
       return result(:skipped, "author removed Prism's block") if announcement.declined?
 
       if removed_by_author?(announcement)
-        announcement.decline!
+        announcement.decline!(seen_updated_at: seen_updated_at)
         return result(:declined, "author removed Prism's block")
       end
 
@@ -40,16 +47,23 @@ module Webhooks
 
     private
 
+    # `seen_updated_at` is deliberately what the caller saw *before* this run,
+    # even when the run wrote. Our own PATCH moves GitHub's `updated_at` to a
+    # value we would have to spend a call to learn, so recording the old one
+    # simply means the next reconciliation pass looks at this pull request once
+    # more, finds `unchanged`, and records the settled value then. One extra
+    # examination per pull request we write to, in exchange for never claiming
+    # to have seen a state we did not see.
     def place(announcement)
       changed = target.place(link.markdown(file_count: renderable.size))
-      announcement.placed!(renderable.size)
+      announcement.placed!(renderable.size, seen_updated_at: seen_updated_at)
 
       changed ? result(:placed, "link written") : result(:unchanged, "link already correct")
     end
 
     def retract(announcement)
       changed = target.retract
-      announcement.retracted!
+      announcement.retracted!(seen_updated_at: seen_updated_at)
 
       changed ? result(:retracted, "no renderable Markdown left") : result(:unchanged, "no renderable Markdown")
     end

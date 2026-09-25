@@ -162,6 +162,33 @@ class WebhookSubscriptionTest < ActiveSupport::TestCase
     assert_not subscription.actable?
   end
 
+  # `webhook_deliveries` is pruned at a fortnight and we give up at thirty
+  # days, so by the time anyone asks "why did watching stop?", every delivery
+  # that could have answered is gone. The row has to answer on its own.
+  test "giving up writes a reason that still explains itself after the deliveries are pruned" do
+    subscription = webhook_subscriptions(:docs_site)
+    started = Time.utc(2026, 8, 1, 9, 30)
+
+    travel_to(started) { subscription.suspend!("GitHub refused this account's token.") }
+    travel_to(started + 40.days) { 4.times { subscription.suspend!("GitHub refused access.") } }
+
+    assert subscription.broken?
+    reason = subscription.broken_reason
+
+    assert_match(/GitHub refused access\./, reason, "what refused us")
+    assert_match(/2026-08-01 09:30 UTC/, reason, "when the run started")
+    assert_match(/5 attempts/, reason, "how hard we tried")
+    assert_match(/30 days/, reason, "how long we waited")
+  end
+
+  test "a reason only summarises when we actually gave up" do
+    subscription = webhook_subscriptions(:docs_site)
+
+    subscription.suspend!("GitHub refused this account's token.")
+
+    assert_equal "GitHub refused this account's token.", subscription.broken_reason
+  end
+
   # Fault 3. Production held a subscription that was `broken` with
   # `broken_reason: "GitHub refused this account's token…"` — so the thing
   # that broke it plainly *was* the token — and a working token could not

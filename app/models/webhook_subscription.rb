@@ -140,20 +140,37 @@ class WebhookSubscription < ApplicationRecord
   def suspend!(reason, cause: CREDENTIAL)
     started = failing_since || Time.current
     give_up = Time.current >= started + GIVE_UP_AFTER
+    attempts = consecutive_failures.to_i + 1
 
     update!(
       status: give_up ? BROKEN : SUSPENDED,
       failure_cause: cause,
       failing_since: started,
-      broken_reason: reason.to_s.truncate(500),
+      broken_reason: give_up ? give_up_reason(reason, started, attempts) : reason.to_s.truncate(500),
       # Only set when we actually gave up. It used to be stamped on every
       # refusal, which made "broken_at" mean "last failed" on a row that was
       # not broken at all.
       broken_at: give_up ? Time.current : nil,
       last_failure_at: Time.current,
-      consecutive_failures: consecutive_failures.to_i + 1
+      consecutive_failures: attempts
     )
   end
+
+  # Why watching stopped, written so the row alone still answers it.
+  #
+  # `webhook_deliveries` is a debugging aid with a fortnight's retention, and
+  # we give up at thirty days — so by the time anyone asks "why did this
+  # stop?", every delivery that could have told them has been pruned. The
+  # answer therefore has to live on the subscription, which nothing prunes.
+  # `failing_since`, `broken_at` and `consecutive_failures` each hold a piece
+  # of it; this is the sentence that puts them together, because the reason is
+  # what the screen shows and what a `pp` of the row shows first.
+  def give_up_reason(reason, started, attempts)
+    "#{reason.to_s.truncate(300)} Prism gave up after #{GIVE_UP_AFTER.inspect} of continuous failure — " \
+      "failing since #{started.utc.strftime('%Y-%m-%d %H:%M UTC')}, " \
+      "#{attempts} attempt#{'s' unless attempts == 1}, none accepted.".truncate(500)
+  end
+  private :give_up_reason
 
   # Stop for good, for a failure that no credential can reach.
   def abandon!(reason)
