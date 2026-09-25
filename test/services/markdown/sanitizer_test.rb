@@ -46,6 +46,23 @@ module Markdown
       assert_includes html, 'alt="A"'
     end
 
+    # GitHub's documented light/dark idiom, and the attributes Markdown's image
+    # rewriter has to find afterwards. Dropping `media` left every browser
+    # taking whichever <source> came first, which is the dark one.
+    test "keeps a picture's sources, with the media query that chooses between them" do
+      html = Sanitizer.call(<<~HTML)
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="dark.png 1x, dark@2x.png 2x">
+          <img src="light.png" alt="Diagram" width="600" height="400">
+        </picture>
+      HTML
+
+      assert_includes html, "<source"
+      assert_includes html, 'media="(prefers-color-scheme: dark)"'
+      assert_includes html, 'srcset="dark.png 1x, dark@2x.png 2x"'
+      assert_includes html, 'src="light.png"'
+    end
+
     test "keeps rouge token markup" do
       assert_includes Sanitizer.call('<pre class="highlight"><code><span class="k">def</span></code></pre>'),
                       '<span class="k">'

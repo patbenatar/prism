@@ -1060,6 +1060,26 @@ horizontally scrollable), tables (display face, tabular figures, scrollable
 rather than wrapped), images, `<details>`/`<summary>`, footnote references and
 the GFM footnotes section, and GitHub alerts.
 
+**Images** are `rounded-lg border border-line`, and `max-w-full h-auto` so a
+1600px screenshot is held inside the reading column instead of pushing the page
+sideways on a phone. Their `src` never survives as the author wrote it: a
+Markdown image is relative to the *file*, so `Markdown::ImageRewriter` (after
+sanitizing, like every other rewrite here) points it at Prism's own image
+proxy, which fetches the blob with the reader's GitHub token. Private
+repositories are the whole reason — a browser has no token and `<img>` is an
+unauthenticated GET, so nothing else can work. See `RepoImagesController`.
+
+An image Prism cannot serve — deleted in this pull request, only on the other
+side, too large, not actually an image, or in a repository the reader cannot
+see — is answered with **one placeholder**, never a broken-image icon: a
+transparent tile carrying a muted glyph and "Image unavailable", drawn in the
+single grey that reads on both canvases so it needs no theme of its own. It
+sits inside the same border and spacing as a real image, so a missing figure
+still reads as a figure. The `alt` text stays in the DOM. Every failure looks
+identical on purpose: a distinguishable "forbidden" would be an oracle for
+whether a private repository exists, and the reader can do nothing differently
+in any of these cases.
+
 **Alerts** take the spectrum band that matches their severity, so an alert
 speaks the same language as a change bar: `.markdown-alert-note` → pending,
 `-tip` → added, `-important` → brand, `-warning` → modified, `-caution` →

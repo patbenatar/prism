@@ -67,6 +67,14 @@ module Markdown
       area base br col embed hr img input link meta param source track wbr
     ].freeze
 
+    # @param images [#call, nil] rewrites the image URLs in each block's
+    #   sanitized HTML — see Markdown::ImageRewriter. Nil renders a document
+    #   whose relative images point nowhere, which is right for a caller that
+    #   has no repository to resolve them against (the unit tests, a preview).
+    def initialize(images: nil)
+      @images = images && ImageRewriter.new(images)
+    end
+
     def call(markdown)
       source = normalize(markdown)
       return [] if source.empty?
@@ -219,8 +227,13 @@ module Markdown
 
     # --- block building -----------------------------------------------------
 
+    # The image rewrite belongs here, between sanitizing and everything that
+    # reads the result: child blocks are cut out of this HTML, and the block id
+    # is a digest of it, so rewriting later would leave list items and table
+    # rows pointing at URLs the page no longer uses.
     def build_block(region, source:, counter:, depth:, parent_id:)
       html = Sanitizer.call(Highlighter.call(region.html))
+      html = @images.call(html) if @images
       id = block_id(counter.next, region.start_line, region.end_line, html)
 
       block = Block.new(

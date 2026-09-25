@@ -53,9 +53,43 @@ class Review::ParsedSourceTest < ActiveSupport::TestCase
     end
   end
 
+  # The parse stopped being a pure function of the bytes when image URLs
+  # started being rewritten into it: the same README beside `docs/a/chart.png`
+  # and beside `docs/b/chart.png` renders to two different documents. Sharing
+  # an entry between them would put one file's pictures in another's page.
+  test "the directory an image resolves against is part of the key" do
+    source = "![chart](chart.png)\n"
+
+    with_memory_cache do
+      here = Review::ParsedSource.blocks(source, user_id: 1, images: images("docs/a/README.md"))
+      there = Review::ParsedSource.blocks(source, user_id: 1, images: images("docs/b/README.md"))
+
+      assert_includes here.first.html, "/docs/a/chart.png"
+      assert_includes there.first.html, "/docs/b/chart.png"
+    end
+  end
+
+  test "a document parsed without an image resolver keeps its own entry" do
+    source = "![chart](chart.png)\n"
+
+    with_memory_cache do |cache|
+      Review::ParsedSource.blocks(source, user_id: 1)
+
+      assert cache.read(key_for(source, 1)).present?
+      assert_includes cache.read(key_for(source, 1)).first.html, %(src="chart.png")
+    end
+  end
+
   private
 
-  def key_for(text, user_id)
-    [ "markdown-blocks", user_id, Digest::SHA256.hexdigest(text) ]
+  def images(path)
+    Review::RepoImages.new(owner: "acme", repo: "docs-site", dir: path,
+                           ref: "6dcb09b5b57875f334f61aebed695e2e4193db5e")
+  end
+
+  # The nil slot is the image resolver's: a document with no repository to
+  # resolve against is cached under the same key it always was.
+  def key_for(text, user_id, images_key = nil)
+    [ "markdown-blocks", user_id, images_key, Digest::SHA256.hexdigest(text) ]
   end
 end

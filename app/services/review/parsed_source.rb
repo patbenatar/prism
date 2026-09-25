@@ -20,14 +20,23 @@ module Review
   # already have. The user id is in the key anyway, because AGENTS.md's rule
   # about namespacing cached GitHub data per user is worth following even
   # where the leak it prevents cannot happen.
+  #
+  # `images` is in the key because the parse stopped being a pure function of
+  # the bytes alone the moment image URLs started being rewritten: the same
+  # README at `docs/a/` and `docs/b/`, or at two different shas, renders to two
+  # different documents. Its `cache_key` is the repository, the ref and the
+  # directory — all stable for as long as the content is — so this costs no
+  # hit rate that was ever real.
   module ParsedSource
     TTL = 1.day
 
-    def self.blocks(text, user_id: nil)
+    def self.blocks(text, user_id: nil, images: nil)
       return [] if text.blank?
 
-      key = [ "markdown-blocks", user_id, Digest::SHA256.hexdigest(text) ]
-      Rails.cache.fetch(key, expires_in: TTL) { Markdown::Document.parse(text).blocks }
+      key = [ "markdown-blocks", user_id, images&.cache_key, Digest::SHA256.hexdigest(text) ]
+      Rails.cache.fetch(key, expires_in: TTL) do
+        Markdown::Document.parse(text, renderer: Markdown::Renderer.new(images: images)).blocks
+      end
     end
   end
 end

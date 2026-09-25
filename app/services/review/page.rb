@@ -314,8 +314,8 @@ module Review
       return nil unless renderable?
 
       BlockMapper.call(
-        head_blocks: parse(head_source),
-        base_blocks: parse(base_source),
+        head_blocks: parse(head_source, images: head_images),
+        base_blocks: parse(base_source, images: base_images),
         line_sets: @line_sets,
         threads: threads,
         path: file.path,
@@ -324,9 +324,26 @@ module Review
     end
 
     # Through ParsedSource rather than straight to Markdown::Document: the
-    # parse is the page's largest single cost and a pure function of the bytes
-    # at a sha, so it is cached alongside the content it came from.
-    def parse(text) = ParsedSource.blocks(text, user_id: cache_scope)
+    # parse is the page's largest single cost and a near-pure function of the
+    # bytes at a sha, so it is cached alongside the content it came from.
+    def parse(text, images:) = ParsedSource.blocks(text, user_id: cache_scope, images: images)
+
+    # Each side resolves its images against its own ref and its own directory,
+    # which is the only arrangement that gets the awkward cases right. A removed
+    # strip is base-side content: the picture it references was deleted by this
+    # pull request too, so it exists at the base sha and nowhere else. A rename
+    # moves the file, and with it the directory every relative path in it is
+    # measured from.
+    def head_images = images_for(file.path, pull_request.head_sha)
+
+    def base_images = images_for(file.base_path, pull_request.base_sha)
+
+    # Nil rather than an unusable resolver, so a document whose images cannot
+    # be resolved is cached under the same key it always was.
+    def images_for(at_path, ref)
+      images = RepoImages.new(owner: owner, repo: repo, ref: ref, dir: at_path)
+      images if images.usable?
+    end
 
     # A test may hand us a double instead of a real client; an unscoped cache
     # is still correct (the key is the content's own digest), so this shrugs

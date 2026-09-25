@@ -64,6 +64,20 @@ Rails.application.routes.draw do
     # one page. `PullRequestFilesController#index`.
     get "pulls/:number/markdown", to: "pull_request_files#index", as: :pull_markdown
 
+    # The image proxy: one blob in this repository, at one commit, fetched with
+    # the signed-in user's token and streamed back. Every `<img>` in a rendered
+    # Markdown file points here — see RepoImagesController for why a proxy is
+    # the only way a private repository's images can load at all.
+    #
+    # GitHub's own URL for the same bytes is /:owner/:repo/raw/:ref/:path, so
+    # this is that path, with two constraints doing real work: `:ref` is a
+    # commit sha and nothing else (a branch name would be ambiguous against the
+    # path that follows it, and a sha is what makes the response immutable), and
+    # `format: false` keeps ".png" part of the path rather than a response
+    # format.
+    get "raw/:ref/*path", to: "repo_images#show", as: :raw, format: false,
+        constraints: { ref: /\h{40}/ }
+
     # The old per-file screen's URL. Kept alive as a redirect into the
     # Markdown tab's anchor for that file, so links from before the tab
     # existed still land on the right place. `format: false` keeps ".md" as

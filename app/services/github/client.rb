@@ -145,6 +145,29 @@ module Github
       end
     end
 
+    # The same bytes as `file_content`, unmolested, for the image proxy.
+    #
+    # It is a separate method rather than a flag because the difference is not a
+    # detail: `file_content` scrubs its answer into valid UTF-8, which is what
+    # makes a Markdown file with a stray byte in it still render, and which
+    # would quietly corrupt every PNG it touched. Octokit hands the raw body
+    # back tagged UTF-8 regardless of what is in it, so the tag is corrected
+    # here; the bytes themselves arrive intact.
+    #
+    # Deliberately not cached. Every other read in this class is small and
+    # re-read constantly; an image is neither, and Rails.cache is a MemoryStore
+    # in both development and production, shared with the parsed-Markdown cache
+    # that the review screen's speed actually depends on. A few megabytes of
+    # screenshots would evict the thing worth keeping. The URL these bytes are
+    # served at names a commit, so the reader's own browser caches them
+    # permanently instead — see RepoImagesController.
+    def blob(owner, name, path, ref:)
+      body = get(contents_path(owner, name, path), ref: ref, accept: RAW_MEDIA_TYPE)
+      body.to_s.dup.force_encoding(Encoding::BINARY)
+    rescue NotFound
+      nil
+    end
+
     # Never cached: a review the user just submitted must show up immediately.
     def reviews(owner, name, number)
       get("#{repo_path(owner, name)}/pulls/#{number}/reviews", per_page: PER_PAGE)

@@ -1483,8 +1483,14 @@
     @apply border-t border-line px-3 py-2 align-top text-ink-soft;
   }
 
+  /* `max-w-full h-auto` is not decoration. Until the image proxy landed every
+     relative image in a document was a broken icon 20px wide, so nothing ever
+     tested what a real 1600px screenshot does to the reading column: it pushes
+     the page sideways and takes the phone layout with it. `h-auto` is there
+     because an `<img>` carrying only a `width` attribute would otherwise keep
+     its intrinsic height and distort. */
   .md-prose img {
-    @apply rounded-lg border border-line;
+    @apply max-w-full h-auto rounded-lg border border-line;
   }
 
   .md-prose details {
