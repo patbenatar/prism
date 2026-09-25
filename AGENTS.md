@@ -82,7 +82,9 @@ Postgres, and no worker service — Solid Queue runs inside Puma
 | | |
 | --- | --- |
 | Service | `prism` (`srv-dao9ebv40ujc73ee3kk0`), Oregon, Starter |
-| URL | https://prism-sgr2.onrender.com |
+| URL | https://throughprism.dev (the Render service also answers on
+  `https://prism-sgr2.onrender.com`, but that origin is **not** what production
+  is configured with — see `PRISM_PUBLIC_URL` below) |
 | Database | Neon project `prism` (`wild-flower-62955027`), `aws-us-west-2` |
 | Deploys | Automatic on every push to `main` |
 
@@ -93,6 +95,15 @@ service needs. Three things are worth knowing before touching production:
   throwaway development values committed to a public-ish repo. Production has
   its own set, generated with `bin/rails db:encryption:init`. Rotating them
   makes every stored GitHub token unreadable, which signs everyone out.
+- **Running anything that writes to GitHub out of band needs `PRISM_PUBLIC_URL`
+  from production, not from `.env`.** A one-off `bin/rails runner` against the
+  production database picks up the *local* environment for everything ENV
+  supplies. `.env` ships it blank, which fails loudly; a tunnel hostname left
+  over from webhook testing would not — it would write a dead localhost link
+  into somebody's pull request description, where it outlives the merge.
+  Production's value is `https://throughprism.dev`. The same applies to
+  `PRISM_ANNOUNCEMENT_TARGET`, which is unset in production and falls through
+  to `description`.
 - **`PRISM_PUBLIC_URL` is not cosmetic.** Webhook callbacks are registered
   against it, and the review links Prism writes into pull request descriptions
   are built from it — those links outlive the merge, so changing the origin
