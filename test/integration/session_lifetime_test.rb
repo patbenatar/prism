@@ -90,4 +90,79 @@ class SessionLifetimeTest < ActionDispatch::IntegrationTest
     assert_nil session[:user_id]
     assert_nil @user.reload.access_token
   end
+
+  # ── The GitHub side of the session ─────────────────────────────────────
+  #
+  # The cookie above was never the thing that broke. Prism's production OAuth
+  # App issues an eight-hour access token, and what used to happen at hour
+  # nine was that the cookie stayed perfectly valid while every GitHub call
+  # behind it started failing — a signed-in person looking at an error page.
+
+  test "signing in stores the refresh token and the expiry GitHub quoted" do
+    sign_in_as(@user, expiring: true, refresh_token: "ghr_from_sign_in")
+
+    @user.reload
+    assert_equal "ghr_from_sign_in", @user.refresh_token
+    assert @user.refreshable?
+    assert_in_delta 8.hours.from_now, @user.access_token_expires_at, 60
+  end
+
+  test "browsing nine hours after signing in renews the token instead of ending the session" do
+    sign_in_as(@user, token: "gho_first", expiring: true, refresh_token: "ghr_first")
+
+    travel_to 9.hours.from_now do
+      WebMock.reset!
+      stub_github_token_refresh(access_token: "gho_second", refresh_token: "ghr_second")
+      stub_github_get("/user/repos", fixture: :repos)
+
+      get repos_path
+
+      assert_response :success, "an expired GitHub token must not be the end of the session"
+      assert_equal @user.id, session[:user_id]
+    end
+
+    @user.reload
+    assert_equal "gho_second", @user.access_token
+    assert_equal "ghr_second", @user.refresh_token
+  end
+
+  # The one case that still ends a session — and it has to, because there is
+  # nothing left to renew with.
+  test "a refresh token GitHub has finished with signs the user out" do
+    sign_in_as(@user, expiring: true)
+
+    travel_to 9.hours.from_now do
+      WebMock.reset!
+      stub_github_token_error("bad_refresh_token")
+
+      get repos_path
+
+      assert_redirected_to sign_in_path
+      assert_nil session[:user_id]
+    end
+
+    @user.reload
+    assert_nil @user.access_token
+    assert_nil @user.refresh_token
+  end
+
+  # GitHub's token endpoint being unreachable is an outage, not a verdict.
+  # Signing everyone out over it would be the old bug wearing a new hat.
+  test "GitHub being unreachable while renewing does not sign anybody out" do
+    sign_in_as(@user, expiring: true, refresh_token: "ghr_intact")
+
+    travel_to 9.hours.from_now do
+      WebMock.reset!
+      stub_github_token_unavailable(status: 503)
+
+      get repos_path
+
+      assert_response :service_unavailable
+      assert_equal @user.id, session[:user_id]
+    end
+
+    @user.reload
+    assert @user.token?
+    assert_equal "ghr_intact", @user.refresh_token
+  end
 end

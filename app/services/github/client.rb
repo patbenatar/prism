@@ -425,9 +425,18 @@ module Github
     # unaffected, so the repo and pull request lists still return one page and
     # let the caller decide whether to ask for more. Without this flag
     # Octokit#paginate silently returns only the first page.
+    #
+    # Built lazily, and that laziness is load-bearing now that building it can
+    # renew a credential: Authentication#github constructs a client for every
+    # request whether or not the page goes near GitHub, and a request that
+    # never asks GitHub anything must not spend a refresh token.
+    #
+    # Github::Credentials is why every caller gets always-on auth for free —
+    # a browser request, a webhook delivery and a reconciliation pass all
+    # arrive here, so none of them needs to know that tokens expire.
     def octokit
       @octokit ||= Octokit::Client.new(
-        access_token: user.access_token,
+        access_token: Github::Credentials.token_for(user),
         per_page: PER_PAGE,
         auto_paginate: true
       )
@@ -481,32 +490,90 @@ module Github
 
     # Normalizes Octokit and Faraday failures into the Github::Error hierarchy so
     # controllers rescue one vocabulary and never see an HTTP status.
+    #
+    # ## A 401 now means "try renewing" before it means "sign out"
+    #
+    # With expiring tokens the overwhelmingly common 401 is simply an eight-
+    # hour token that ran out — including one that ran out mid-request, after
+    # Github::Credentials had already judged it fresh. So a 401 gets exactly
+    # one shot at a refresh and a replay before it is allowed to mean what it
+    # used to.
+    #
+    # Exactly one, on purpose. Two 401s in a row with a token GitHub itself
+    # just minted is not a race, it is a revoked grant, and retrying it is how
+    # you write a loop. `Github::Unauthorized` is in the rescue list as well
+    # as `Octokit::Unauthorized` because Github::GraphQL raises the former
+    # directly for an UNAUTHORIZED error inside an HTTP 200.
+    #
+    # Replaying the block is safe because a 401 means GitHub did nothing:
+    # there is no write to duplicate.
     def translate_errors
-      yield
-    rescue Octokit::Unauthorized => error
-      raise Unauthorized.new(github_message(error), **error_details(error))
-    rescue Octokit::TooManyRequests, Octokit::AbuseDetected => error
-      raise rate_limited(error)
-    rescue Octokit::Forbidden => error
-      raise Forbidden.new(github_message(error), **error_details(error))
-    rescue Octokit::NotFound => error
-      raise NotFound.new(github_message(error), **error_details(error))
-    rescue Octokit::UnprocessableEntity => error
-      raise unprocessable(error)
-    rescue Octokit::ClientError => error
-      # Octokit only recognizes a rate limit when GitHub answers 403 with the
-      # right words in the body; a bare 429 — which GitHub does send for
-      # secondary limits — arrives as a generic client error. That is the
-      # difference between "wait and try again" and "give up", which matters
-      # most in a background job, where giving up is silent. Everything else
-      # keeps its existing behaviour.
-      raise rate_limited(error) if error.response_status == 429
+      attempts = 0
 
-      raise
-    rescue Octokit::ServerError => error
-      raise Unavailable.new(github_message(error), **error_details(error))
-    rescue Faraday::ConnectionFailed, Faraday::TimeoutError, Faraday::SSLError => error
-      raise Unavailable.new(error.message)
+      begin
+        yield
+      rescue Octokit::Unauthorized => error
+        attempts += 1
+        retry if attempts == 1 && renew_credentials!
+
+        raise Unauthorized.new(github_message(error), **error_details(error))
+      rescue Github::Unauthorized
+        attempts += 1
+        retry if attempts == 1 && renew_credentials!
+
+        raise
+      rescue Octokit::TooManyRequests, Octokit::AbuseDetected => error
+        raise rate_limited(error)
+      rescue Octokit::Forbidden => error
+        raise Forbidden.new(github_message(error), **error_details(error))
+      rescue Octokit::NotFound => error
+        raise NotFound.new(github_message(error), **error_details(error))
+      rescue Octokit::UnprocessableEntity => error
+        raise unprocessable(error)
+      rescue Octokit::ClientError => error
+        # Octokit only recognizes a rate limit when GitHub answers 403 with the
+        # right words in the body; a bare 429 — which GitHub does send for
+        # secondary limits — arrives as a generic client error. That is the
+        # difference between "wait and try again" and "give up", which matters
+        # most in a background job, where giving up is silent. Everything else
+        # keeps its existing behaviour.
+        raise rate_limited(error) if error.response_status == 429
+
+        raise
+      rescue Octokit::ServerError => error
+        raise Unavailable.new(github_message(error), **error_details(error))
+      rescue Faraday::ConnectionFailed, Faraday::TimeoutError, Faraday::SSLError => error
+        raise Unavailable.new(error.message)
+      end
+    end
+
+    # Spend the refresh token, and say whether the caller now holds something
+    # different to retry with.
+    #
+    # False rather than an exception for "there is nothing to renew" and for
+    # "the renewal produced the same token", because both mean the 401 stands
+    # and the caller should translate it as it always did. A refresh token
+    # GitHub has finished with raises Github::Unauthorized from here, which is
+    # the right answer for the request too — it is the one 401 that genuinely
+    # means sign in again.
+    #
+    # `used` is read off the Octokit client rather than the user row so that
+    # it is the token the failed request actually carried. That is what
+    # Github::Credentials compares against to spot a concurrent refresh that
+    # already fixed this.
+    def renew_credentials!
+      return false unless user&.refreshable?
+
+      used = @octokit&.access_token
+      renewed = Github::Credentials.refresh(user, used: used)
+      return false if renewed.blank? || renewed == used
+
+      # Both hold the dead token. Github::GraphQL wraps the Octokit
+      # connection, so dropping one without the other would replay the
+      # request with the credential that just failed.
+      @octokit = nil
+      @graphql = nil
+      true
     end
 
     def error_details(error)

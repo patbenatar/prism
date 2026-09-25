@@ -205,8 +205,16 @@ class WebhookSubscription < ApplicationRecord
   # `suspended` is deliberately included: a suspended subscription is exactly
   # one we should keep trying. `broken` is not.
   #
-  # The token can also be revoked without anyone telling us; User#revoke_token!
-  # clears it the moment GitHub answers 401 anywhere in the app.
+  # An expired access token is still a token, and deliberately so: since
+  # Github::Credentials, the job that acts on this subscription renews it on
+  # its way past and GitHub never sees the expired one. So the commonest
+  # credential failure now fixes itself on the next delivery or the next
+  # scheduled reconciliation pass, with nobody signing in.
+  #
+  # What clears this is the failure a refresh cannot reach — a revoked grant,
+  # or a refresh token GitHub has finished with. User#revoke_token! empties
+  # the row only once renewing has been tried and refused, and from there a
+  # fresh sign-in is genuinely the fix.
   def actable? = !broken? && user&.token?
 
   # GitHub is still POSTing to an address Prism no longer answers on.

@@ -15,19 +15,31 @@ for two repositories failed for ~14 hours; one subscription reached
 `WebhookSubscription::MAX_CONSECUTIVE_FAILURES` and is permanently `broken`. Signing in again fixed
 it.
 
+> ## ⚠️ Read §9 first — the premise of §1 was wrong
+>
+> This document was written to answer "why did a token that does not expire start returning 401?"
+> That question had a false premise. **Prism's production OAuth App has "Expire user authorization
+> tokens" switched on**, so it was never issuing non-expiring tokens: every sign-in produced an
+> eight-hour access token, and the token in the incident had simply run out. §1 enumerates a dozen
+> ways a token can be revoked and none of them happened.
+>
+> The evidence, and what Prism now does about it, is in **[§9](#9-what-actually-happened-expiry-was-on-the-whole-time)**.
+> Everything in §1 and §3–§8 remains accurate as research and still describes real failure modes.
+> Decision #3 below has been reversed.
+
 ---
 
 ## Decisions & recommendations
 
 | # | Decision | Rationale |
 |---|---|---|
-| 1 | **Register a GitHub App *alongside* the existing OAuth App, and use it for webhooks only** | An installation access token is minted from the app's own private key. It needs no human session, no stored user token, and cannot be revoked by anything a user does short of uninstalling. This is the only documented mechanism that removes the person from the loop. |
+| 1 | **Register a GitHub App *alongside* the existing OAuth App, and use it for webhooks only** | An installation access token is minted from the app's own private key. It needs no human session, no stored user token, and cannot be revoked by anything a user does short of uninstalling. This is the only documented mechanism that removes the person from the loop. **Still open, and much less urgent since §9**: refresh now keeps a subscriber's token alive without them, so the remaining argument for this is attribution and independence from any one human's grant, not uptime. |
 | 2 | **Do not migrate sign-in and browsing to the GitHub App** (yet) | A GitHub App user access token "can only access resources in an account where it is installed." Prism's product is "pick any repo you can see." Migrating sign-in converts that into "pick any repo in an account where an org owner installed Prism." That is the single biggest risk in this document — §6.2. |
-| 3 | **Do not adopt OAuth App expiring tokens + refresh** | They now exist (§2 — this corrects `github-api.md` §1.3 and my own prior assumption), but they solve a problem Prism does not have. The token did not expire; it was revoked. Adding refresh converts a stable credential into an 8-hour one that two processes must race to renew, with single-use refresh tokens. Strictly worse. |
+| 3 | ~~**Do not adopt OAuth App expiring tokens + refresh**~~ → **REVERSED. Prism captures and uses the refresh token.** | The reasoning was "refresh solves expiry, and expiry is not the problem." Expiry *was* the problem, and had been all along — see §9. The costs the original entry listed are real and were paid rather than avoided: the concurrent-refresh race is handled with a row lock, and losing that race means reading the winner's token rather than spending a dead one. |
 | 4 | **Announcement edits become `prism[bot]`, not the subscriber** | Unavoidable consequence of #1, and arguably an improvement. `docs/webhooks.md` §Identity and the copy on `/subscriptions` both become wrong and must be rewritten. |
 | 5 | **Keep every *user-driven* write on the user's OAuth token** | Review comments, reviews, resolves and reactions are the human's, and should stay attributed to the human. Nothing about #1 touches them. |
-| 6 | **Before any of this: read the security log** | `https://github.com/settings/security-log?q=action%3Aoauth_authorization` names the actual cause of the incident (§1.9). Every remedy below is sound regardless, but the log turns §1's enumeration into a single answer. |
-| 7 | **Revisit `broken` as a terminal state** | Independent of auth. A subscription that GitHub refused 20 times in 14 hours is not evidence that nobody is coming back — it is evidence that deliveries are frequent. §7.3. |
+| 6 | ~~**Before any of this: read the security log**~~ → **Done, and it is what settled §9.** | The log shows **no `oauth_authorization.destroy`** around either failure. Nothing was revoked. Expiry is not revocation and leaves no entry, which is exactly why the log was silent. |
+| 7 | **Revisit `broken` as a terminal state** | Independent of auth. A subscription that GitHub refused 20 times in 14 hours is not evidence that nobody is coming back — it is evidence that deliveries are frequent. §7.3. Shipped: `GIVE_UP_AFTER` is now a measure of time. |
 
 ---
 
@@ -229,21 +241,29 @@ that matter:
   access token will no longer work." An invalid or expired one yields `bad_refresh_token`, and "you
   must send the user through the web application flow or device flow again."
 
-**Why Prism should nonetheless not do this.** Refresh solves *expiry*. Nothing in §1 is expiry.
-Every cause in §1 kills a refreshed token exactly as dead as an unexpiring one, and the refresh
-token along with it. Meanwhile the costs are real and they land on the part of the system that is
-already fragile:
+~~**Why Prism should nonetheless not do this.**~~ **This argument was wrong, and §9 says why.** It is
+kept verbatim below because the costs it lists are real, were paid rather than dodged, and name the
+exact traps the implementation had to handle:
 
-- Prism would have two processes that both hold the token — Puma and the Solid Queue worker (which
-  is *in* Puma in production, but a separate container in development). Single-use refresh tokens
-  mean a concurrent refresh loses the race and destroys a working credential. Doing this safely
-  needs a row lock around refresh, retry on `bad_refresh_token`, and a plan for what a background
-  job does when it loses.
-- It converts a credential that survives indefinitely into one that must be renewed three times a
-  day forever, to fix a failure mode that occurred once and was not expiry.
+> Refresh solves *expiry*. Nothing in §1 is expiry. Every cause in §1 kills a refreshed token
+> exactly as dead as an unexpiring one, and the refresh token along with it. Meanwhile the costs are
+> real and they land on the part of the system that is already fragile:
+>
+> - Prism would have two processes that both hold the token — Puma and the Solid Queue worker (which
+>   is *in* Puma in production, but a separate container in development). Single-use refresh tokens
+>   mean a concurrent refresh loses the race and destroys a working credential. Doing this safely
+>   needs a row lock around refresh, retry on `bad_refresh_token`, and a plan for what a background
+>   job does when it loses.
+> - It converts a credential that survives indefinitely into one that must be renewed three times a
+>   day forever, to fix a failure mode that occurred once and was not expiry.
+>
+> Enabling `offline_access` would be worth revisiting *only* as part of a deliberate rotation
+> policy, not as a fix for this incident.
 
-Enabling `offline_access` would be worth revisiting *only* as part of a deliberate rotation policy,
-not as a fix for this incident.
+The first bullet was an accurate description of the hard part and is answered in §9.3. The second
+bullet's premise — "a credential that survives indefinitely" — is the false one: Prism never had
+one. The choice was never "stable credential or an eight-hour one"; it was "an eight-hour one we
+renew, or an eight-hour one we don't".
 
 ---
 
@@ -706,6 +726,79 @@ better than tidiness to ask every user to get their org owner's approval.
    every new call — the JWT exchange, the installation token mint, and the `PATCH`. Stub the token
    mint with a near-future `expires_at` and assert the client re-mints rather than reusing a stale
    one; that cache is where this will break in production if it breaks anywhere.
+
+---
+
+## 9. What actually happened: expiry was on the whole time
+
+Written 2026-09-25, after §1–§8. This section supersedes the premise of §1 and reverses decision #3.
+
+### 9.1 The finding
+
+**Prism's production OAuth App has "Expire user authorization tokens" enabled.** GitHub therefore
+issues an **eight-hour access token and a six-month refresh token** on every sign-in (§2 documents
+the mechanism; what was not known when §2 was written is that it was already switched on).
+
+`User.from_omniauth` stored `credentials.token` and nothing else. There was no `refresh_token`
+column and no expiry column, so **the refresh token was discarded at every sign-in**. Every user was
+signed out of GitHub's view eight hours after signing in, whatever their session cookie said, and
+every background job acting as them 401'd for the rest of the day.
+
+### 9.2 The evidence
+
+Three independent pieces, and the arithmetic is what settles it:
+
+1. **2026-09-24.** A token issued around **07:28 PDT** would expire at **15:28 PDT**.
+   `useonward/onward`'s `failing_since` is **15:28:59 PDT**. That is a match to the minute, and
+   nothing in §1 produces a failure that lands on an eight-hour boundary.
+2. **2026-09-25.** Signed in at **06:24 PDT**; the token verified working at ~**13:30**; dead by
+   **14:57** with `401 Bad credentials`. Eight hours from 06:24 is 14:24.
+3. **The security log is silent.** `?q=action%3Aoauth_authorization` shows **no
+   `oauth_authorization.destroy`** for either window. §1 reads that silence as "no revocation",
+   which was correct — and useless, because **expiry is not revocation and produces no log entry at
+   all**. Decision #6 was the right instinct applied to the wrong hypothesis.
+
+The tell that was missed for two days: §1 asked "who revoked it?" and never asked whether the app
+was configured the way `github-api.md` §1.3 assumed. It was not, and nothing in the codebase would
+have shown it — the setting lives in a GitHub settings page, not in anything Prism can read.
+
+### 9.3 What Prism does now
+
+| | |
+|---|---|
+| Capture | `User.from_omniauth` stores `credentials.refresh_token` and `credentials.expires_at`. `refresh_token` is encrypted at rest exactly as `access_token` is. |
+| Ask for it | `config/initializers/omniauth.rb` requests `offline_access` alongside the real scopes, so an expiring token and a refresh token arrive **whether or not** the app-wide setting is on. This is what stops development and production differing. |
+| Renew | `Github::Credentials.token_for(user)` — called from `Github::Client#octokit`, so every caller in the app gets it. Renews when the token is expired or within `REFRESH_MARGIN` (5 minutes) of expiry. |
+| Renew on a 401 | `Github::Client#translate_errors` renews once and replays the request. A 401 means GitHub did nothing, so there is no write to duplicate. Exactly once: a second 401 with a token GitHub minted seconds ago is a revoked grant, and retrying it is a loop. |
+| Concurrency | `user.with_lock` — `SELECT … FOR UPDATE` — around the exchange. The loser blocks, then re-reads the row it holds the lock on and finds the winner's token already committed, so it never spends the dead single-use refresh token. Tested with two real threads and two real connections in `Github::CredentialsConcurrencyTest`. |
+| Refusal vs. outage | Only `bad_refresh_token` and `invalid_grant` end a grant. Everything else — a 5xx, a timeout, unparseable JSON, and `incorrect_client_credentials` above all — raises `Github::Unavailable`, which signs nobody out. A wrong client secret in a deploy must not sign out every user in the system. |
+| Sign-out | `User#revoke_token!` now clears the access token, the refresh token, the expiry and the scopes together. A refresh token left beside a cleared access token would be spent and refused on every subsequent request. |
+| Webhooks | Unchanged in shape and fixed in effect. `WebhookSubscription#actable?` is still `!broken? && user&.token?`; an expired token is still a token, and the delivery renews it on the way past. A subscription suspended over an expired token now recovers on the next delivery *or* on the next `ReconcileAllJob` pass, with nobody signing in. |
+| Dormant users | The two-hourly reconciliation pass makes a GitHub call as every subscriber, which spends and rotates their refresh token. That is what keeps a subscriber who never opens Prism from hitting the six-months-without-use expiry. |
+
+### 9.4 What did *not* change, and why
+
+- **No proactive refresh job.** Renewal is lazy, at the moment a GitHub call is made. A background
+  sweep would spend refresh tokens on behalf of people who are not using Prism, for no benefit — the
+  reconciliation pass already covers the only dormant case that matters (§9.3, last row).
+- **No clock comparison with GitHub.** `access_token_expires_at` is *our* clock plus the
+  `expires_in` duration GitHub quoted, so comparing it to `Time.current` compares our clock with
+  itself. The equality trick in `Webhooks::Reconciler#settled?` (PR #35) exists because *that*
+  comparison was ours-against-GitHub's; it does not apply here, and a margin is the right tool
+  instead. Five minutes out of eight hours costs one extra refresh a day.
+- **Rows with no refresh token behave exactly as before.** Every user predating this, and every
+  sign-in through an OAuth App with expiry off, has `refreshable? == false`: nothing is renewed,
+  nothing is written, and a 401 means what it always meant. A sign-in is the migration.
+
+### 9.5 What this leaves open
+
+- **The refresh token still expires after six months without use.** A user who neither visits Prism
+  nor has a watched repository for six months signs in again. Unavoidable through an OAuth App.
+- **Every cause in §1 remains real.** A revoked grant kills a refreshed token exactly as dead, and
+  takes the refresh token with it. §1 is still the right list to read when a 401 is *not* expiry —
+  which, now, is the only kind left.
+- **Decision #1 (a GitHub App for webhooks) is still open** and now stands or falls on attribution
+  and independence from any one human's grant, not on uptime.
 
 ---
 

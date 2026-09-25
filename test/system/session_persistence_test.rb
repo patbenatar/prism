@@ -43,4 +43,29 @@ class SessionPersistenceTest < ApplicationSystemTestCase
     assert_selector "[data-testid=repo-list]"
     assert_no_current_path sign_in_path
   end
+
+  # The other half of "staying signed in", and the half that was actually
+  # broken. Prism's OAuth App hands out an eight-hour GitHub token, so a
+  # reviewer who signed in before lunch used to find every page failing by
+  # mid-afternoon while the cookie above sat there perfectly valid. Driven
+  # through the browser because that is the only way to prove the person sees
+  # a working page rather than an exception the integration tests translate.
+  test "an expired GitHub token is renewed behind the scenes and the reviewer never notices" do
+    sign_in_as(@user, token: "gho_before_lunch", expiring: true, refresh_token: "ghr_before_lunch")
+    assert_selector "[data-testid=repo-list]"
+
+    travel_to 9.hours.from_now do
+      stub_github_token_refresh(access_token: "gho_after_lunch", refresh_token: "ghr_after_lunch")
+
+      visit repos_path
+
+      assert_selector "[data-testid=repo-list]", wait: 5
+      assert_no_current_path sign_in_path
+      assert_no_text "Sign in with GitHub to continue"
+    end
+
+    @user.reload
+    assert_equal "gho_after_lunch", @user.access_token
+    assert_equal "ghr_after_lunch", @user.refresh_token, "the spent refresh token must not survive"
+  end
 end

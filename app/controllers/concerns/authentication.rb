@@ -17,8 +17,14 @@ module Authentication
 
     before_action :require_authentication
 
-    # A revoked or expired token can surface on any action, so handle it once
-    # here rather than in every controller.
+    # A revoked token can surface on any action, so handle it once here rather
+    # than in every controller.
+    #
+    # By the time a Github::Unauthorized reaches this, Github::Client has
+    # already tried renewing the token and either had nothing to renew with or
+    # been told by GitHub that the grant is over. An *expired* token no longer
+    # arrives here at all — it is replaced before the request is replayed. So
+    # this handler still means what it says: signing in again is the fix.
     rescue_from Github::Unauthorized, with: :handle_revoked_token
   end
 
@@ -84,8 +90,9 @@ module Authentication
     @github ||= Github::Client.new(current_user)
   end
 
-  # GitHub said the token is dead. Drop it so we never retry with it, end the
-  # session, and send the user back to sign in.
+  # GitHub said the token is dead and could not be renewed. Drop the whole
+  # grant so we never retry with it, end the session, and send the user back
+  # to sign in.
   def handle_revoked_token(error)
     current_user&.revoke_token!
     sign_out

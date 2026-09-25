@@ -244,6 +244,91 @@ class Webhooks::ProcessDeliveryJobTest < ActiveJob::TestCase
     assert_includes patched_body, MARKER_BEGIN, "the recovered delivery must do its actual work"
   end
 
+  # ── Recovery with nobody signing in ────────────────────────────────────
+  #
+  # The whole point of capturing the refresh token. Before it, an eight-hour
+  # token expiring at 15:28 meant every delivery for the rest of the day was
+  # refused and watching only came back when the subscriber happened to open
+  # Prism. Now the delivery renews the credential on its way past.
+
+  test "a delivery whose token expired renews it and does the work anyway" do
+    subscriber = @subscription.user
+    subscriber.update!(refresh_token: "ghr_old", access_token_expires_at: 1.minute.ago)
+    stub_github_token_refresh(access_token: "gho_renewed", refresh_token: "ghr_rotated")
+    stub_pull(body: "Docs.")
+    stub_patch
+
+    perform(action: "opened")
+
+    assert_token_refreshed
+    assert @subscription.reload.active?
+    assert_includes patched_body, MARKER_BEGIN
+    assert_equal "gho_renewed", subscriber.reload.access_token
+    assert_equal "ghr_rotated", subscriber.refresh_token
+  end
+
+  # No human anywhere in this test. The subscription was suspended while the
+  # token was refused, nobody signs in, and the next delivery is what puts it
+  # right — because the delivery renews the credential itself.
+  test "a subscription suspended for an expired token heals itself on the next delivery" do
+    subscriber = @subscription.user
+    subscriber.update!(refresh_token: "ghr_old", access_token_expires_at: 1.minute.ago)
+    @subscription.suspend!(Webhooks::SubscriberJob::TOKEN_REFUSED)
+
+    assert @subscription.reload.suspended?
+
+    stub_github_token_refresh(access_token: "gho_renewed")
+    stub_pull(body: "Docs.")
+    stub_patch
+
+    perform(action: "synchronize", delivery_id: "the-recovery")
+
+    assert @subscription.reload.active?
+    assert_equal 0, @subscription.consecutive_failures
+    assert_nil @subscription.failing_since
+    assert_includes patched_body, MARKER_BEGIN
+  end
+
+  # GitHub's token endpoint having a bad minute is not a verdict on anything.
+  # It must not suspend the subscription and it must not clear the credential;
+  # SubscriberJob's retry_on backs the whole job off instead.
+  test "an outage at the token endpoint retries rather than suspending or signing out" do
+    subscriber = @subscription.user
+    subscriber.update!(refresh_token: "ghr_old", access_token_expires_at: 1.minute.ago)
+    stub_github_token_unavailable(status: 503)
+
+    assert_enqueued_with job: Webhooks::ProcessDeliveryJob do
+      perform(action: "opened")
+    end
+
+    assert @subscription.reload.active?
+    assert_not @subscription.suspended?
+
+    subscriber.reload
+    assert subscriber.token?
+    assert subscriber.refreshable?, "an unreachable token endpoint must not cost anybody their refresh token"
+  end
+
+  # The one credential failure a refresh cannot fix. It must still land where
+  # it always did — suspended, not abandoned, fixable by signing in.
+  test "a refresh GitHub refuses suspends the subscription and needs a sign-in" do
+    subscriber = @subscription.user
+    subscriber.update!(refresh_token: "ghr_dead", access_token_expires_at: 1.minute.ago)
+    stub_github_token_error("bad_refresh_token")
+
+    perform(action: "opened")
+
+    assert @subscription.reload.suspended?
+    assert_not @subscription.broken?
+    assert_not subscriber.reload.token?
+    assert_not @subscription.actable?, "with no credential left there is nothing to act with"
+
+    User.from_omniauth(github_auth_hash(subscriber, token: "gho_after_sign_in", expiring: true))
+
+    assert @subscription.reload.active?
+    assert @subscription.actable?
+  end
+
   test "a subscription abandoned after a long outage stays abandoned" do
     @subscription.abandon!("the repository is gone")
 

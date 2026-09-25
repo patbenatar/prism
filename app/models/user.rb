@@ -12,6 +12,11 @@ class User < ApplicationRecord
   # encryption (the default) is right because we never query by it.
   encrypts :access_token
 
+  # The refresh token is the *longer-lived* crown jewel — it mints access
+  # tokens for six months without anybody being asked again — so it gets
+  # exactly the same treatment. See Github::Credentials for what spends it.
+  encrypts :refresh_token
+
   has_many :pinned_repos, dependent: :destroy
 
   # Repositories this person asked Prism to watch. Prism acts on GitHub as
@@ -35,6 +40,26 @@ class User < ApplicationRecord
   #
   # Note the scope lives under `extra`, not `credentials`: omniauth-github's
   # strategy exposes it as `extra.scope` from the token response.
+  #
+  # ## What `credentials` actually contains, and why both shapes matter
+  #
+  # omniauth-oauth2 builds it (strategies/oauth2.rb) as:
+  #
+  #   {"token" => …}
+  #   + "refresh_token" if the token expires *and* one came back
+  #   + "expires_at"    if the token expires
+  #   + "expires"       always, true or false
+  #
+  # So an OAuth App with "Expire user authorization tokens" **on** — which is
+  # what production is — yields `token`, `refresh_token`, `expires_at` (an
+  # Integer, unix epoch, our clock plus GitHub's `expires_in`) and
+  # `expires: true`. An OAuth App with it **off** yields `token` and
+  # `expires: false`, and nothing else. Development is a separate registration
+  # and may be either, which is precisely why both shapes have to work.
+  #
+  # A sign-in is authoritative about the credential, including when it says
+  # there is no refresh token: writing back what GitHub just handed us keeps
+  # the three columns describing one grant rather than a mixture of two.
   def self.from_omniauth(auth)
     user = find_or_initialize_by(github_id: dig_auth(auth, "uid").to_i)
 
@@ -42,6 +67,8 @@ class User < ApplicationRecord
     user.name = dig_auth(auth, "info", "name").presence
     user.avatar_url = dig_auth(auth, "info", "image")
     user.access_token = dig_auth(auth, "credentials", "token")
+    user.refresh_token = dig_auth(auth, "credentials", "refresh_token").presence
+    user.access_token_expires_at = parse_expires_at(dig_auth(auth, "credentials", "expires_at"))
     user.token_scopes = dig_auth(auth, "extra", "scope") || dig_auth(auth, "credentials", "scope")
     user.last_signed_in_at = Time.current
 
@@ -71,6 +98,22 @@ class User < ApplicationRecord
   end
   private_class_method :dig_auth
 
+  # omniauth hands this over as an Integer of unix seconds; a hand-built auth
+  # hash in a test may well use a Time, and a stray string should not raise on
+  # the sign-in path. Anything unreadable becomes nil, which simply means "we
+  # were not told when this expires" — the same as a non-expiring token.
+  def self.parse_expires_at(value)
+    case value
+    when nil then nil
+    when Numeric then Time.zone.at(value)
+    when Time, DateTime, ActiveSupport::TimeWithZone then value
+    else Time.zone.parse(value.to_s)
+    end
+  rescue ArgumentError, TypeError
+    nil
+  end
+  private_class_method :parse_expires_at
+
   def self.normalize_scopes(value)
     Array(value).flat_map { |part| part.to_s.split(/[,\s]+/) }
                 .map(&:strip)
@@ -90,9 +133,21 @@ class User < ApplicationRecord
 
   def token? = access_token.present?
 
-  # Called when GitHub answers 401: the token is dead and must never be retried.
+  # Can Prism get a working access token without this person being present?
+  #
+  # False for every row that predates expiring tokens and for every sign-in
+  # through an OAuth App that does not issue them — those behave exactly as
+  # they always have, which is the point.
+  def refreshable? = refresh_token.present?
+
+  # Called once GitHub has refused the token **and** there is no way left to
+  # renew it — either there never was a refresh token, or Github::Credentials
+  # spent it and GitHub said the grant is over. Only a fresh sign-in fixes it
+  # from here, so everything that made up the old grant goes together: a
+  # refresh token left behind next to a cleared access token would be spent on
+  # the next request and rejected all over again.
   def revoke_token!
-    update!(access_token: nil, token_scopes: nil)
+    update!(access_token: nil, refresh_token: nil, access_token_expires_at: nil, token_scopes: nil)
   end
 
   def display_name = name.presence || login

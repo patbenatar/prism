@@ -66,10 +66,19 @@ Deliberately tiny.
 ```
 users
   id, github_id (bigint, unique), login, name, avatar_url,
-  access_token (encrypted), token_scopes, last_signed_in_at, timestamps
+  access_token (encrypted), refresh_token (encrypted),
+  access_token_expires_at, token_scopes, last_signed_in_at, timestamps
 ```
 
 Session = Rails cookie session holding `user_id`. No `sessions` table for v1.
+
+The three token columns describe one OAuth grant and are written and cleared
+together. GitHub's access token lasts eight hours; `Github::Credentials` spends
+the refresh token to replace it whenever `Github::Client` is about to make a
+call with an expired one, so the cookie's thirty days is the only session
+lifetime anyone experiences. A row with a null `refresh_token` — anything from
+before this, or an OAuth App that does not expire tokens — is never renewed and
+behaves as it always did. See `docs/research/github-auth-longevity.md` §9.
 
 Everything else (repos, pull requests, files, comments, reviews, threads,
 collaborators) is fetched from GitHub on demand and cached in `Rails.cache`

@@ -38,6 +38,93 @@ class UserTest < ActiveSupport::TestCase
     assert_in_delta Time.current, user.last_signed_in_at, 5
   end
 
+  # ------------------------------------------- the two shapes of credentials ---
+  #
+  # Production's OAuth App expires tokens; the development registration is a
+  # different app and may not. Both shapes reach this method and both have to
+  # come out right, which is why these are two tests rather than one.
+
+  test "from_omniauth captures the refresh token and expiry an expiring app sends" do
+    auth = github_auth_hash(
+      User.new(github_id: 13_579, login: "expiring-erin", access_token: "gho_fresh"),
+      expiring: true, refresh_token: "ghr_fresh", expires_in: 28_800
+    )
+
+    user = User.from_omniauth(auth)
+
+    assert_equal "gho_fresh", user.access_token
+    assert_equal "ghr_fresh", user.refresh_token
+    assert user.refreshable?
+    assert_in_delta 28_800, user.access_token_expires_at - Time.current, 60
+  end
+
+  test "from_omniauth leaves a non-expiring app's user with nothing to refresh" do
+    auth = github_auth_hash(
+      User.new(github_id: 24_680, login: "forever-fran", access_token: "gho_forever"),
+      expiring: false
+    )
+
+    user = User.from_omniauth(auth)
+
+    assert_equal "gho_forever", user.access_token
+    assert_nil user.refresh_token
+    assert_nil user.access_token_expires_at
+    assert_not user.refreshable?
+    assert_not Github::Credentials.stale?(user)
+  end
+
+  # A sign-in is the authority on the credential. Keeping a refresh token from
+  # a grant that has just been replaced would leave the three columns
+  # describing two different grants.
+  test "from_omniauth replaces a stored refresh token with what this sign-in returned" do
+    existing = users(:prism_dev)
+    existing.update!(refresh_token: "ghr_from_the_old_grant", access_token_expires_at: 1.hour.from_now)
+
+    User.from_omniauth(github_auth_hash(existing, token: "gho_new", expiring: false))
+
+    existing.reload
+    assert_nil existing.refresh_token
+    assert_nil existing.access_token_expires_at
+  end
+
+  test "refresh_token is encrypted at rest, exactly like the access token" do
+    user = users(:prism_dev)
+    user.update!(refresh_token: "ghr_very_secret")
+
+    ciphertext = User.connection.select_value("SELECT refresh_token FROM users WHERE id = #{user.id}")
+
+    assert_equal "ghr_very_secret", user.reload.refresh_token
+    assert_no_match(/ghr_very_secret/, ciphertext.to_s)
+  end
+
+  # omniauth hands over an Integer of unix seconds; a hand-built hash might
+  # use anything. None of it may raise on the sign-in path.
+  test "from_omniauth reads an expiry in whatever form it arrives" do
+    at = 3.hours.from_now
+
+    [ at.to_i, at, at.iso8601 ].each do |value|
+      user = User.from_omniauth(
+        "uid" => "31337",
+        "info" => { "nickname" => "clocky" },
+        "credentials" => { "token" => "gho_x", "refresh_token" => "ghr_x", "expires_at" => value },
+        "extra" => { "scope" => "repo" }
+      )
+
+      assert_in_delta at.to_i, user.access_token_expires_at.to_i, 1, "failed for #{value.class}"
+    end
+  end
+
+  test "from_omniauth treats an unreadable expiry as no expiry rather than raising" do
+    user = User.from_omniauth(
+      "uid" => "31338",
+      "info" => { "nickname" => "nonsense" },
+      "credentials" => { "token" => "gho_x", "expires_at" => "not a time at all" },
+      "extra" => { "scope" => "repo" }
+    )
+
+    assert_nil user.access_token_expires_at
+  end
+
   test "from_omniauth matches on github_id, not login, so a rename updates in place" do
     existing = users(:prism_dev)
     auth = github_auth_hash(existing, token: "gho_rotated").tap do |hash|
@@ -87,14 +174,27 @@ class UserTest < ActiveSupport::TestCase
     assert_not users(:read_only).can_write_reviews?
   end
 
-  test "revoke_token! clears the token and its scopes" do
+  # Everything that made up the grant goes together. A refresh token left
+  # beside a cleared access token would be spent on the next request and
+  # refused all over again, which is a loop rather than a sign-out.
+  test "revoke_token! clears the whole grant, refresh token included" do
     user = users(:prism_dev)
+    user.update!(refresh_token: "ghr_dead", access_token_expires_at: 1.hour.from_now)
+
     user.revoke_token!
 
-    assert_nil user.reload.access_token
+    user.reload
+    assert_nil user.access_token
+    assert_nil user.refresh_token
+    assert_nil user.access_token_expires_at
     assert_nil user.token_scopes
     assert_not user.token?
+    assert_not user.refreshable?
     assert_not user.can_write_reviews?
+  end
+
+  test "refreshable? is false for a user who has never had an expiring token" do
+    assert_not users(:prism_dev).refreshable?
   end
 
   test "display_name falls back to the login" do

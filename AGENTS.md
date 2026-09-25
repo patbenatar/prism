@@ -61,13 +61,24 @@ dev values for everything except the two OAuth credentials.
 | Variable | Needed for | Notes |
 | --- | --- | --- |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Signing in | From your GitHub OAuth App. Blank is fine until you want to sign in. |
-| `AR_ENCRYPTION_PRIMARY_KEY` | `users.access_token` | Dev values are in `.env.example`. |
+| `AR_ENCRYPTION_PRIMARY_KEY` | `users.access_token` and `users.refresh_token` | Dev values are in `.env.example`. |
 | `AR_ENCRYPTION_DETERMINISTIC_KEY` | same | Generate a real set with `docker compose exec app bin/rails db:encryption:init`. |
 | `AR_ENCRYPTION_KEY_DERIVATION_SALT` | same | Read from ENV first, falling back to credentials, so CI and Docker work without sharing `config/master.key`. |
 | `PRISM_PUBLIC_URL` | Webhooks | The origin GitHub delivers to, and the origin the "review in Prism" link in a pull request description points at. Blank is fine — subscribing is simply unavailable. See `docs/webhooks.md`. |
 
-The GitHub OAuth token is encrypted at rest. Without the three encryption keys
-the app still boots, but signing in raises when it tries to store the token.
+The GitHub OAuth token is encrypted at rest, and so is the refresh token
+beside it. Without the three encryption keys the app still boots, but signing
+in raises when it tries to store them.
+
+**Tokens expire, and Prism renews them itself.** The OAuth App issues an
+eight-hour access token and a six-month refresh token;
+`Github::Credentials.token_for` swaps in a new one whenever
+`Github::Client` is about to make a call with an expired one, and again on a
+401. Nothing else in the app needs to know. `GITHUB_CLIENT_ID` /
+`GITHUB_CLIENT_SECRET` are therefore needed at *run* time, not only at
+sign-in — without them renewal raises `Github::Unavailable`, which
+deliberately signs nobody out. See `docs/research/github-auth-longevity.md`
+§9.
 
 ---
 
@@ -109,7 +120,13 @@ service needs. Three things are worth knowing before touching production:
   are built from it — those links outlive the merge, so changing the origin
   strands every link already posted.
 - **Production needs its own GitHub OAuth App**, separate from development,
-  with its callback set to `https://<service>/auth/github/callback`.
+  with its callback set to `https://<service>/auth/github/callback`. It has
+  **"Expire user authorization tokens" enabled**, which is why Prism captures
+  and spends a refresh token; the development registration may not, and the
+  code works either way because the authorization request asks for
+  `offline_access` explicitly. Nothing in production needs changing for
+  renewal to work — the client id and secret it already has are what mints the
+  new token.
 
 ---
 

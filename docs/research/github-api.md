@@ -14,7 +14,7 @@ Anything I could not verify from primary docs is marked **[UNVERIFIED]** with th
 |---|---|---|
 | 1 | **Build an OAuth App, not a GitHub App** | A GitHub App user access token "can only access resources in an account where it is installed." The product requirement is "let them pick *a* repository" from everything they can reach. A GitHub App would force an install on every org/user account first, and would silently hide repos. OAuth App tokens see exactly what the user sees. |
 | 2 | Scopes: **`repo`, `read:org`, `read:user`** | `repo` is the only scope that grants private-repo read **and** write of PR review comments. `read:org` is needed for org member listing (mentions) and for org repo visibility. `read:user` for the profile. |
-| 3 | Do **not** enable OAuth token expiration | Optional for OAuth Apps. Non-expiring tokens remove all refresh machinery. Store encrypted; handle 401 by re-running the OAuth dance. |
+| 3 | ~~Do **not** enable OAuth token expiration~~ **SUPERSEDED — production has it enabled, and Prism refreshes.** | This entry assumed the setting was ours to leave alone, and §1.3 below described the mechanism as hypothetical. Neither was true: the production OAuth App expires tokens after 8 hours, which is what was killing webhook deliveries daily. Prism now stores the refresh token and renews through `Github::Credentials`. See `github-auth-longevity.md` §9. |
 | 4 | **Octokit 10.0.0 for REST, and `client.post("/graphql", …)` for GraphQL** | Octokit has no GraphQL support, but `Octokit::Connection#post` sends its options hash as the JSON body to any path on `api.github.com`. No second HTTP client, no `graphql-client` gem. |
 | 5 | GraphQL is **required**, not optional | Thread grouping with `isResolved` / `isOutdated` / `viewerCanResolve`, and resolve/unresolve, exist **only** in GraphQL. REST gives you `in_reply_to_id` but no resolved state. |
 | 6 | **Commentable lines are strictly the lines present in the `patch` hunks** | Confirmed by three independent community reports of `422 "pull_request_review_thread.line must be part of the diff"`. The web UI can comment on expanded context; the REST *and* GraphQL APIs cannot. This is the single biggest constraint on the product. |
@@ -92,6 +92,12 @@ public repos only. `repo:status` is explicitly only for commit statuses.
 
 ### 1.3 Token lifetime
 
+> **Superseded, and this is the section that was load-bearing and wrong in practice.** Everything
+> below is accurate about the API. What it got wrong is the word "if": Prism's **production OAuth
+> App has expiration enabled**, so the "if you ever enable it" branch has been the live one since
+> before this was written. See `github-auth-longevity.md` §9 for the evidence and for what Prism
+> does now. The refresh call documented below is exactly what `Github::Credentials` makes.
+
 OAuth App tokens are long-lived unless you opt into expiration. From
 https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps: if expiring
 tokens are enabled, the token response also carries `refresh_token`, `expires_in` (28800 = 8 h) and
@@ -108,8 +114,9 @@ POST https://github.com/login/oauth/access_token
 ```
 (https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens)
 
-Tokens are also invalidated when the user revokes the app, or after ~1 year of non-use. Treat any
-`401` as "token dead, re-authenticate."
+Tokens are also invalidated when the user revokes the app, or after ~1 year of non-use. ~~Treat any
+`401` as "token dead, re-authenticate."~~ **A 401 now means "renew, then replay; and only if that
+is refused, re-authenticate"** — see `Github::Client#translate_errors`.
 
 ### 1.4 The OAuth web flow (what omniauth does for you)
 

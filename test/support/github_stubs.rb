@@ -172,6 +172,60 @@ module GithubStubs
     JSON.parse(signature.body.to_s)
   end
 
+  # ---------------------------------------------- OAuth token endpoint ---
+
+  # Not api.github.com: renewing a token happens on the web host, the same
+  # place omniauth exchanges the code during sign-in. See Github::Credentials.
+  OAUTH_TOKEN_URL = "https://github.com/login/oauth/access_token"
+
+  # A successful refresh. GitHub rotates the refresh token on every use, so
+  # the default answer hands back a different one — a test that asserts the
+  # *old* one was replaced is asserting the thing most likely to be got wrong.
+  def stub_github_token_refresh(access_token: "gho_refreshed", refresh_token: "ghr_rotated",
+                                expires_in: 28_800, refresh_token_expires_in: 15_897_600)
+    body = { "access_token" => access_token, "token_type" => "bearer",
+             "scope" => "repo,read:org,read:user" }
+    body["expires_in"] = expires_in if expires_in
+    body["refresh_token"] = refresh_token if refresh_token
+    body["refresh_token_expires_in"] = refresh_token_expires_in if refresh_token
+
+    stub_request(:post, OAUTH_TOKEN_URL).to_return(status: 200, body: body.to_json, headers: JSON_HEADERS)
+  end
+
+  # The trap this exists to exercise: GitHub answers a refused refresh with
+  # **HTTP 200** and an `error` key. A stub that returns 401 would let a
+  # status-code check pass a test it should fail.
+  def stub_github_token_error(error, description: nil, status: 200)
+    body = { "error" => error.to_s,
+             "error_description" => description || "The refresh token passed is incorrect or expired.",
+             "error_uri" => "https://docs.github.com/apps/oauth" }
+
+    stub_request(:post, OAUTH_TOKEN_URL).to_return(status: status, body: body.to_json, headers: JSON_HEADERS)
+  end
+
+  def stub_github_token_unavailable(status: 502, body: "<html>Bad gateway</html>")
+    stub_request(:post, OAUTH_TOKEN_URL).to_return(status: status, body: body)
+  end
+
+  def assert_token_refreshed(times: 1)
+    assert_requested(:post, OAUTH_TOKEN_URL, times: times)
+  end
+
+  def assert_no_token_refresh
+    assert_not_requested(:post, OAUTH_TOKEN_URL)
+  end
+
+  # Prism deployed without its OAuth App credentials. Renewing is impossible,
+  # and the interesting question is whether that ends anybody's session.
+  def without_oauth_app_credentials
+    previous = ENV.values_at("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET")
+    ENV["GITHUB_CLIENT_ID"] = ""
+    ENV["GITHUB_CLIENT_SECRET"] = ""
+    yield
+  ensure
+    ENV["GITHUB_CLIENT_ID"], ENV["GITHUB_CLIENT_SECRET"] = previous
+  end
+
   # ---------------------------------------------------------------- cache ---
 
   # The test environment uses a null store, which is right for most tests and
