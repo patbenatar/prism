@@ -971,13 +971,35 @@ reserve for a row's "+" is excluded at source
 override would have to win a specificity tie and §7 says not to bet on the
 compiler's order.
 
-`test/system/conversation_alignment_test.rb` measures the real left edge of
-every conversation on one page — paragraph, heading, nested list item, table
-row, multi-line block, file-level — at 1440 and 390, and separately asserts
-that the nested item's thread is still inside its own `<li>` and the row's is
-still in its continuation row. Both halves are the bug: one drifting left edge
-is the complaint above, and a thread that has left its anchor is worse than
-the indentation ever was.
+`test/system/conversation_alignment_test.rb` measures the real left and right
+edges of every conversation on one page — paragraph, heading, nested list
+item, table row, multi-line block, file-level, and the unanchored outdated
+thread — at 1440 and 390, and separately asserts that the nested item's thread
+is still inside its own `<li>` and the row's is still in its continuation row.
+Both halves are the bug: one drifting edge is the complaint above, and a
+thread that has left its anchor is worse than the indentation ever was.
+
+**What carries the anchoring, now that indentation does not.** The DOM
+position, which is what was carrying it all along. Two bullets at the same
+depth shared the same 48px indent, so indentation only ever said *a depth*,
+never *which element* — the thing that distinguished Nested item A's
+conversation from Nested item B's was that one appeared after A's text and one
+after B's. That is untouched, and the test above pins it. What a reader uses
+on the page is the same three things: the conversation is *inside* the list or
+the table, with the structure continuing above and below it; the block's
+change bar in the gutter spans the block and its conversations as one unit;
+and no two conversations can occupy the same position. The one case this
+leaves thinner than before is a conversation on the *last* item of a nested
+list, where the list resumes below it at a shallower indent and the reader
+reads the bullet above instead.
+
+**A hover link between a conversation and its anchor was considered and
+declined** (2026-09-26): highlighting the `<li>` or `<tr>` when its thread is
+hovered or focused would make the anchoring stronger than indentation ever
+made it, and it is cheap — `:has(:hover)` on `.md-child`, no JavaScript. It is
+not here because the anchoring holds without it and it is new interaction
+nobody asked for, added in the middle of fixing complaints about this
+component. If the question comes back, that is the answer to reach for.
 
 ### Where the band sits
 
@@ -1094,12 +1116,34 @@ pixel in one browser, and separately asserts that nothing inside the card being
 saved is focusable. That is the kind of regression every text-and-testid
 assertion passes straight through.
 
-The **outdated section** is deliberately outside all of this. It is not
-attached to a block — that is what makes it outdated — so there is nothing for
-a channel to connect it to, and it already announces itself as chrome with a
-bordered panel, an `Outdated` pill and a sentence. Its own panel supplies the
-padding the channel would have, so a thread sits in it correctly with no extra
-rule.
+The **outdated section** gets no channel. It is not attached to a block — that
+is what makes it outdated — so there is nothing for a channel to connect it
+to, and it already announces itself as chrome with a bordered panel, an
+`Outdated` pill and a sentence.
+
+**It takes the channel's geometry anyway.** `.outdated-panel` carries the same
+one-gutter inset as a channel and `.outdated-panel-row` the same inner
+padding, so a thread inside the panel starts on exactly the same left edge as
+a thread inside a well. That is not the same argument as the one above: an
+outdated thread has no element whose indentation it could inherit, so it was
+never part of the reported problem. It is a different argument, and it wins —
+a reader who sees one conversation sitting 40px left of every other
+conversation on the page does not think "ah, that one isn't anchored", they
+think it is a bug. Consistency down the page is the goal the complaint was
+reaching for, and the panel keeps its border, its pill and its sentence to say
+what it is.
+
+That mismatch hid for a while behind a measurement that compared a channel's
+*border* box against the panel's *content* box — 17px apart, so a 40px gap
+read as 23px. `conversation_alignment_test.rb` measures each `.thread`'s own
+box now, which is what a reader sees the comment start at and is the one
+comparison that is like for like whether or not there is a channel around it.
+It asserts a single left *and* right edge across all seven conversations at
+1440 and 390.
+
+`--channel-pad` is declared on `.outdated-panel-row` for the same reason it is
+declared on the channel: the state band is placed from it, so the panel's
+padding and the band's inset cannot drift apart.
 
 The **sign-in screen's sample review** (`sessions/new.html.erb`) renders a real
 `.md-threads` inside a real `.md-body.md-prose`, so it inherits all of this
@@ -1119,6 +1163,7 @@ above in one picture. If you change the channel, look at that screen too.
 | `.thread-resolved` / `.thread-resolved-actions` | The resolved thread's single row: the `<details>`, with Unresolve laid over the summary's line as a sibling rather than a child of either. The summary reserves `6.5rem` on its right for it. |
 | `.thread-summary` / `.thread-summary-toggle` | The resolved thread's disclosure line: the Resolved badge, any other badges, then the Show/Hide words. Two classes on the selector, like everything else in the "not prose" block — `.md-prose summary` is one class and one element, and the flex layout has to beat it as surely as the face does. |
 | `.md-child-slots` | The wrapper holding a child block's `.md-threads` and `.md-composer`, inside its own `<li>` or thread-row `<td>`. Carries `margin-left: calc(100% - 100cqw)`, which is the accumulated indent negated — see "One left edge for every conversation". |
+| `.outdated-panel` / `.outdated-panel-row` | The outdated section's bordered panel. Not a channel — an outdated thread has no block to be connected to — but it takes the channel's geometry (one-gutter inset, same inner padding, same `--channel-pad`) so the conversations in it share the page's one left edge. |
 | `.comment-card` | One comment: head, body, actions. No border and no side padding of its own. |
 | `.comment-head` / `.comment-author` | Avatar, login, relative time, pending/outdated pills, then `.comment-tools`. Wraps at phone width. |
 | `.comment-tools` / `.comment-icon` / `.comment-icon--danger` | The icon row in the top right: edit, delete, open on GitHub. 28px hit area, 16px stroke icon, `text-ink-faint` until hover. `--danger` only reddens on hover and focus. `button_to` wraps its button in a form, so `.comment-tools form` is `display: contents`. Every icon carries an `sr-only` name. |

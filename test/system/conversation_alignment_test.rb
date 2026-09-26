@@ -14,8 +14,14 @@ require "application_system_test_case"
 #
 # `.md-body` is a container query container now and `.md-child-slots` steps
 # back out by `100% - 100cqw` — the accumulated indent, negated, at any depth
-# and without anyone counting levels. This measures the real left edges in a
-# real browser, which is the only place that formula can be wrong.
+# and without anyone counting levels. This measures the real edges in a real
+# browser, which is the only place that formula can be wrong.
+#
+# The outdated thread is measured alongside the anchored ones even though it
+# is not in a channel at all. It sits in its own bordered panel, because it
+# has no block to be connected to — but a reader does not know that, and a
+# conversation 40px left of every other one reads as a bug rather than as
+# "this one has no anchor", so the panel takes the channel's geometry.
 class ConversationAlignmentTest < ApplicationSystemTestCase
   include FeatureHelpers
 
@@ -25,12 +31,14 @@ class ConversationAlignmentTest < ApplicationSystemTestCase
   PATH = "docs/guide.md"
   HEAD_SHA = FeatureHelpers::FEATURE_HEAD_SHA
 
-  # One anchor of every kind the app supports, on known lines.
-  #   3  paragraph
-  #   5  heading
-  #   8  a list item two levels deep
-  #  14  a table row
-  #  16  a multi-line block's last line
+  # One conversation of every kind the app renders. Five are anchored to a
+  # line in this document; the sixth is file-level and the seventh is outdated,
+  # which has no line left to be anchored to.
+  #   3      paragraph
+  #   5      heading
+  #  10      a list item two levels deep
+  #  16      a table row
+  #  18-19   a multi-line block
   DOC = <<~MD
     # Release notes
 
@@ -66,17 +74,23 @@ class ConversationAlignmentTest < ApplicationSystemTestCase
     sign_in_for_feature(@user)
   end
 
-  test "every conversation starts at the same left edge, whatever it is anchored to" do
+  test "every conversation shares one left and right edge, whatever it is anchored to" do
     [ [ 1440, 900 ], [ 390, 844 ] ].each do |width, height|
       resize_window(width, height)
       open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+      # The outdated panel is a closed <details>, so its thread has no layout
+      # box until it is opened.
+      first("[data-testid=outdated-threads] summary").click
 
-      edges = channel_left_edges
+      edges = thread_edges
 
-      assert_operator edges.size, :>=, 6,
-                      "only #{edges.size} conversations on the page at #{width}px: #{edges.inspect}"
-      assert_equal 1, edges.values.uniq.size,
+      assert_equal 7, edges.size,
+                   "expected one conversation of each anchor kind at #{width}px, got " \
+                   "#{edges.size}: #{edges.inspect}"
+      assert_equal 1, edges.values.map { |e| e["left"] }.uniq.size,
                    "at #{width}px the conversations start at different left edges: #{edges.inspect}"
+      assert_equal 1, edges.values.map { |e| e["right"] }.uniq.size,
+                   "at #{width}px the conversations end at different right edges: #{edges.inspect}"
     end
   end
 
@@ -110,16 +124,20 @@ class ConversationAlignmentTest < ApplicationSystemTestCase
 
   private
 
-  # The left edge of each conversation channel that has something in it, keyed
-  # by the thread inside it so a failure names which anchor drifted.
-  def channel_left_edges
+  # The `.thread` element's own box, not its container's.
+  #
+  # Measuring the container would compare a channel's *border* against the
+  # outdated panel's *content*, which are 17px apart — an apples-to-oranges
+  # comparison that hid a 40px mismatch until 2026-09-26. The thread's own box
+  # is what a reader sees the comment start at, and every conversation on the
+  # page has one whether or not it sits in a channel.
+  def thread_edges
     page.evaluate_script(<<~JS)
       (function () {
         var edges = {};
         document.querySelectorAll("[data-testid=thread]").forEach(function (thread) {
-          var channel = thread.closest(".md-threads, .file-threads-list");
-          if (!channel) return;
-          edges[thread.id] = Math.round(channel.getBoundingClientRect().left);
+          var r = thread.getBoundingClientRect();
+          edges[thread.id] = { left: Math.round(r.left), right: Math.round(r.right) };
         });
         return edges;
       })()
@@ -139,7 +157,15 @@ class ConversationAlignmentTest < ApplicationSystemTestCase
       feature_thread(node_id: "PRRT_multi", path: PATH, line: 19, start_line: 18,
                      comments: [ feature_comment(node_id: "PRRC_m", body: "On both quoted lines.") ]),
       feature_thread(node_id: "PRRT_file", path: PATH, subject_type: "FILE",
-                     comments: [ feature_comment(node_id: "PRRC_f", body: "On the file.") ])
+                     comments: [ feature_comment(node_id: "PRRC_f", body: "On the file.") ]),
+      # Not anchored to anything on the page, so it renders in the outdated
+      # panel rather than in a channel. It is in this list because a reader
+      # cannot tell that from looking: a conversation 40px left of every other
+      # one reads as a bug, not as "this one has no anchor".
+      feature_thread(node_id: "PRRT_outdated", path: PATH, line: nil, original_line: 42,
+                     outdated: true,
+                     comments: [ feature_comment(node_id: "PRRC_o", body: "No longer applies.",
+                                                 diff_hunk: "@@ -40,3 +40,3 @@\n-old\n+new") ])
     ]
   end
 
