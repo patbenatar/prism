@@ -1013,6 +1013,46 @@
     }
   }
 
+  /* ── The outdated panel ───────────────────────────────────────────────
+     An outdated thread is not attached to a block — that is what makes it
+     outdated — so it gets no channel, and its own bordered panel with an
+     `Outdated` pill and a sentence is what says so.
+
+     It still holds conversations, though, and a conversation sitting 40px
+     left of every other one on the page does not read as "this one isn't
+     anchored", it reads as a bug (2026-09-26). So the panel takes the
+     channel's *geometry* without becoming one: the same one-gutter inset and
+     the same inner padding, which puts a thread inside it on exactly the same
+     left edge as a thread inside a well — its border lands where a well's
+     border lands, and its padding is a well's padding, so the two agree at
+     both edges at 1440 and on the left at 390 (where the channel gives up its
+     right margin and the panel cannot, because it has a border to draw).
+
+     `--channel-pad` is declared here for the same reason it is declared on
+     the channel: the state band beside a thread is placed from it, so the
+     panel's padding and the band's inset cannot drift apart. */
+  .outdated-panel {
+    margin-left: var(--gutter-width);
+    margin-right: var(--gutter-width);
+  }
+
+  .outdated-panel-row {
+    --channel-pad: 1rem;
+    padding-left: var(--channel-pad);
+    padding-right: var(--channel-pad);
+  }
+
+  @media (max-width: 640px) {
+    .outdated-panel {
+      margin-left: 0.75rem;
+      margin-right: 0;
+    }
+
+    .outdated-panel-row {
+      --channel-pad: 0.75rem;
+    }
+  }
+
   /* ── The thread ───────────────────────────────────────────────────────
      The thread has no frame of its own. It used to be a `surface` card with
      its own border and radius, which inside the channel would be a box in a

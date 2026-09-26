@@ -23,9 +23,14 @@
     <div class="md-gutter" aria-hidden="true"></div>
 
     <div class="md-body">
-      <details class="overflow-hidden rounded-xl border border-modified/30 bg-surface"
+      <%# `.outdated-panel` / `.outdated-panel-row` are the channel's geometry
+          without the channel: the same one-gutter inset and the same inner
+          padding, so a thread in here starts on the same left edge as a
+          thread in a well, while the panel keeps the border, the pill and the
+          sentence that say what it is. See DESIGN.md §8. %>
+      <details class="outdated-panel overflow-hidden rounded-xl border border-modified/30 bg-surface"
                data-controller="collapse">
-        <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5">
+        <summary class="outdated-panel-row flex cursor-pointer list-none items-center gap-2 py-2.5">
           <span class="pill-modified">Outdated</span>
           <h3 class="font-display text-sm font-medium text-ink" id="outdated-heading-<%= page.file_key %>">
             <%= count_of(threads.size, "thread") %> GitHub can no longer place
@@ -34,7 +39,7 @@
           <span class="text-xs text-ink-faint" data-collapse-target="label">Show</span>
         </summary>
 
-        <div class="space-y-5 border-t border-line px-4 py-3">
+        <div class="outdated-panel-row space-y-5 border-t border-line py-3">
           <% threads.each do |thread| %>
             <div data-testid="outdated-thread">
               <p class="text-xs text-ink-faint">
