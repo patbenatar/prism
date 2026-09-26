@@ -748,7 +748,7 @@ behavior; these styles already exist and should not be re-cut.
 | `.md-block--added` / `--modified` / `--removed` | Sets the change bar's color. **Nothing else** — no fill behind the block, in either scheme. There was one until 2026-09-24, a faint tint of the soft colour so a skim would find the changes; it was removed because it made the Markdown itself harder to read, which is the one thing this screen exists to do. A reviewer reads far more of a document than they skim, and the bars are better at the job anyway: unambiguous at a glance and free to the text. |
 | `.md-gutter` | The gutter cell. |
 | `.md-gutter-bar` | The 3px change bar, full block height. Transparent when unchanged, so an unchanged page is just the document. |
-| `.md-body` | The block's content cell. |
+| `.md-body` | The block's content cell, and a **container query container** (`container-type: inline-size`) — which is how a conversation nested in a list or a table steps back out to this column's left edge without anyone counting indents. See §8, "One left edge for every conversation". |
 | `.md-add` | The "+" affordance. `opacity-0` until `.md-block:hover` or `:focus-within`, and always reachable by keyboard because it is a real focusable button. |
 | `.md-add--muted` | For a block GitHub can't anchor a line comment to. Dashed border, muted color. **It still works** — it opens the composer in file-comment mode. The difference must be visible before the click, and the reason must be stated in words in the composer. |
 | `.filebar` / `.filebar-inner` | The page's bar under the app top bar: file switcher, jump menu, change count. Sticks at `var(--topbar-height)`. `.filebar-inner` is capped at `--measure-read` so it lines up with the document. |
@@ -756,8 +756,8 @@ behavior; these styles already exist and should not be re-cut.
 | `.file-section` | One file's whole section. Carries the `scroll-margin-top` that clears both bars above it, so the jump menu, a deep link and the per-file route's redirect all land in the same place. |
 | `.md-row` | The two-column template for page furniture that is not a block. |
 | `.md-child` + `.md-add--child` | A list item a reviewer can comment on alone. The block-level hover is **cancelled** for children and re-granted only to the child under the pointer, so hovering a list does not light up every item at once. Inside a nested list the "+" moves into that list's own indent channel, at any depth. |
-| `.md-child-table` + `.md-add--row` | A table row's "+". A table is `overflow-x-auto`, so the button cannot hang outside it — the first cell gets `pl-9` and the button sits inside. |
-| `.md-thread-row` | The extra `<tr>` carrying a table row's threads and composer. Drops the rule above it, so it reads as a continuation of its row. The conversation inside it gets §8's channel like any other. |
+| `.md-child-table` + `.md-add--row` | A table row's "+". A table is `overflow-x-auto`, so the button cannot hang outside it — the first cell gets `pl-9` and the button sits inside. The reserve is scoped to `tr:not(.md-thread-row)`, because the continuation row that carries the conversation is a first cell too and has no "+" to make room for. |
+| `.md-thread-row` | The extra `<tr>` carrying a table row's threads and composer. Drops the rule above it, so it reads as a continuation of its row, and gives up its cell padding. The conversation inside it gets §8's channel like any other, pinned to `100cqw` and `sticky left-0` so a wide, scrolling table cannot take it sideways — see §8, "One left edge for every conversation". |
 | `.md-removed-strip` / `.md-removed-summary` / `.md-removed-body` | The collapsed strip for content this PR deleted, shown where it used to be. Expanded content is struck through and at 75% opacity. |
 
 Rules for workstream D:
@@ -814,7 +814,8 @@ said. Four rules hold the family together:
    same language the gutter's change bar speaks two columns to the left, plus
    the word in its badge. The tinted panels this replaced (a blue wash for a
    draft, grey for resolved) made the *same* object change colour under you as
-   it settled.
+   it settled. **The band hugs the channel's border, 4px inside it, at every
+   width** — see "Where the band sits" below.
 3. **No rule above a thing, only between things.** The composer no longer hangs
    under a hairline; the channel's own border is its edge. Inside a thread the
    hairlines separate one comment from the next and nothing else.
@@ -822,6 +823,14 @@ said. Four rules hold the family together:
    equal-weight icon buttons in the card's top right; delete takes the removed
    colour on hover and focus only. A red button beside a ghost one made
    deleting look like the expected move.
+5. **A thread-level action belongs to the thread's own row, and the thread has
+   exactly one: its foot.** Reply and Resolve are the two things you can do to
+   a conversation, and they share that row. Nothing thread-level goes above
+   the first comment — see "Where Resolve lives".
+6. **A card that is still saving lays out as the card it is about to be.** The
+   controls that only mean something once the comment exists are present but
+   disabled, so they hold the room they are about to need. See "The card in
+   flight".
 
 ### The conversation channel
 
@@ -897,13 +906,193 @@ containers fail on whitespace alone. An empty channel draws nothing: no border,
 no fill, no padding.
 
 **A composer opening under an existing thread closes into one well** rather
-than stacking two, through `.md-threads:has(> *):has(+ .md-composer > *)` and
-its `+` partner. Written `:has(+ .md-composer > *)` and not the
+than stacking two, through
+`.md-threads:has(> *):has(+ .md-composer:not(.hidden) > *)` and its `+`
+partner. Written `:has(+ .md-composer … > *)` and not the
 `:has(+ .md-composer:has(> *))` that reads more naturally, because **`:has()`
 may not be nested inside `:has()`** — a browser drops the whole rule as an
 invalid selector rather than ignoring the inner one, Tailwind compiles it
 happily, and the failure shows up only as a seam across the middle of the well.
 The relative selector says the same thing in one level.
+
+The `:not(.hidden)` is not tidying. While a comment is in flight
+`composer_controller` *hides* the composer slot with that class rather than
+emptying it — emptying it would remove the very form whose submit is still
+running — and the slot keeps its children, so `:has(> *)` alone stayed true.
+The thread's well therefore kept the flat bottom edge it wears when a composer
+is joined onto it while nothing was drawn below it, which read as a well with
+its bottom torn off for the whole of the round trip.
+
+### One left edge for every conversation
+
+A thread renders **inside the thing it is about**: a list item's own `<li>`, a
+table row's continuation `<tr>` (`.md-thread-row`), a block's `.md-threads`.
+That is what makes it unambiguous which bullet or which row a conversation
+belongs to, and it is not changing — the anchoring is the point.
+
+It also meant the conversation inherited that element's indentation. A comment
+on a nested bullet started 48px right of a comment on the paragraph above it,
+a comment on a table row started inside the first cell's 36px "+" reserve, and
+no two conversations on a page lined up (reported 2026-09-26: "comments should
+always have the same level of indentation regardless of the indentation of the
+element they are commenting on"). The indentation was doing nothing the DOM
+position was not already doing better.
+
+So the slots stay exactly where they are and step back out:
+
+```css
+.md-body        { container-type: inline-size; }
+.md-child-slots { margin-left: calc(100% - 100cqw); }
+```
+
+`.md-body` is the container, so any descendant can ask how wide the body
+column is (`100cqw`) whatever it is nested inside; `100%` is the width of the
+box the slots are actually in. The difference **is** the accumulated indent,
+negated — at any depth, from any source (lists, nested lists, a blockquote),
+and without anyone counting levels or restating `1.5rem` in a second place. It
+answers 0 for a conversation that is already a child of `.md-body`, so the one
+rule is correct for a paragraph, a heading, a multi-line block and a
+file-level section too.
+
+`container-type: inline-size` is safe on `.md-body`: it is a grid track
+(`minmax(0, 1fr)`), so its inline size never depended on its contents, and
+inline-size containment does not clip — a reply box's absolutely positioned
+autocomplete listbox still paints outside it.
+
+**A table is the exception**, because its cell can be *wider* than the body
+column rather than narrower: `.md-prose table` is `w-max max-w-full
+overflow-x-auto`, so a wide table's cells run off to the right inside a
+scroller and the formula above would push the conversation further right. The
+thread row's cell gives up its padding, and the slots inside it are pinned to
+`100cqw` and `sticky left-0` instead, so scrolling the table sideways to read
+a far column does not take the conversation with it. The 36px first-cell
+reserve for a row's "+" is excluded at source
+(`tr:not(.md-thread-row) > td:first-child`) rather than overridden, because an
+override would have to win a specificity tie and §7 says not to bet on the
+compiler's order.
+
+`test/system/conversation_alignment_test.rb` measures the real left edge of
+every conversation on one page — paragraph, heading, nested list item, table
+row, multi-line block, file-level — at 1440 and 390, and separately asserts
+that the nested item's thread is still inside its own `<li>` and the row's is
+still in its continuation row. Both halves are the bug: one drifting left edge
+is the complaint above, and a thread that has left its anchor is worse than
+the indentation ever was.
+
+### Where the band sits
+
+The state band is placed from the channel's own padding, not from a number:
+
+```css
+.md-threads:has(> *) { --channel-pad: 1rem; }        /* 0.75rem below 640px */
+.thread--pending::before { left: calc(4px - var(--channel-pad, 1rem)); }
+```
+
+It used to be a flat `-left-2`, which is 8px inside a 16px pad at laptop and
+4px inside a 12px pad at phone. At laptop that left a 3px bar floating in the
+middle of the padding with air on both sides of it, and a bar with air either
+side reads as a mistake rather than as an edge (reported 2026-09-26: "the left
+padding is awkward while the comment card has the blue left line — is that
+blue line necessary at all?").
+
+**The band stays.** The channel's surface says "this is a conversation"; it
+does not say *whose* and it does not say "not posted yet", and a page can hold
+a dozen threads of which two are drafts. The `Pending` pill says it in words
+but only once you are reading the card; the band is what carries at scrolling
+speed, which is the job §8 rule 2 gives it, and `--outdated` and `--resolved`
+speak the same language so removing one of the three would leave a family of
+two. What was wrong was the geometry, and placing it from `--channel-pad` is
+one rule and one relationship — attached to the channel's edge, clear of the
+text — that the two widths cannot disagree about. 4px also clears the well's
+12px corner radius, because the channel's own 12px top padding starts the
+first thread below where the arc has straightened out.
+
+The fallback in the `var()` is for a thread outside a channel: the outdated
+panel supplies its own `px-4`, so the same 4px inset lands correctly there.
+
+### Where Resolve lives
+
+Resolve is a **thread-level** action — it closes a conversation, not a
+comment — and it used to sit in `.thread-head`, a strip above the first
+comment, pushed right with `ml-auto`. For the ordinary thread (no badges, one
+button) that strip carried nothing else, so every conversation on the page
+opened with a band of empty space and a lone control floating at the right of
+it (reported 2026-09-26: "the Resolve button is awkward and causes a bunch of
+blank space at the top of each comment thread").
+
+It lives in `.thread-foot` now, beside the reply box. The foot is the thread's
+only other thread-level row — you reply to a *thread* — so the two controls in
+it are exactly the two things you can do to a conversation, in the place where
+you have finished reading it and are deciding. Three things follow, and they
+are why this is the right row rather than a tidier one:
+
+- **It costs no height.** The reply box rests at a single line
+  (`.composer-card--compact`), so Resolve shares that line instead of asking
+  for one of its own. The old strip cost every thread a row; this costs none.
+- **`viewer_can_*` changes the row's width, never its height.** A thread the
+  viewer cannot resolve is exactly as tall as one they can — the reply box
+  simply runs the full width. That is also what lets the optimistic card
+  reserve this row without knowing what `viewerCanResolve` will come back as.
+- **It wraps honestly.** `flex-wrap` with the reply box at `basis-48`: at
+  390px the pair still fits on one line, and if a channel ever gets narrower
+  the button drops below the reply box at its right edge, where the reply
+  box's own Submit buttons sit when it is open.
+
+`.thread-head` is now **badges only** — Outdated, On removed content —
+information rather than a control, and still rendered only when it has
+something to carry, so an ordinary thread opens straight onto its first
+comment.
+
+**A resolved thread is one row**, not two. It used to draw a head strip
+("Resolved by X", Unresolve) *and* a `<summary>` ("Show the resolved
+conversation") under it, which is two rows saying one thing. The badge, the
+disclosure and Unresolve now share the summary's line. Unresolve cannot sit
+inside the `<summary>` — a click anywhere inside one toggles the disclosure as
+well — and cannot sit after it, because everything after a `<summary>` is the
+disclosure content and would disappear in the one state a resolved thread is
+normally in. It is a sibling of the `<details>`, laid over the summary's row
+by `.thread-resolved` / `.thread-resolved-actions`, and the summary reserves
+`6.5rem` of padding-right so a long "Resolved by …" can never run underneath
+it. Reopening a resolved thread therefore still takes one click from the
+collapsed state, which is what the old head strip got right.
+
+### The card in flight
+
+`composer_controller#showProvisional` renders the reviewer's words the instant
+they submit, because a GitHub round trip is 200-400ms even after `create`
+stopped refetching. Until 2026-09-26 that card was a head and a body and
+nothing else — no tools, no reactions row, no reply box — so it stood about
+70px tall against the 172px the settled thread needs, and the page jumped by
+the difference the moment the response landed ("this transition from the
+saving state to the final state causes a UI jump").
+
+It reserves the whole thread's layout now: the same rows in the same order,
+with the controls that only mean something once the comment exists **present
+but disabled**. Disabled has to read as disabled, or a reviewer clicks an edit
+pencil that cannot work — `.thread--sending` dims those three rows, and each
+carries `inert`, which takes the subtree out of the tab order *and* out of the
+accessibility tree in one attribute. `:focus-within` can never fire inside an
+inert subtree, so the reserved reply box stays compact by construction.
+
+Two details are load-bearing and both were found by measuring rather than by
+reading the markup:
+
+- The body is wrapped in a `<p>`, because GitHub's `bodyHTML` is and
+  `.md-prose p` carries the margins.
+- The reaction trigger is wrapped in a `.reaction-picker` span, because that
+  wrapper is `inline-block` in the real card and makes the row five pixels
+  taller than the 24px trigger inside it. Without it the jump came back
+  smaller rather than gone.
+
+The band is decided from the submitter: a comment added to a review comes back
+`PENDING` and wears `--pending`, a single comment does not, so reading
+`event.detail.formSubmission.submitter` means the band is right from the first
+frame rather than appearing or vanishing when the response lands.
+
+`test/system/features/optimistic_comment_test.rb` holds the two states to the
+pixel in one browser, and separately asserts that nothing inside the card being
+saved is focusable. That is the kind of regression every text-and-testid
+assertion passes straight through.
 
 The **outdated section** is deliberately outside all of this. It is not
 attached to a block — that is what makes it outdated — so there is nothing for
@@ -922,10 +1111,14 @@ above in one picture. If you change the channel, look at that screen too.
 | --- | --- |
 | `.md-threads` / `.md-composer` / `.file-threads-list` | The conversation channel: a recessed well on `sunk` with a `line` border, indented one gutter each side. It is the container — a thread inside it has no frame of its own. See above. |
 | `.thread` | Wraps a stack of comment cards and the reply box. **No frame of its own** — the channel is the object, and a card inside a well is a box in a box. Two threads on one block are separated the way two comments are, by `.thread + .thread`'s rule and some air. `relative`, because the state band hangs off it. |
-| `.thread--pending` / `--outdated` / `--resolved` | A 3px rounded band in the channel's left padding, beside that thread: blue for an unsubmitted draft, amber for outdated, grey for resolved (which is also collapsed behind a `<details>`). A `::before` rather than a `border-left`, for two reasons. The channel is `rounded-xl` and cannot carry `overflow-hidden` — a reply box's autocomplete listbox is absolutely positioned and would be clipped — so a square border on the first child pokes through the corner. And a block can carry a resolved thread and an open draft at once, so one repainted channel edge could only ever tell you about one of them. |
-| `.thread-head` | Badges (Outdated, On removed content, Resolved) and the resolve toggle, `ml-auto`. **Rendered only when it has something to carry** — an ordinary thread opens straight onto its first comment, with no strip above it. No padding of its own: the channel carries it, so a comment's text lines up with the channel's edge instead of sitting in a second, narrower column inside it. The same goes for `.thread-foot`, `.comment-card` and `.thread-summary`. |
+| `.thread--pending` / `--outdated` / `--resolved` | A 3px rounded band in the channel's left padding, beside that thread: blue for an unsubmitted draft, amber for outdated, grey for resolved (which is also collapsed behind a `<details>`). Placed 4px inside the channel's border from `--channel-pad`, not from a number — see "Where the band sits". A `::before` rather than a `border-left`, for two reasons. The channel is `rounded-xl` and cannot carry `overflow-hidden` — a reply box's autocomplete listbox is absolutely positioned and would be clipped — so a square border on the first child pokes through the corner. And a block can carry a resolved thread and an open draft at once, so one repainted channel edge could only ever tell you about one of them. |
+| `.thread--sending` | The optimistic card while the write is in flight. Same layout as the settled thread; `.comment-tools`, `.comment-actions` and `.thread-foot` are dimmed and `inert`. See "The card in flight". |
+| `.thread-head` | **Badges only** (Outdated, On removed content) — information, never a control. **Rendered only when it has something to carry** — an ordinary thread opens straight onto its first comment, with no strip above it. No padding of its own: the channel carries it, so a comment's text lines up with the channel's edge instead of sitting in a second, narrower column inside it. The same goes for `.thread-foot`, `.comment-card` and `.thread-summary`. |
 | `.thread-comments` | The comments container (`#thread_comments_<node_id>`). Draws the hairline *between* comments: each comment renders inside its own `#comment_<node_id>` wrapper, so `:last-child` on the card can never see its siblings. |
-| `.thread-foot` | The room the reply box sits in. No rule above it — the composer card's own border already separates it from the conversation. |
+| `.thread-foot` / `.thread-foot-actions` | The thread's own row: the reply box (`flex-1 basis-48`), then Resolve (`shrink-0`, `ml-auto` for when the row wraps). No rule above it — the composer card's own border already separates it from the conversation. `button_to` wraps its button in a form, so `.thread-foot-actions form` is `display: contents`. See "Where Resolve lives". |
+| `.thread-resolved` / `.thread-resolved-actions` | The resolved thread's single row: the `<details>`, with Unresolve laid over the summary's line as a sibling rather than a child of either. The summary reserves `6.5rem` on its right for it. |
+| `.thread-summary` / `.thread-summary-toggle` | The resolved thread's disclosure line: the Resolved badge, any other badges, then the Show/Hide words. Two classes on the selector, like everything else in the "not prose" block — `.md-prose summary` is one class and one element, and the flex layout has to beat it as surely as the face does. |
+| `.md-child-slots` | The wrapper holding a child block's `.md-threads` and `.md-composer`, inside its own `<li>` or thread-row `<td>`. Carries `margin-left: calc(100% - 100cqw)`, which is the accumulated indent negated — see "One left edge for every conversation". |
 | `.comment-card` | One comment: head, body, actions. No border and no side padding of its own. |
 | `.comment-head` / `.comment-author` | Avatar, login, relative time, pending/outdated pills, then `.comment-tools`. Wraps at phone width. |
 | `.comment-tools` / `.comment-icon` / `.comment-icon--danger` | The icon row in the top right: edit, delete, open on GitHub. 28px hit area, 16px stroke icon, `text-ink-faint` until hover. `--danger` only reddens on hover and focus. `button_to` wraps its button in a form, so `.comment-tools form` is `display: contents`. Every icon carries an `sr-only` name. |
@@ -1041,7 +1234,9 @@ partial rather than coming back, because exactly one partial uses it.
 
 Gate Edit / Delete / Resolve on `viewer_can_*` from the value object, never on
 comparing logins — GitHub already decided, and a repo admin can delete comments
-they did not write.
+they did not write. Resolve is gated the same way it always was; what changed
+is that a "no" now costs no layout at all, because the control shares the
+reply box's row.
 
 ---
 
