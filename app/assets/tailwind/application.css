@@ -799,8 +799,15 @@
      of equal specificity is not guaranteed to win, and this is the narrowest
      column in the app to be wasting 2.25rem in. */
   @media (min-width: 641px) {
+    /* `tr:not(.md-thread-row)`: the continuation row that carries a row's
+       conversation is a first cell too, and it has no "+" to make room for —
+       it holds the conversation, which starts at the body column's own left
+       edge like every other conversation. Excluded here rather than
+       overridden below, because an override would have to win a specificity
+       tie against this selector and §7 says not to bet on the compiler's
+       order. */
     .md-prose table.md-child-table th:first-child,
-    .md-prose table.md-child-table td:first-child {
+    .md-prose table.md-child-table tr:not(.md-thread-row) > td:first-child {
       @apply relative pl-9;
     }
   }
@@ -810,9 +817,55 @@
   }
 
   /* The extra row that carries a table row's threads and composer. It is a
-     continuation of the row above, so it drops the rule between them. */
+     continuation of the row above, so it drops the rule between them, and it
+     gives up its cell padding so the conversation inside it starts on the
+     body column's own left edge like every other conversation. */
   .md-prose .md-thread-row > td {
-    @apply border-t-0 px-3 py-0;
+    @apply border-t-0 p-0;
+  }
+
+  /* ── One left edge for every conversation ─────────────────────────────
+     A thread renders inside the thing it is about — a list item's own `<li>`,
+     a table row's continuation `<tr>` — which is what makes it unambiguous
+     which bullet or which row it belongs to. It also meant the conversation
+     inherited that element's indentation, so a comment on a nested bullet
+     started 48px right of a comment on the paragraph above it and no two
+     conversations on a page lined up (reported 2026-09-26). The anchoring is
+     worth keeping and the indentation is not, so the slots stay exactly where
+     they are in the DOM and step back out to the body column's left edge.
+
+     `.md-body` is a **container**, so a descendant can ask how wide the body
+     column is (`100cqw`) whatever it is nested inside. `100%` is the width of
+     whatever box the slots are actually in, so `100% - 100cqw` is precisely
+     the accumulated indent, negated — at any depth, and without anyone
+     counting levels or restating `1.5rem` in a second place. It answers 0 for
+     a conversation that is already a child of `.md-body`, so the same rule is
+     correct for a paragraph, a heading and a file-level section too.
+
+     `container-type: inline-size` is safe here: the body column is a grid
+     track (`minmax(0, 1fr)`), so its inline size never depended on its
+     contents, and inline-size containment does not clip — a reply box's
+     absolutely positioned autocomplete listbox still paints outside it. */
+  .md-body {
+    container-type: inline-size;
+  }
+
+  .md-child-slots {
+    margin-left: calc(100% - 100cqw);
+  }
+
+  /* A table is the exception, because the cell the conversation sits in can
+     be *wider* than the body column rather than narrower: `.md-prose table`
+     is `w-max max-w-full overflow-x-auto`, so a wide table's own cells run
+     off to the right inside a scroller. The formula above would push the
+     conversation further right, not left. It is pinned to the body column's
+     width instead, and stuck to the scroller's left edge so scrolling the
+     table sideways to read a far column doesn't take the conversation with
+     it. */
+  .md-thread-row .md-child-slots {
+    @apply sticky left-0;
+    margin-left: 0;
+    width: 100cqw;
   }
 
   /* ╔═════════════════════════════════════════════════════════════════════╗
@@ -906,7 +959,14 @@
   .md-threads:has(> *),
   .md-composer:has(> *),
   .file-threads-list:has(> *) {
-    @apply relative my-5 rounded-xl border border-line bg-sunk px-4 py-3;
+    /* Declared, not inlined, because the state band beside a thread is placed
+       from it — see `.thread--pending::before`. Written once here and once in
+       the phone rule below, the two would drift and the band would drift with
+       them. */
+    --channel-pad: 1rem;
+    @apply relative my-5 rounded-xl border border-line bg-sunk py-3;
+    padding-left: var(--channel-pad);
+    padding-right: var(--channel-pad);
     margin-left: var(--gutter-width);
     margin-right: var(--gutter-width);
   }
@@ -920,12 +980,21 @@
      ignoring the inner one. Tailwind compiles it happily, so the failure is
      silent and shows up only as a seam across the middle of the well. The
      relative selector says the same thing — a next-sibling `.md-composer`
-     with a child — in one level. */
-  .md-threads:has(> *):has(+ .md-composer > *) {
+     with a child — in one level.
+
+     `:not(.hidden)` on the composer side is not defensive tidying: while a
+     comment is in flight `composer_controller` hides the composer slot with
+     that class rather than emptying it (emptying it would remove the very
+     form whose submit is still running), and the slot keeps its children. A
+     `:has(> *)` alone therefore stayed true, so the thread's well kept the
+     flat bottom edge it wears when a composer is joined onto it — and with
+     the composer not painting, that read as a well with its bottom torn
+     off, for the whole of the round trip. */
+  .md-threads:has(> *):has(+ .md-composer:not(.hidden) > *) {
     @apply mb-0 rounded-b-none border-b-0 pb-0;
   }
 
-  .md-threads:has(> *) + .md-composer:has(> *) {
+  .md-threads:has(> *) + .md-composer:not(.hidden):has(> *) {
     @apply mt-0 rounded-t-none border-t-0;
   }
 
@@ -938,7 +1007,7 @@
     .md-threads:has(> *),
     .md-composer:has(> *),
     .file-threads-list:has(> *) {
-      @apply px-3;
+      --channel-pad: 0.75rem;
       margin-left: 0.75rem;
       margin-right: 0;
     }
@@ -970,27 +1039,100 @@
      border on the first child pokes through the well's rounded corner. It
      also has to be per-thread rather than per-channel, because a block can
      carry a resolved thread and an open draft at once and one repainted edge
-     could only tell you about one of them. `-left-2` puts it inside the
-     channel's 16px padding (12px at phone) without touching the border. */
+     could only tell you about one of them.
+
+     **It hugs the channel's border, 4px inside it, at every width.** It used
+     to sit at a flat `-left-2`, which is 8px inside a 16px pad at laptop and
+     4px inside a 12px pad at phone: at laptop that left it floating in the
+     middle of the padding with a gap on both sides, and a bar with air either
+     side of it reads as a mistake rather than as an edge (reported
+     2026-09-26, "the left padding is awkward while the comment card has the
+     blue left line"). Placed from `--channel-pad` it is one rule and one
+     relationship — attached to the channel's edge, clear of the text — and
+     the two widths cannot disagree. 4px also clears the well's 12px corner
+     radius: the channel's own 12px top padding starts the first thread below
+     where the arc has straightened out. */
   .thread--pending::before,
   .thread--outdated::before,
   .thread--resolved::before {
     content: "";
-    @apply absolute inset-y-0 -left-2 w-[3px] rounded-full;
+    @apply absolute inset-y-0 w-[3px] rounded-full;
+    /* The fallback is for a thread outside a channel — the outdated panel
+       supplies its own `px-4`, so the same 4px inset lands correctly there. */
+    left: calc(4px - var(--channel-pad, 1rem));
   }
 
   .thread--pending::before  { @apply bg-pending; }
   .thread--outdated::before { @apply bg-modified; }
   .thread--resolved::before { @apply bg-resolved; }
 
-  /* Badges (Outdated / Resolved / On removed content) and the resolve toggle.
+  /* ── The card while it is still in flight ─────────────────────────────
+     `composer_controller` renders the comment optimistically, before GitHub
+     answers. That card used to be a head and a body and nothing else, so it
+     was around 70px tall against the 210px the settled thread needs, and the
+     page jumped by the difference the moment the response landed (reported
+     2026-09-26).
+
+     It now lays out as the settled thread exactly — the same rows, in the
+     same order — and the controls that only mean something once the comment
+     exists are **present but disabled** rather than absent, so they occupy
+     the room they are about to need. Disabled has to read as disabled, or a
+     reviewer clicks an edit pencil that cannot work: they are dimmed, and
+     each container carries `inert`, which takes them out of the tab order and
+     out of the accessibility tree in one attribute rather than three. */
+  .thread--sending .comment-tools,
+  .thread--sending .comment-actions,
+  .thread--sending .thread-foot {
+    @apply opacity-40;
+  }
+
+  /* The disabled reply box keeps the compact card's frame, so the row it
+     reserves is the row the real one will fill. `:focus-within` can never
+     fire on an inert subtree, so it stays compact by construction. */
+  .thread--sending .composer-textarea {
+    @apply cursor-default;
+  }
+
+  /* Badges (Outdated / On removed content) — information, never a control.
      Rendered only when it has something to say, so an ordinary thread opens
      straight onto its first comment with no strip above it. No horizontal
      padding on this or any row below it: the channel carries it now, so a
      comment's text lines up with the channel's own edge instead of sitting in
-     a second, narrower column inside it. */
+     a second, narrower column inside it.
+
+     The resolve toggle used to share this row with `ml-auto`, which meant an
+     ordinary unresolved thread — no badges, one button — opened with a band
+     of empty space above its first word and a lone control floating at the
+     right of it. It lives in `.thread-foot` now; see below. */
   .thread-head {
     @apply flex flex-wrap items-center gap-2 px-0 pb-0 pt-0 font-display text-xs text-ink-faint;
+  }
+
+  /* A resolved thread is one row: the badge, the Show/Hide disclosure, and
+     Unresolve at the right of it. The button is a *sibling* of the
+     `<details>` rather than a child, because everything after a `<summary>`
+     is the disclosure content and would disappear the moment the thread
+     collapsed — which is the one state a resolved thread is normally in. It
+     is laid over the summary's own row instead, and the summary reserves the
+     room for it so a long "Resolved by …" can never run underneath. */
+  .thread-resolved {
+    @apply relative;
+  }
+
+  .thread-resolved-actions {
+    @apply absolute right-0 top-0;
+  }
+
+  .thread-resolved:has(.thread-resolved-actions) .thread-summary {
+    padding-right: 6.5rem;
+  }
+
+  /* `button_to` wraps its button in a form; `display: contents` lets the
+     button be the flex/box child so the row measures the control, not a
+     block-level wrapper around it. */
+  .thread-resolved-actions form,
+  .thread-foot-actions form {
+    display: contents;
   }
 
   /* The comments themselves. The hairline belongs to the gap between two
@@ -1001,10 +1143,35 @@
     @apply border-t border-line;
   }
 
-  /* The reply box's room inside the thread. No rule above it — the composer
-     card's own border already separates it from the conversation. */
+  /* The thread's own row: reply on the left, resolve on the right. No rule
+     above it — the composer card's own border already separates it from the
+     conversation.
+
+     **This is where a thread-level control belongs**, and it is the reason
+     moving Resolve here costs nothing. The reply box rests at a single line,
+     so the button shares that line instead of asking for one of its own; and
+     because the two sit side by side, a thread the viewer *cannot* resolve is
+     exactly as tall as one they can — only the reply box's width changes.
+     That is what lets the optimistic card reserve this row without knowing
+     what `viewerCanResolve` will come back as (see `.thread--sending`).
+
+     `basis-48` with `flex-wrap` rather than `min-w-0`: below about 280px of
+     channel the pair would rather stack than squeeze the reply box down to a
+     word, and at 390px (a 298px channel) it still fits on one line. */
   .thread-foot {
-    @apply px-0 pb-0 pt-3;
+    @apply flex flex-wrap items-start gap-2 px-0 pb-0 pt-3;
+  }
+
+  .thread-foot > .composer-card {
+    @apply min-w-0 flex-1 basis-48;
+  }
+
+  /* `ml-auto` only bites once the row has wrapped — while the two share a
+     line the reply box is `flex-1` and there is no free space to push into.
+     Wrapped, it puts Resolve under the reply box's own right edge, where the
+     reply box's Submit buttons sit when it is open. */
+  .thread-foot-actions {
+    @apply ml-auto shrink-0;
   }
 
   /* ── One comment ──────────────────────────────────────────────────────── */
@@ -1257,8 +1424,20 @@
     @apply text-ink-faint hover:bg-sunk hover:text-ink;
   }
 
+  /* The resolved thread's one visible row. Two classes, like everything else
+     in this block: `.md-prose summary` is one class and one element, and the
+     layout below has to beat it as surely as the face does. */
   .thread .thread-summary {
-    @apply px-0 py-1 font-display text-xs font-normal text-ink-faint hover:text-ink;
+    @apply flex list-none flex-wrap items-center gap-2 px-0 py-1 font-display text-xs
+           font-normal text-ink-faint hover:text-ink;
+  }
+
+  .thread .thread-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .thread .thread-summary-toggle {
+    @apply text-ink-faint;
   }
 
   /* ═══ Fixed bottom tray ══════════════════════════════════════════════════

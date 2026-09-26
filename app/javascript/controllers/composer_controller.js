@@ -1,5 +1,20 @@
 import { Controller } from "@hotwired/stimulus"
 
+// The three icons the optimistic card reserves room for, kept byte-identical
+// to `review_comments/_comment` and `shared/_comment_card` — the point of the
+// provisional card is that it is the same shape as what replaces it, and an
+// icon drawn a pixel differently is a seam in exactly the transition this
+// exists to smooth.
+const PENCIL_PATHS =
+  '<path d="M11.2 2.6a1.7 1.7 0 0 1 2.4 2.4L6.1 12.5l-3.1.9.9-3.1 7.3-7.7Z" /><path d="m10.3 3.6 2.4 2.4" />'
+const BIN_PATHS =
+  '<path d="M3 4.5h10" /><path d="M6.3 4.5V3.2h3.4v1.3" /><path d="m4.6 4.5.6 8.3h5.6l.6-8.3" />'
+const EXTERNAL_PATHS =
+  '<path d="M9.5 3h3.5v3.5" /><path d="M13 3 7.8 8.2" /><path d="M11.5 9.8V13H3V4.5h3.2" />'
+const REACTION_PATHS =
+  '<path d="M13.4 7.3a5.7 5.7 0 1 1-4.7-4.7" /><path d="M5.6 9.4a3 3 0 0 0 4.3 0" />' +
+  '<path d="M5.9 6.4h.01M9.7 6.4h.01" /><path d="M12.4 1.9v3.2M14 3.5h-3.2" />'
+
 // Opens/closes the comment composer under a block's gutter "+", per
 // PLAN.md "Phase 2 seam: file view (D) <-> commenting (E)".
 //
@@ -222,7 +237,7 @@ export default class extends Controller {
       subjectType === "file" ? this.fileThreadsContainer(form) : document.getElementById(`threads_${blockId}`)
     if (!container) return
 
-    const card = this.buildProvisionalCard(body)
+    const card = this.buildProvisionalCard(body, this.submittedIntoReview(event))
     if (subjectType === "file") {
       container.prepend(card)
     } else {
@@ -264,26 +279,90 @@ export default class extends Controller {
     return forPath || document.getElementById("file_threads")
   }
 
-  buildProvisionalCard(body) {
+  // Which button sent it. A comment added to a review comes back as a PENDING
+  // draft and the settled thread wears the pending band; a single comment does
+  // not. Reading the submitter means the band is right from the first frame
+  // rather than appearing or vanishing when the response lands.
+  submittedIntoReview(event) {
+    const submitter = event.detail?.formSubmission?.submitter
+    const target = submitter?.dataset?.composerTarget
+    return target === "reviewButton" || target === "replyReviewButton"
+  }
+
+  // The optimistic card is laid out as the settled thread, not as a smaller
+  // preview of it (2026-09-26: "this transition from the saving state to the
+  // final state causes a UI jump"). Every row the real thread has is here —
+  // the tools in the card's top right, the reactions row, the reply box and
+  // the resolve control beside it — so the space they will need is already
+  // taken. They are disabled rather than omitted, and the three containers
+  // that hold them are `inert`, which is what keeps a control that cannot
+  // work yet out of the tab order and out of the accessibility tree.
+  //
+  // Whether the settled thread ends up with a Resolve button at all depends
+  // on `viewerCanResolve`, which the client cannot know — it does not matter,
+  // because that control shares the reply box's row (DESIGN.md §8) and so
+  // changes the row's width, never its height.
+  //
+  // The `.reaction-picker` wrapper around the reaction trigger is not
+  // decoration either. It is inline-block in the real card, which makes that
+  // row five pixels taller than the 24px trigger it holds; without it the
+  // provisional card was five pixels short and the jump came back smaller
+  // rather than gone. `test/system/features/optimistic_comment_test.rb` is
+  // what holds all of this to the pixel.
+  buildProvisionalCard(body, intoReview) {
     const id = `comment_provisional_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const login = this.element.dataset.composerViewerLogin || ""
     const avatar = this.element.dataset.composerViewerAvatar || ""
 
     const card = document.createElement("div")
     card.id = id
-    card.className = "thread thread--pending"
+    card.className = `thread thread--sending${intoReview ? " thread--pending" : ""}`
     card.dataset.testid = "provisional-comment"
     card.innerHTML = `
-      <article class="comment-card">
-        <div class="comment-head">
-          ${avatar ? `<img alt="" class="avatar h-6 w-6" loading="lazy" src="${this.escapeHtml(avatar)}">` : ""}
-          ${login ? `<span class="comment-author">${this.escapeHtml(login)}</span>` : ""}
-          <span class="pill-pending">Sending…</span>
+      <div class="thread-comments">
+        <div>
+          <article class="comment-card">
+            <div class="comment-head">
+              ${avatar ? `<img alt="" class="avatar h-6 w-6" loading="lazy" src="${this.escapeHtml(avatar)}">` : ""}
+              ${login ? `<span class="comment-author">${this.escapeHtml(login)}</span>` : ""}
+              <time class="whitespace-nowrap">less than a minute ago</time>
+              <span class="pill-pending">Sending…</span>
+              <div class="comment-tools" inert>
+                ${this.provisionalIcon(PENCIL_PATHS, "Edit")}
+                ${this.provisionalIcon(BIN_PATHS, "Delete", "comment-icon--danger")}
+                ${this.provisionalIcon(EXTERNAL_PATHS, "On GitHub")}
+              </div>
+            </div>
+            <div class="comment-body md-prose md-prose-compact">
+              <p>${this.escapeHtml(body).replace(/\n/g, "<br>")}</p>
+            </div>
+            <div class="comment-actions" inert>
+              <span class="reaction-picker relative inline-block">
+                <span class="reaction-add">${this.provisionalSvg(REACTION_PATHS)}</span>
+              </span>
+            </div>
+          </article>
         </div>
-        <div class="comment-body md-prose md-prose-compact">${this.escapeHtml(body).replace(/\n/g, "<br>")}</div>
-      </article>
+      </div>
+      <div class="thread-foot" inert>
+        <div class="composer-card composer-card--compact">
+          <textarea class="composer-textarea w-full" rows="1" placeholder="Reply…" disabled></textarea>
+        </div>
+        <div class="thread-foot-actions">
+          <button type="button" class="btn btn-ghost btn-sm" disabled>Resolve</button>
+        </div>
+      </div>
     `
     return card
+  }
+
+  provisionalIcon(paths, name, extraClass = "") {
+    return `<span class="comment-icon ${extraClass}">${this.provisionalSvg(paths)}<span class="sr-only">${name}</span></span>`
+  }
+
+  provisionalSvg(paths) {
+    return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">${paths}</svg>`
   }
 
   escapeHtml(text) {

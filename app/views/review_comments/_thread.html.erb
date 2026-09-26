@@ -5,9 +5,28 @@
 
   The card sits on the base surface in every state — what a thread's state
   changes is the 3px band down its left edge and the words in its badges, not
-  a tint across the whole panel. The head row exists only when it has
-  something to carry (a badge, or the resolve toggle), so an ordinary thread
-  opens straight onto its first comment with no strip above it.
+  a tint across the whole panel.
+
+  **Resolve is a thread-level action and lives in the thread's foot**, beside
+  the reply box, not in a strip above the first comment. The two controls in
+  that row are the only two things you can do to a conversation — reply to it,
+  or close it — and putting the second one where it used to be cost every
+  thread a band of empty space above its first word, with a lone button
+  floating at the right of it (reported 2026-09-26). It costs nothing there:
+  the reply box rests at one line, and whether `viewer_can_resolve` is true or
+  false only changes the row's width, never its height.
+
+  The head row above the comments is now badges only (Outdated, On removed
+  content) — information, not a control — and is still rendered only when it
+  has something to carry, so an ordinary thread opens straight onto its first
+  comment.
+
+  A **resolved** thread is one row: the badge, the Show/Hide disclosure and
+  Unresolve, all on the summary line. Unresolve cannot sit inside the
+  `<summary>` (a click inside one toggles the disclosure as well) and cannot
+  sit after it (everything after a `<summary>` is the disclosure content, so
+  it would vanish when collapsed), so it is a sibling of the `<details>`,
+  positioned into the summary's own row by `.thread-resolved`.
 
   Locals:
     thread:         (required) Github::Types::ReviewThread
@@ -35,28 +54,32 @@
          "thread--pending"
        end %>
 
-  <% head = capture do %>
+  <%# Badges only. The resolve toggle used to share this row, which is what
+      made an ordinary thread open onto an empty strip. %>
+  <% badges = capture do %>
     <% if thread.outdated? %>
       <span class="pill-modified">Outdated</span>
     <% end %>
     <% if thread.left_side? %>
       <span class="pill-neutral">On removed content</span>
     <% end %>
-    <% if thread.resolved? %>
-      <span class="pill-resolved" data-testid="thread-resolved-badge">
-        Resolved<% if thread.resolved_by %> by <%= thread.resolved_by.login %><% end %>
-      </span>
-    <% end %>
+  <% end %>
 
+  <%# The thread-level toggle, rendered once and placed in one of two rows:
+      the foot while the conversation is open, the summary row while it is
+      resolved and collapsed. `viewer_can_*` decides whether it exists at all
+      — GitHub already knows, and a repo admin can resolve a thread they have
+      no comment in. %>
+  <% resolve = capture do %>
     <% if thread.viewer_can_resolve %>
       <%= button_to "Resolve",
                      repo_pull_thread_resolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
-                     method: :post, class: "btn btn-ghost btn-sm", form_class: "ml-auto",
+                     method: :post, class: "btn btn-ghost btn-sm",
                      form: { data: { turbo: true } }, data: { testid: "thread-resolve" } %>
     <% elsif thread.viewer_can_unresolve %>
       <%= button_to "Unresolve",
                      repo_pull_thread_unresolve_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: thread.node_id),
-                     method: :post, class: "btn btn-ghost btn-sm", form_class: "ml-auto",
+                     method: :post, class: "btn btn-ghost btn-sm",
                      form: { data: { turbo: true } }, data: { testid: "thread-unresolve" } %>
     <% end %>
   <% end %>
@@ -76,26 +99,45 @@
     </div>
     <div class="thread-foot">
       <%= render "review_comments/reply_form", thread: thread, pending_review: pending_review %>
+      <%# Resolve rides beside the reply box. While the thread is resolved the
+          toggle has already been spent on the summary row above, so this is
+          empty and the reply box simply runs the whole width. %>
+      <% if !thread.resolved? && resolve.to_s.strip.present? %>
+        <div class="thread-foot-actions"><%= resolve %></div>
+      <% end %>
     </div>
   <% end %>
 
   <div id="thread_<%= thread.node_id %>" class="thread <%= modifier %>" data-testid="thread"
        data-thread-id="<%= thread.node_id %>">
     <%# `capture` answers nil, not "", when the block wrote nothing at all —
-        a thread with no badge and no resolve affordance. %>
-    <% if head.to_s.strip.present? %>
-      <div class="thread-head"><%= head %></div>
+        a thread with no badge at all. A resolved thread carries its badges on
+        the summary row instead, so it never draws this strip. %>
+    <% if !thread.resolved? && badges.to_s.strip.present? %>
+      <div class="thread-head"><%= badges %></div>
     <% end %>
 
     <% if thread.resolved? %>
       <%# Collapsed by default; native <details> so it works with JS off, and
           collapse_controller.js only swaps the Show/Hide word. %>
-      <details class="thread-collapse" data-controller="collapse" data-testid="thread-body">
-        <summary class="thread-summary">
-          <span data-collapse-target="label">Show</span> the resolved conversation
-        </summary>
-        <%= body %>
-      </details>
+      <div class="thread-resolved">
+        <details class="thread-collapse" data-controller="collapse" data-testid="thread-body">
+          <summary class="thread-summary">
+            <span class="pill-resolved" data-testid="thread-resolved-badge">
+              Resolved<% if thread.resolved_by %> by <%= thread.resolved_by.login %><% end %>
+            </span>
+            <%= badges %>
+            <span class="thread-summary-toggle">
+              <span data-collapse-target="label">Show</span> the conversation
+            </span>
+          </summary>
+          <%= body %>
+        </details>
+
+        <% if resolve.to_s.strip.present? %>
+          <div class="thread-resolved-actions"><%= resolve %></div>
+        <% end %>
+      </div>
     <% else %>
       <div data-testid="thread-body"><%= body %></div>
     <% end %>

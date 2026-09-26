@@ -2,6 +2,24 @@
 
 Newest first. Written for people using Prism, not for how it is built.
 
+## 2026-09-26
+
+- **The page no longer jumps when a comment saves.** A comment appeared in a
+  small card while it was being sent and then grew as it landed, pushing the
+  document under it down mid-sentence. The card being sent is now exactly the
+  comment it is about to become — its reply box, reactions and actions are all
+  there, greyed out until the comment exists.
+- **Resolve moved to the end of the conversation.** It used to sit on a line
+  of its own above the first comment, so every conversation opened with a
+  band of empty space. It now sits beside the reply box, where you are when
+  you have finished reading. A resolved conversation is one line too, with
+  Unresolve on it, instead of two.
+- **Conversations all line up.** A comment on a nested bullet or a table row
+  used to be indented along with the thing it was about, so no two
+  conversations on a page started at the same place. They all start at the
+  same left edge now, and each one still sits directly under the paragraph,
+  bullet or row it belongs to.
+
 ## 2026-09-25
 
 - **You stay signed in.** GitHub's sign-in only lasted eight hours, so anyone
