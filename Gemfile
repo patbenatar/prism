@@ -55,7 +55,7 @@ gem "rouge"
 # ActiveSupport 8.1 still calls JSON.parse(json, quirks_mode: true), which json
 # 3.0 removed; encrypted cookies and Active Record Encryption then fail to
 # decrypt. Pin until Rails catches up.
-gem "json", "~> 2.9"
+gem "json", "~> 3.0"
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
