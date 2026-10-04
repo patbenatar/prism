@@ -40,7 +40,7 @@
   <% end %>
 
   <%= form_with url: repo_pull_comment_replies_path(owner: params[:owner], repo: params[:repo], number: params[:number], id: root.id),
-                method: :post, data: { turbo: true } do |f| %>
+                method: :post, data: { turbo: true, action: "turbo:submit-end->composer#resetReply" } do |f| %>
     <%# `id: nil` throughout: one of these forms renders per thread, so the
         auto-generated `id="thread_id"` and friends would repeat down the
         page. See the note in `_composer_form`. %>
