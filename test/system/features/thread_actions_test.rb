@@ -67,6 +67,11 @@ class ThreadActionsTest < ApplicationSystemTestCase
 
     assert_selector "[data-testid=thread]", text: "Fixed in the next push.", wait: 5
     assert_github_requested :post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/comments/900100/replies"
+
+    # The response only appends the new comment, so nothing re-renders the
+    # reply form; composer#resetReply is what empties it. Without it the
+    # posted words sat in the box, one click from being sent twice.
+    assert_reply_box_emptied
   end
 
   test "replying into a pending review adds a draft reply over GraphQL" do
@@ -95,6 +100,8 @@ class ThreadActionsTest < ApplicationSystemTestCase
         vars["input"]["pullRequestReviewThreadId"] == "PRRT_reply2" &&
         vars["input"]["body"] == "Draft reply."
     end
+
+    assert_reply_box_emptied
   end
 
   test "editing and deleting your own comment" do
@@ -236,6 +243,15 @@ class ThreadActionsTest < ApplicationSystemTestCase
   end
 
   private
+
+  # A filter block rather than reading `.value` once: resetReply runs on
+  # turbo:submit-end, a beat after the appended comment is already visible,
+  # and the block is retried until it holds.
+  def assert_reply_box_emptied
+    within "[data-testid=thread]" do
+      assert_selector("[data-testid=reply-textarea]", wait: 5) { |box| box.value == "" }
+    end
+  end
 
   def files_json
     [ { "filename" => PATH, "status" => "modified", "additions" => 2, "deletions" => 0, "changes" => 2,

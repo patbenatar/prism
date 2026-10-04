@@ -154,6 +154,37 @@ export default class extends Controller {
     return form.querySelector('[type="submit"]:not([hidden])')
   }
 
+  // data-action="turbo:submit-end->composer#resetReply" on the reply form.
+  //
+  // A posted reply used to re-render its whole thread, and the fresh reply
+  // form that came with it is what emptied the box. Since 2026-09-20 the
+  // response only appends the new comment (ReviewCommentsController
+  // #render_new_reply — a whole-thread re-render cost a reviewThreads
+  // refetch), so nothing replaced the form any more and the posted words sat
+  // in it, ready to be sent twice. Clearing is this handler's job now.
+  //
+  // Only on success. A failed reply comes back with the reviewer's words
+  // still in it, and emptying the box then would throw away the very text
+  // the failure path exists to keep.
+  resetReply(event) {
+    if (!event.detail?.success) return
+
+    const form = event.target
+    const textarea = form.querySelector('textarea[name="body"]')
+    if (!textarea) return
+
+    textarea.value = ""
+    // Through the same `input` the textarea already listens to, so autosize
+    // shrinks it back to one line, the preview cache is invalidated, and an
+    // open mention list closes — rather than repeating each of those here.
+    textarea.dispatchEvent(new Event("input", { bubbles: true }))
+    // A reply sent from the Preview tab should not reopen on a stale preview.
+    form.querySelector('[data-markdown-preview-target="writeTab"]')?.click()
+    // The compact card unfolds on :focus-within; letting go of focus folds it
+    // back to the one-line "Reply…" it rests as.
+    if (form.contains(document.activeElement)) document.activeElement.blur()
+  }
+
   // data-action="input->composer#autosize" — generic, used by the composer,
   // reply and edit textareas alike.
   autosize(event) {
