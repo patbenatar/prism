@@ -18,7 +18,8 @@
   <p class="field-label">Review summary</p>
   <%= f.text_area :body, rows: 3, id: nil, class: "composer-textarea w-full",
                    placeholder: pending_count.to_i.positive? ? "Leave a summary (optional)" : "Leave a summary",
-                   data: { testid: "review-submit-body" }, aria: { label: "Review summary" } %>
+                   data: { testid: "review-submit-body", action: "keydown->pending-review#submitOnEnter" },
+                   aria: { label: "Review summary" } %>
 
   <fieldset class="mt-3 space-y-2">
     <legend class="field-label">Decision</legend>
