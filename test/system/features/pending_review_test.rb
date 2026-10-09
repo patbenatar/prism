@@ -285,6 +285,33 @@ class PendingReviewTest < ApplicationSystemTestCase
     end
   end
 
+  # The summary box lives in the tray, outside every file section's composer
+  # controller, so the comment boxes' shortcut never reached it — the
+  # keystroke just added a newline. It submits through the panel's own
+  # button, so the decision picked above is the one GitHub receives.
+  test "Ctrl+Enter in the summary submits the review with the chosen decision" do
+    stub_feature_reviews_sequence([ github_fixture(:pending_review) ])
+    stub_feature_review_threads([ draft_thread("1", PATH) ])
+    stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events",
+                      body: { id: REVIEW_ID, node_id: REVIEW_NODE_ID, state: "CHANGES_REQUESTED",
+                              body: "Sent from the keyboard.", user: { login: "prism-dev" },
+                              html_url: "https://github.com/#{OWNER}/#{REPO}/pull/#{NUMBER}",
+                              commit_id: HEAD_SHA }.to_json)
+
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+
+    find("[data-testid=review-submit-open]").click
+    find("[data-testid=review-event-request-changes]").click
+    summary = find("[data-testid=review-submit-body]")
+    summary.send_keys("Sent from the keyboard.")
+    summary.send_keys([ :control, :enter ])
+
+    assert_current_path repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
+    expect_github_received(:post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events") do |body|
+      body["event"] == "REQUEST_CHANGES" && body["body"] == "Sent from the keyboard."
+    end
+  end
+
   private
 
   def draft_thread(key, path)

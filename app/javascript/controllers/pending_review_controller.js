@@ -31,4 +31,23 @@ export default class extends Controller {
       })
     )
   }
+
+  // data-action="keydown->pending-review#submitOnEnter" on the review summary.
+  //
+  // Cmd/Ctrl+Enter submits the review from its summary box, as it does on
+  // GitHub. composer#submitOnEnter can't do this: the composer controller
+  // lives on each file section, and this tray renders after `</main>` — the
+  // same reason this controller exists at all — so the keystroke never
+  // reaches it. Through the panel's own Submit button, so the chosen
+  // decision and the empty-review guard behave exactly as a click would.
+  submitOnEnter(event) {
+    if (!((event.metaKey || event.ctrlKey) && event.key === "Enter")) return
+
+    const form = event.target.closest("form")
+    const button = form?.querySelector('[data-testid="review-submit-confirm"]')
+    if (!button) return
+
+    event.preventDefault()
+    form.requestSubmit(button)
+  }
 }
