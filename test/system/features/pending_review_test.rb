@@ -285,6 +285,51 @@ class PendingReviewTest < ApplicationSystemTestCase
     end
   end
 
+  # GitHub 422s both an approval and a request for changes from the pull
+  # request's own author, so the panel offers only Comment. Re-stubbed after
+  # setup: WebMock answers with the most recently registered stub.
+  test "on your own pull request the panel offers only Comment, and submits it" do
+    own_pull = JSON.parse(github_fixture_path(:pull).read)
+    own_pull["user"]["login"] = "prism-dev"
+    stub_github_get("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}", body: own_pull.to_json)
+    stub_feature_reviews_sequence([ github_fixture(:pending_review) ])
+    stub_feature_review_threads([ draft_thread("1", PATH) ])
+    stub_github_post("/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events",
+                      body: { id: REVIEW_ID, node_id: REVIEW_NODE_ID, state: "COMMENTED",
+                              body: "Notes to self.", user: { login: "prism-dev" },
+                              html_url: "https://github.com/#{OWNER}/#{REPO}/pull/#{NUMBER}",
+                              commit_id: HEAD_SHA }.to_json)
+
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    find("[data-testid=review-submit-open]").click
+
+    assert find("[data-testid=review-event-approve]").disabled?
+    assert find("[data-testid=review-event-request-changes]").disabled?
+    assert find("[data-testid=review-event-comment]").checked?
+    assert_selector "[data-testid=review-own-pull-note]", text: /own pull request/
+
+    find("[data-testid=review-submit-body]").set("Notes to self.")
+    click_on "Submit review"
+
+    assert_current_path repo_pull_path(owner: OWNER, repo: REPO, number: NUMBER)
+    expect_github_received(:post, "/repos/#{OWNER}/#{REPO}/pulls/#{NUMBER}/reviews/#{REVIEW_ID}/events") do |body|
+      body["event"] == "COMMENT"
+    end
+  end
+
+  test "on someone else's pull request every decision stays available" do
+    stub_feature_reviews_sequence([ github_fixture(:pending_review) ])
+    stub_feature_review_threads([ draft_thread("1", PATH) ])
+
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: PATH)
+    find("[data-testid=review-submit-open]").click
+
+    refute find("[data-testid=review-event-approve]").disabled?
+    refute find("[data-testid=review-event-request-changes]").disabled?
+    assert find("[data-testid=review-event-approve]").checked?
+    assert_no_selector "[data-testid=review-own-pull-note]"
+  end
+
   # The summary box lives in the tray, outside every file section's composer
   # controller, so the comment boxes' shortcut never reached it — the
   # keystroke just added a newline. It submits through the panel's own
