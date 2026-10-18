@@ -4,6 +4,18 @@
 # design system's pill vocabulary. Every one of these returns a word as well as
 # a color — nothing in Prism is conveyed by color alone.
 module PullRequestsHelper
+  # Whether the signed-in user opened this pull request. GitHub refuses both
+  # APPROVE ("Can not approve your own pull request") and REQUEST_CHANGES
+  # ("Can not request changes on your own pull request") from the author,
+  # with a 422 — checked against the live API, 2026-10-18 — so the submit
+  # panel offers only Comment. Logins are case-insensitive on GitHub.
+  def own_pull_request?(pull_request)
+    author = pull_request&.author&.login
+    return false if author.blank? || current_user.nil?
+
+    author.casecmp?(current_user.login)
+  end
+
   # ── Browser titles ───────────────────────────────────────────────────────
   #
   # Most specific first, always. A browser truncates a title from the end

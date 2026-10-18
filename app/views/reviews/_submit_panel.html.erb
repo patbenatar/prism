@@ -21,20 +21,30 @@
                    data: { testid: "review-submit-body", action: "keydown->pending-review#submitOnEnter" },
                    aria: { label: "Review summary" } %>
 
+  <%# The author can only comment: GitHub 422s an approval or a request for
+      changes on your own pull request (see own_pull_request?). Both stay on
+      screen, disabled, rather than vanishing — so the panel keeps its shape
+      and the note says why — and Comment is what's selected. %>
+  <% own = own_pull_request?(pull_request) %>
   <fieldset class="mt-3 space-y-2">
     <legend class="field-label">Decision</legend>
-    <label class="flex items-center gap-2 text-sm">
-      <%= f.radio_button :event, "APPROVE", checked: true, data: { testid: "review-event-approve" } %>
+    <label class="flex items-center gap-2 text-sm <%= "text-ink-faint" if own %>">
+      <%= f.radio_button :event, "APPROVE", checked: !own, disabled: own, data: { testid: "review-event-approve" } %>
       Approve
     </label>
-    <label class="flex items-center gap-2 text-sm">
-      <%= f.radio_button :event, "REQUEST_CHANGES", data: { testid: "review-event-request-changes" } %>
+    <label class="flex items-center gap-2 text-sm <%= "text-ink-faint" if own %>">
+      <%= f.radio_button :event, "REQUEST_CHANGES", disabled: own, data: { testid: "review-event-request-changes" } %>
       Request changes
     </label>
     <label class="flex items-center gap-2 text-sm">
-      <%= f.radio_button :event, "COMMENT", data: { testid: "review-event-comment" } %>
+      <%= f.radio_button :event, "COMMENT", checked: own, data: { testid: "review-event-comment" } %>
       Comment
     </label>
+    <% if own %>
+      <p class="composer-note" data-testid="review-own-pull-note">
+        GitHub doesn't let you approve or request changes on your own pull request.
+      </p>
+    <% end %>
   </fieldset>
 
   <div class="mt-3 flex justify-end">
