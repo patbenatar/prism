@@ -328,7 +328,13 @@ class MermaidTest < ApplicationSystemTestCase
     # `classDef evil fill:#fff}body{display:none` was trying to change.
     assert_equal "flex", computed_style("body", "display")
 
-    assert_no_csp_violations
+    # The first fence plants `<img src=x onerror=…>`. Since late October 2026
+    # the CI browser reports refusing that handler while mermaid and our
+    # parse step read the label — a refusal, not an execution: `__pwned` is
+    # still null above and no handler attribute survives into the page. So
+    # that one report is expected here, and only here. Anything else the
+    # browser blocks — mermaid's stylesheet, our own script — still fails.
+    assert_no_csp_violations(except: /Executing inline event handler/)
   end
 
   # ── It fails safely ──────────────────────────────────────────────────────
