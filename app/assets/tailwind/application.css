@@ -1657,11 +1657,58 @@
     @apply mx-auto block;
   }
 
-  /* The toggle is added by the controller, so it exists only where there is
-     something to toggle to. */
-  .md-mermaid-toggle {
+  /* Expand and the source toggle. Added by the controller once a diagram has
+     drawn, so they exist only where there is something to act on; Expand
+     hides while the source is showing, since there is nothing to expand. */
+  .md-mermaid-actions {
+    @apply mt-1 flex gap-4;
+  }
+
+  .md-mermaid-action {
     font-family: var(--font-display);
-    @apply mt-1 text-xs text-ink-faint hover:text-brand;
+    @apply text-xs text-ink-faint hover:text-brand;
+  }
+
+  .md-mermaid[data-mermaid-state="source"] .md-mermaid-expand {
+    @apply hidden;
+  }
+
+  /* The expanded view: a full-screen native <dialog>. The diagram is moved
+     in and scaled to fit — `width`/`height` here outrank the SVG's own
+     size attributes, and its viewBox keeps the aspect ratio — so the whole
+     drawing is on screen at once. Inline it stays at its real size and
+     scrolls; between them the two views answer both "what does it say" and
+     "what shape is it". On `surface`, the colour the diagram is themed
+     against inline. */
+  .md-mermaid-dialog {
+    @apply m-0 h-full max-h-none w-full max-w-none border-0 bg-surface p-0 text-ink;
+  }
+
+  .md-mermaid-dialog[open] {
+    @apply flex flex-col;
+  }
+
+  .md-mermaid-dialog-bar {
+    font-family: var(--font-display);
+    @apply flex shrink-0 items-center justify-between gap-4 border-b border-line px-4 py-2;
+  }
+
+  .md-mermaid-dialog-title {
+    @apply truncate text-sm text-ink-soft;
+  }
+
+  .md-mermaid-dialog-stage {
+    @apply flex min-h-0 flex-1 items-center justify-center p-6;
+  }
+
+  .md-mermaid-dialog-stage svg {
+    @apply block h-full w-full;
+  }
+
+  /* Set while a diagram is expanded, so a wheel over the modal can't scroll
+     the page behind it out from under the reviewer. */
+  html.md-mermaid-modal-open {
+    @apply overflow-hidden;
   }
 
   .md-mermaid-error {

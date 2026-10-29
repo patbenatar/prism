@@ -409,6 +409,69 @@ class MermaidTest < ApplicationSystemTestCase
     assert_operator overflow, :<=, 1, "the page scrolls sideways at 390px"
   end
 
+  # ── Expanded ─────────────────────────────────────────────────────────────
+  #
+  # Inline a wide diagram scrolls in its frame and is never seen whole. The
+  # expanded view is for exactly that diagram, so that is the one used here,
+  # at the width where it scrolls.
+
+  test "Expand shows a diagram that scrolls inline whole on one screen, and Escape puts it back" do
+    open_wide_at_phone_width
+
+    figure_height = page.evaluate_script("document.querySelector('[data-testid=mermaid-figure]').offsetHeight")
+    scroll_before = page.evaluate_script("window.scrollY")
+
+    click_on "Expand"
+
+    assert_selector "dialog[open][data-testid=mermaid-dialog] svg"
+    %w[Repository WebhookDelivery GitHubPullRequest].each do |label|
+      assert_text find("[data-testid=mermaid-dialog]"), label
+    end
+
+    # The whole drawing is inside the viewport — no scrolling to see the ends.
+    bounds = page.evaluate_script(<<~JS)
+      (() => {
+        const r = document.querySelector("[data-testid=mermaid-dialog] svg").getBoundingClientRect()
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+                 width: window.innerWidth, height: window.innerHeight }
+      })()
+    JS
+    assert_operator bounds["left"], :>=, 0
+    assert_operator bounds["top"], :>=, 0
+    assert_operator bounds["right"], :<=, bounds["width"]
+    assert_operator bounds["bottom"], :<=, bounds["height"]
+
+    # Moved, not copied — one diagram in the document, so no id appears twice —
+    # and the frame it left keeps its height, so nothing behind the modal moves.
+    assert_equal 1, page.evaluate_script("document.querySelectorAll('svg[id^=\"prism-mermaid\"]').length")
+    assert_equal figure_height,
+                 page.evaluate_script("document.querySelector('[data-testid=mermaid-figure]').offsetHeight")
+
+    find("[data-testid=mermaid-dialog-close]").send_keys(:escape)
+
+    assert_no_selector "[data-testid=mermaid-dialog]"
+    assert_selector "[data-testid=mermaid-figure] svg"
+    assert_equal scroll_before, page.evaluate_script("window.scrollY")
+    assert_equal "mermaid-expand", page.evaluate_script("document.activeElement.dataset.testid"),
+                 "focus goes back to the button that opened it"
+    assert_equal "", page.evaluate_script("document.querySelector('[data-testid=mermaid-figure]').style.height")
+    assert_no_csp_violations
+  end
+
+  test "Close puts the diagram back, and Expand isn't offered while the source is showing" do
+    open_wide_at_phone_width
+
+    click_on "Expand"
+    find("[data-testid=mermaid-dialog-close]").click
+    assert_no_selector "[data-testid=mermaid-dialog]"
+    assert_selector "[data-testid=mermaid-figure] svg", visible: true
+
+    click_on "Show source"
+    assert_no_selector "[data-testid=mermaid-expand]", visible: true
+    click_on "Show diagram"
+    assert_selector "[data-testid=mermaid-expand]", visible: true
+  end
+
   # ── It is actually painted ───────────────────────────────────────────────
   #
   # This pair is the regression for the bug that shipped: a diagram whose
@@ -649,6 +712,16 @@ class MermaidTest < ApplicationSystemTestCase
     stub_diagrams
     sign_in_for_feature(@user)
     visit_diagrams
+  end
+
+  def open_wide_at_phone_width
+    resize_window(*PHONE)
+    stub_feature_pull_request(owner: OWNER, repo: REPO, number: NUMBER,
+                              files_body: [ added_file(WIDE_PATH) ], reviews_body: [])
+    stub_feature_contents(WIDE_PATH, HEAD_SHA, WIDE, owner: OWNER, repo: REPO)
+    sign_in_for_feature(@user)
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: WIDE_PATH)
+    assert_selector "[data-testid=mermaid-figure] svg", wait: 20
   end
 
   def stub_diagrams

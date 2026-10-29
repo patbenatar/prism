@@ -508,6 +508,89 @@ export default class extends Controller {
 
   disconnect() {
     mounted.delete(this)
+    if (this.dialog?.open) this.dialog.close()
+  }
+
+  // ── Expanded view ────────────────────────────────────────────────────────
+  //
+  // Inline, a diagram is drawn at its own size and scrolls in its frame when
+  // it is wider than the column — legible, but never seen whole. Expanded,
+  // the same drawing fills the screen and is scaled to fit it, so the two
+  // views between them cover both questions: what does this say, and what is
+  // its shape.
+  //
+  // A native <dialog> opened with showModal(), which brings the focus trap,
+  // Escape, and an inert page behind it without any code here. It is built on
+  // open and removed on close rather than kept around, so Turbo's page cache
+  // never snapshots a stray one into <body>.
+  //
+  // The SVG is *moved* in, not copied. Mermaid's stylesheet and its arrowhead
+  // markers are addressed by id (see `namespaceIds`), and a copy would put
+  // every one of those ids in the document twice. While it is out, the inline
+  // frame holds its height, so nothing behind the modal moves.
+  expand(event) {
+    event?.preventDefault()
+    const svg = this.figureTarget.querySelector("svg")
+    if (!svg || this.dialog?.open) return
+
+    this.figureTarget.style.height = `${this.figureTarget.offsetHeight}px`
+    this.dialog = this.buildDialog(svg)
+    this.dialogStage.replaceChildren(svg)
+    document.body.appendChild(this.dialog)
+    // The page behind keeps its scroll position; a wheel over the modal
+    // would otherwise scroll it, unseen.
+    document.documentElement.classList.add("md-mermaid-modal-open")
+    this.dialog.showModal()
+  }
+
+  // The dialog's `close` event — fired by the Close button, by Escape, and by
+  // disconnect — so there is exactly one way back.
+  collapse() {
+    if (!this.dialog) return
+
+    // replaceChildren, not append: if the scheme changed while the modal was
+    // open, the stage holds the redrawn diagram and the frame must take that
+    // one, not end up holding two.
+    this.figureTarget.replaceChildren(...this.dialogStage.childNodes)
+    this.figureTarget.style.height = ""
+    document.documentElement.classList.remove("md-mermaid-modal-open")
+    this.dialog.remove()
+    this.dialog = null
+    this.dialogStage = null
+    if (this.element.isConnected) this.expandButton?.focus()
+  }
+
+  buildDialog(svg) {
+    const dialog = document.createElement("dialog")
+    dialog.className = "md-mermaid-dialog"
+    dialog.dataset.testid = "mermaid-dialog"
+    const name = svg.querySelector("title")?.textContent?.trim() || "Diagram"
+    dialog.setAttribute("aria-label", name)
+
+    const bar = document.createElement("div")
+    bar.className = "md-mermaid-dialog-bar"
+
+    const title = document.createElement("span")
+    title.className = "md-mermaid-dialog-title"
+    title.textContent = name
+
+    const close = document.createElement("button")
+    close.type = "button"
+    close.className = "btn btn-ghost btn-sm"
+    close.dataset.testid = "mermaid-dialog-close"
+    close.textContent = "Close"
+    close.addEventListener("click", () => dialog.close())
+
+    bar.append(title, close)
+
+    this.dialogStage = document.createElement("div")
+    this.dialogStage.className = "md-mermaid-dialog-stage"
+
+    dialog.append(bar, this.dialogStage)
+    // Wired directly: the dialog lives in <body>, outside this controller's
+    // element, so a data-action on it would never reach this instance.
+    dialog.addEventListener("close", () => this.collapse())
+    return dialog
   }
 
   // data-action on the button the controller adds once a diagram exists.
@@ -626,10 +709,13 @@ export default class extends Controller {
       adopted.style.maxWidth = `${Number(fallbackWidth)}px`
     }
 
-    this.figureTarget.replaceChildren(adopted)
+    // A redraw while expanded (the colour scheme changed) lands in the modal,
+    // where the reviewer is looking; collapse() carries it back.
+    const host = this.dialog?.open ? this.dialogStage : this.figureTarget
+    host.replaceChildren(adopted)
     assertStylesApplied(adopted)
     this.errorTarget.hidden = true
-    this.addToggle()
+    this.addActions()
     this.state("diagram")
   }
 
@@ -656,18 +742,39 @@ export default class extends Controller {
 
     this.errorTarget.hidden = false
     this.state("source")
-    if (this.hasToggleTarget) this.toggleTarget.remove()
+    this.element.querySelector(".md-mermaid-actions")?.remove()
   }
 
-  addToggle() {
+  // Looked up rather than kept: after a Turbo cache restore the row comes
+  // back as markup under a fresh controller instance that never built it.
+  get expandButton() {
+    return this.element.querySelector('[data-testid="mermaid-expand"]')
+  }
+
+  // Added once a diagram exists, so there is never a button for a view that
+  // isn't there. Expand hides itself while the source is showing (CSS keyed
+  // on `data-mermaid-state`), since there is nothing to expand then.
+  addActions() {
     if (this.hasToggleTarget) return
 
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "md-mermaid-toggle"
-    button.dataset.mermaidTarget = "toggle"
-    button.dataset.action = "mermaid#toggle"
-    button.dataset.testid = "mermaid-toggle"
-    this.element.appendChild(button)
+    const row = document.createElement("div")
+    row.className = "md-mermaid-actions"
+
+    const expand = document.createElement("button")
+    expand.type = "button"
+    expand.className = "md-mermaid-action md-mermaid-expand"
+    expand.dataset.action = "mermaid#expand"
+    expand.dataset.testid = "mermaid-expand"
+    expand.textContent = "Expand"
+
+    const toggle = document.createElement("button")
+    toggle.type = "button"
+    toggle.className = "md-mermaid-action"
+    toggle.dataset.mermaidTarget = "toggle"
+    toggle.dataset.action = "mermaid#toggle"
+    toggle.dataset.testid = "mermaid-toggle"
+
+    row.append(expand, toggle)
+    this.element.appendChild(row)
   }
 }
