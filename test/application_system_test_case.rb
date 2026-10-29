@@ -29,9 +29,16 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # Fails with the offending messages if the browser reported a CSP violation
   # since the last call. Reading the log drains it, so call it at the end of
   # whatever you want covered.
-  def assert_no_csp_violations
+  #
+  # `except:` is for a test whose fixture plants something the policy exists
+  # to refuse, where the browser reporting that refusal is the policy working
+  # rather than Prism breaking. Name the one class of report you planted;
+  # anything else blocked still fails, so this can't hide a refused script or
+  # stylesheet of our own.
+  def assert_no_csp_violations(except: nil)
     entries = page.driver.browser.logs.get(:browser)
     violations = entries.map(&:message).grep(/Content Security Policy/i)
+    violations = violations.grep_v(except) if except
 
     assert_empty violations, "the browser blocked something:\n#{violations.join("\n")}"
   end
