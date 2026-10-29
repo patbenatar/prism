@@ -443,7 +443,12 @@ class MermaidTest < ApplicationSystemTestCase
 
     # Moved, not copied — one diagram in the document, so no id appears twice —
     # and the frame it left keeps its height, so nothing behind the modal moves.
-    assert_equal 1, page.evaluate_script("document.querySelectorAll('svg[id^=\"prism-mermaid\"]').length")
+    # Counted by where diagrams can live, not by id: namespaceIds rewrites every
+    # id to `user-content-…`, which other figures on a page would share.
+    assert_equal 1, page.evaluate_script(
+      "document.querySelectorAll('[data-testid=mermaid-figure] svg, [data-testid=mermaid-dialog] svg').length"
+    )
+    assert_selector "[data-testid=mermaid-figure] svg", count: 0
     assert_equal figure_height,
                  page.evaluate_script("document.querySelector('[data-testid=mermaid-figure]').offsetHeight")
 
