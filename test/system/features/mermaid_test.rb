@@ -594,6 +594,7 @@ class MermaidTest < ApplicationSystemTestCase
 
       refute_empty labels, "the fixture should have labels inside its tables"
       labels.each do |label|
+        assert label["ratio"], "couldn't read the colours of #{label.inspect}"
         assert_operator label["ratio"], :>=, 4.5,
                         "#{label["text"].inspect} is #{label["ink"]} on #{label["behind"]}"
       end
