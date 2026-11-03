@@ -784,7 +784,7 @@ class MermaidTest < ApplicationSystemTestCase
   # Every label inside a table, with the colour it is painted in, the colour
   # of the topmost shape under its centre, and the WCAG contrast between them.
   def label_contrast
-    page.evaluate_script(<<~JS)
+    page.evaluate_script(<<~'JS')
       (() => {
         const rgb = (v) => { const m = v.match(/rgba?\(([^)]+)\)/); const c = m && m[1].split(/[\s,/]+/).map(Number); return c && c[3] !== 0 ? c.slice(0, 3) : null }
         const lum = (c) => c.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 })
