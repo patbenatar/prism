@@ -475,6 +475,81 @@ function themeConfig() {
   }
 }
 
+// ── Labels the diagram coloured itself ─────────────────────────────────────
+//
+// A diagram can bring its own colours — `classDef new fill:#c8e6c9,color:#333`
+// — and its author picked them against mermaid's default light theme. Mermaid
+// applies the class's text colour to every label in the node but its fill to
+// only some of the shapes behind them: an ER table's header and even rows take
+// the class fill, its odd rows keep the theme's. On paper the theme's row is
+// white and #333 reads; in dark mode it is navy and half the table vanishes.
+//
+// So each label is checked against the shape it is actually drawn on, and one
+// that fails contrast is redrawn in whichever of the two fixed inks reads on
+// that shape. A label that already reads keeps the author's colour — this
+// repairs the clash, it doesn't restyle the diagram.
+const MIN_CONTRAST = 4.5
+
+// A computed colour, which the browser always serializes as rgb()/rgba().
+// Transparent is no colour at all: nothing is painted there.
+function channels(value) {
+  const match = value?.match(/^rgba?\(([^)]+)\)$/)
+  if (!match) return null
+  const [red, green, blue, alpha = 1] = match[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+  return alpha === 0 ? null : [red, green, blue]
+}
+
+// WCAG 2 relative luminance and contrast ratio.
+function luminance(rgb) {
+  const [red, green, blue] = rgb.map((value) => {
+    const channel = value / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+function contrast(a, b) {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (light + 0.05) / (dark + 0.05)
+}
+
+function keepLabelsLegible(svg) {
+  const frame = channels(color("--color-surface"))
+  const inks = ["--color-on-light", "--color-on-dark"].map((token) => {
+    const value = color(token)
+    return { value, rgb: channels(value) }
+  })
+
+  for (const node of svg.querySelectorAll("g.node")) {
+    // Document order is paint order, so the last shape under a label is the
+    // one it is drawn on.
+    const shapes = [...node.querySelectorAll("rect, path, polygon, circle, ellipse")]
+      .map((shape) => ({ box: shape.getBoundingClientRect(), fill: channels(getComputedStyle(shape).fill) }))
+      .filter(({ box, fill }) => fill && box.width > 0 && box.height > 0)
+
+    for (const text of node.querySelectorAll("text")) {
+      const ink = channels(getComputedStyle(text.querySelector("tspan") || text).fill)
+      const box = text.getBoundingClientRect()
+      // Unmeasurable (the file is folded away) or unpainted: nothing to judge.
+      if (!ink || box.width === 0) continue
+
+      const x = box.left + box.width / 2
+      const y = box.top + box.height / 2
+      const behind =
+        shapes.findLast(({ box: s }) => x >= s.left && x <= s.right && y >= s.top && y <= s.bottom)
+          ?.fill || frame
+      if (!behind || contrast(ink, behind) >= MIN_CONTRAST) continue
+
+      const best = inks.reduce((a, b) => (contrast(a.rgb, behind) >= contrast(b.rgb, behind) ? a : b))
+      // `important`, because the author's colour arrived as `fill: … !important`
+      // in the same style attribute; this replaces that declaration.
+      for (const label of [text, ...text.querySelectorAll("tspan")]) {
+        label.style.setProperty("fill", best.value, "important")
+      }
+    }
+  }
+}
+
 // ── Redrawing when the colour scheme changes ───────────────────────────────
 //
 // One media query listener and one attribute observer for the page, not a pair
@@ -717,6 +792,9 @@ export default class extends Controller {
     this.errorTarget.hidden = true
     this.addActions()
     this.state("diagram")
+    // After the state flip: the check measures what is on screen, and the
+    // figure is `display: none` until the diagram is showing.
+    keepLabelsLegible(adopted)
   }
 
   // A malformed fence is one bad diagram, not a bad page: the block keeps its

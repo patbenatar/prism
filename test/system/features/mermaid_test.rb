@@ -29,6 +29,7 @@ class MermaidTest < ApplicationSystemTestCase
   WIDE_PATH = "docs/wide.md"
   HOSTILE_PATH = "docs/hostile.md"
   RICH_PATH = "docs/how-prism-works.md"
+  CLASSED_PATH = "docs/schema.md"
 
   SCREENSHOTS = Rails.root.join("tmp/screenshots")
   LAPTOP = [ 1440, 1000 ].freeze
@@ -141,6 +142,31 @@ class MermaidTest < ApplicationSystemTestCase
         G->>P: pull_request event
         P->>P: Verify signature
         P-->>G: 200, immediately
+    ```
+  MARKDOWN
+
+  # A diagram that brings its own colours, the way an author writes one against
+  # mermaid's default light theme: a pale fill and dark text. In an ER table
+  # the class fill lands on the header and the even rows only — the odd rows
+  # keep the theme's own background — which is navy in dark mode, under text
+  # the author made #333.
+  CLASSED = <<~MARKDOWN
+    # Schema
+
+    ```mermaid
+    erDiagram
+        classDef new fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#333333
+        ReturnReasonSet:::new ||--o{ ReturnReasonSetReason:::new : "has_many"
+        ReturnReasonSet {
+            int id PK
+            int shop_id FK
+            string name
+        }
+        ReturnReasonSetReason {
+            int id PK
+            int return_reason_set_id FK
+            int position
+        }
     ```
   MARKDOWN
 
@@ -559,6 +585,35 @@ class MermaidTest < ApplicationSystemTestCase
     assert_no_csp_violations
   end
 
+  # ── Colours the diagram brought ──────────────────────────────────────────
+
+  test "a label coloured by the diagram itself stays readable on the dark theme's rows" do
+    with_color_scheme(:dark) do
+      open_classed
+      labels = label_contrast
+
+      refute_empty labels, "the fixture should have labels inside its tables"
+      labels.each do |label|
+        assert_operator label["ratio"], :>=, 4.5,
+                        "#{label["text"].inspect} is #{label["ink"]} on #{label["behind"]}"
+      end
+
+      # The rows the class did fill keep the author's colour; only the clash
+      # is repaired.
+      assert labels.any? { |label| label["ink"] == "rgb(51, 51, 51)" },
+             "a label on the class's own fill should keep the author's #333"
+    end
+
+    assert_no_csp_violations
+  end
+
+  test "on paper a diagram's own label colours are left exactly as written" do
+    open_classed
+
+    assert label_contrast.all? { |label| label["ink"] == "rgb(51, 51, 51)" },
+           "every label reads against white, so none should have been recoloured"
+  end
+
   # ── The pictures ─────────────────────────────────────────────────────────
 
   test "screenshots of a rendered diagram, and of one that could not be drawn" do
@@ -716,6 +771,41 @@ class MermaidTest < ApplicationSystemTestCase
 
 
 
+  def open_classed
+    stub_feature_pull_request(owner: OWNER, repo: REPO, number: NUMBER,
+                              files_body: [ added_file(CLASSED_PATH) ], reviews_body: [])
+    stub_feature_contents(CLASSED_PATH, HEAD_SHA, CLASSED, owner: OWNER, repo: REPO)
+    sign_in_for_feature(@user)
+    open_pull_file(owner: OWNER, repo: REPO, number: NUMBER, path: CLASSED_PATH)
+    assert_selector "[data-testid=mermaid-figure] svg g.node", wait: 20
+  end
+
+  # Every label inside a table, with the colour it is painted in, the colour
+  # of the topmost shape under its centre, and the WCAG contrast between them.
+  def label_contrast
+    page.evaluate_script(<<~JS)
+      (() => {
+        const rgb = (v) => { const m = v.match(/rgba?\(([^)]+)\)/); const c = m && m[1].split(/[\s,/]+/).map(Number); return c && c[3] !== 0 ? c.slice(0, 3) : null }
+        const lum = (c) => c.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 })
+          .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
+        const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05) }
+        const svg = document.querySelector("[data-testid=mermaid-figure] svg")
+        return [...svg.querySelectorAll("g.node")].flatMap((node) => {
+          const shapes = [...node.querySelectorAll("rect, path, polygon")]
+            .map((el) => ({ box: el.getBoundingClientRect(), fill: getComputedStyle(el).fill }))
+            .filter((s) => rgb(s.fill) && s.box.width > 0)
+          return [...node.querySelectorAll("text")].filter((t) => t.textContent.trim()).map((t) => {
+            const b = t.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + b.height / 2
+            const behind = shapes.findLast((s) => x >= s.box.left && x <= s.box.right && y >= s.box.top && y <= s.box.bottom)
+            const ink = getComputedStyle(t.querySelector("tspan") || t).fill
+            const back = behind ? behind.fill : getComputedStyle(document.querySelector("[data-testid=mermaid-figure]")).backgroundColor
+            return { text: t.textContent.trim(), ink, behind: back, ratio: ratio(rgb(ink), rgb(back)) }
+          })
+        })
+      })()
+    JS
+  end
+
   # The pull request under review: one file with a good diagram, one with a
   # broken fence. Both in the same request on purpose — "a broken diagram must
   # not break the other files" is only worth asserting with another file there.
@@ -750,7 +840,8 @@ class MermaidTest < ApplicationSystemTestCase
   # An added file: every line is in the diff, so every block is commentable.
   def added_file(path)
     body = { DIAGRAM_PATH => DIAGRAM, BROKEN_PATH => BROKEN, PLAIN_PATH => PLAIN,
-             WIDE_PATH => WIDE, HOSTILE_PATH => HOSTILE, RICH_PATH => RICH }.fetch(path)
+             WIDE_PATH => WIDE, HOSTILE_PATH => HOSTILE, RICH_PATH => RICH,
+             CLASSED_PATH => CLASSED }.fetch(path)
     lines = body.lines.map(&:chomp)
     patch = ([ "@@ -0,0 +1,#{lines.size} @@" ] + lines.map { |line| "+#{line}" }).join("\n")
 
