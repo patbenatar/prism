@@ -29,7 +29,10 @@
   <span class="hidden text-xs text-ink sm:inline">Markdown</span>
 <% end %>
 
-<div id="file_view" data-controller="gutter block-nav file-nav reveal">
+<%# `reveal#follow` is for a section link clicked while the URL already
+    names it; see the controller. %>
+<div id="file_view" data-controller="gutter block-nav file-nav reveal"
+     data-action="click->reveal#follow">
 
   <%# ── Pull request header and tabs ───────────────────────────────────── %>
   <div class="reading-shell pt-5">

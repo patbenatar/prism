@@ -71,8 +71,13 @@ module Markdown
     #   sanitized HTML — see Markdown::ImageRewriter. Nil renders a document
     #   whose relative images point nowhere, which is right for a caller that
     #   has no repository to resolve them against (the unit tests, a preview).
-    def initialize(images: nil)
+    # @param anchors [Markdown::Anchors] scopes this document's ids to its file
+    #   and makes its headings linkable. The default still numbers duplicate
+    #   headings the way GitHub does, so a document rendered on its own gets
+    #   the same slugs it would get on the page.
+    def initialize(images: nil, anchors: Anchors.new)
       @images = images && ImageRewriter.new(images)
+      @anchors = anchors
     end
 
     def call(markdown)
@@ -81,9 +86,11 @@ module Markdown
 
       document = Commonmarker.parse(source, options: PARSE_OPTIONS)
       counter = Counter.new
+      anchors = @anchors.pass
 
       regions(document, source).map do |region|
-        build_block(region, source: source, counter: counter, depth: 0, parent_id: nil)
+        build_block(region, source: source, counter: counter, anchors: anchors,
+                            depth: 0, parent_id: nil)
       end
     end
 
@@ -227,13 +234,18 @@ module Markdown
 
     # --- block building -----------------------------------------------------
 
-    # The image rewrite belongs here, between sanitizing and everything that
-    # reads the result: child blocks are cut out of this HTML, and the block id
-    # is a digest of it, so rewriting later would leave list items and table
-    # rows pointing at URLs the page no longer uses.
-    def build_block(region, source:, counter:, depth:, parent_id:)
+    # The image and anchor rewrites belong here, between sanitizing and
+    # everything that reads the result: child blocks are cut out of this HTML,
+    # and the block id is a digest of it, so rewriting later would leave list
+    # items and table rows pointing at URLs and ids the page no longer uses.
+    #
+    # `anchors` is one Markdown::Anchors::Pass for the whole document, fed the
+    # blocks in order, because numbering a second `## Setup` as `setup-1`
+    # needs to know about the first one three blocks up.
+    def build_block(region, source:, counter:, anchors:, depth:, parent_id:)
       html = Sanitizer.call(Highlighter.call(region.html))
       html = @images.call(html) if @images
+      html = anchors.call(html)
       id = block_id(counter.next, region.start_line, region.end_line, html)
 
       block = Block.new(

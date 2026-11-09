@@ -13,7 +13,13 @@ import { Controller } from "@hotwired/stimulus"
 //      a constant — it wraps at phone width. Measuring it beats picking a
 //      number that is wrong at one of the two widths (the same lesson as
 //      `--tray-height`, DESIGN.md §8).
-//   2. **Says which file you are in**, in the switcher's summary and as
+//   2. **Publishes each file heading's height as `--filehead-height`**, on
+//      that file's own <section>. A section link lands on a heading inside
+//      the file, so it has to clear the file's sticky heading as well as the
+//      two bars above it, and that heading wraps too — a long basename at
+//      phone width takes two lines. Per section rather than once for the
+//      page, because one file's path can wrap while the next one's does not.
+//   3. **Says which file you are in**, in the switcher's summary and as
 //      `aria-current` on its rows, so the menu is a position as well as a
 //      destination.
 export default class extends Controller {
@@ -29,6 +35,10 @@ export default class extends Controller {
     this.measure()
     this.resizeObserver = new ResizeObserver(this.measure)
     if (this.hasBarTarget) this.resizeObserver.observe(this.barTarget)
+    this.sections.forEach((section) => {
+      const head = this.headOf(section)
+      if (head) this.resizeObserver.observe(head)
+    })
     window.addEventListener("resize", this.measure)
 
     this.watchSections()
@@ -39,6 +49,7 @@ export default class extends Controller {
     this.intersectionObserver?.disconnect()
     window.removeEventListener("resize", this.measure)
     document.documentElement.style.removeProperty("--filebar-height")
+    this.sections.forEach((section) => section.style.removeProperty("--filehead-height"))
   }
 
   // data-action="file-nav#jump" on every row of the menu.
@@ -62,10 +73,19 @@ export default class extends Controller {
   }
 
   measure() {
+    this.sections.forEach((section) => {
+      const height = Math.round(this.headOf(section)?.getBoundingClientRect().height ?? 0)
+      if (height > 0) section.style.setProperty("--filehead-height", `${height}px`)
+    })
+
     if (!this.hasBarTarget) return
 
     const height = Math.round(this.barTarget.getBoundingClientRect().height)
     if (height > 0) document.documentElement.style.setProperty("--filebar-height", `${height}px`)
+  }
+
+  headOf(section) {
+    return section.querySelector(':scope > [data-testid="file-head"]')
   }
 
   // The file being read is the last one whose heading has passed under the

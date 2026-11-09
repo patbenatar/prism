@@ -314,8 +314,8 @@ module Review
       return nil unless renderable?
 
       BlockMapper.call(
-        head_blocks: parse(head_source, images: head_images),
-        base_blocks: parse(base_source, images: base_images),
+        head_blocks: parse(head_source, images: head_images, anchors: document_anchors),
+        base_blocks: parse(base_source, images: base_images, anchors: base_anchors),
         line_sets: @line_sets,
         threads: threads,
         path: file.path,
@@ -326,7 +326,27 @@ module Review
     # Through ParsedSource rather than straight to Markdown::Document: the
     # parse is the page's largest single cost and a near-pure function of the
     # bytes at a sha, so it is cached alongside the content it came from.
-    def parse(text, images:) = ParsedSource.blocks(text, user_id: cache_scope, images: images)
+    def parse(text, images:, anchors:)
+      ParsedSource.blocks(text, user_id: cache_scope, images: images, anchors: anchors)
+    end
+
+    # The side the reviewer reads is scoped to the file's key, the same key its
+    # <section> and block ids carry, and its headings are linkable by path —
+    # see Markdown::Anchors for the shape of the link.
+    def document_anchors = Markdown::Anchors.new(scope: file_key, path: file.path)
+
+    # The base side of a modified file only ever appears in removed strips,
+    # and it is a different document from the head with mostly the same
+    # headings, so it needs a scope of its own or a `## Setup` kept by the pull
+    # request and the deleted one beside it would share an id. Same length as
+    # the file key and differing in its first character, so neither scope's
+    # ids can ever start with the other's. A removed file reads from the base
+    # side, so there it IS the document.
+    def base_anchors
+      return document_anchors if file.removed?
+
+      Markdown::Anchors.new(scope: file_key.sub(/\Af-/, "b-"), linkable: false)
+    end
 
     # Each side resolves its images against its own ref and its own directory,
     # which is the only arrangement that gets the awkward cases right. A removed

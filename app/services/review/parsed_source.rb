@@ -27,15 +27,21 @@ module Review
   # different documents. Its `cache_key` is the repository, the ref and the
   # directory — all stable for as long as the content is — so this costs no
   # hit rate that was ever real.
+  #
+  # `anchors` is in the key for the same reason: every id in a document is
+  # scoped to its file (Markdown::Anchors), so the same README at two paths,
+  # or on the two sides of one file, renders two different documents.
   module ParsedSource
     TTL = 1.day
 
-    def self.blocks(text, user_id: nil, images: nil)
+    def self.blocks(text, user_id: nil, images: nil, anchors: Markdown::Anchors.new)
       return [] if text.blank?
 
-      key = [ "markdown-blocks", user_id, images&.cache_key, Digest::SHA256.hexdigest(text) ]
+      key = [ "markdown-blocks", user_id, images&.cache_key, anchors.cache_key,
+              Digest::SHA256.hexdigest(text) ]
       Rails.cache.fetch(key, expires_in: TTL) do
-        Markdown::Document.parse(text, renderer: Markdown::Renderer.new(images: images)).blocks
+        renderer = Markdown::Renderer.new(images: images, anchors: anchors)
+        Markdown::Document.parse(text, renderer: renderer).blocks
       end
     end
   end

@@ -719,6 +719,11 @@ the layout and should set `content_for :breadcrumb`.
    the whole document. Both are ordinary DOM either way, never re-fetched, so
    an anchor or an `n`/`p` jump into hidden content simply opens it
    (`controllers/reveal`).
+
+   **Every heading is a section link.** Its "#" sits after the heading's text
+   and lands below all three pinned bars; the URL reads
+   `/:owner/:repo/pulls/:n/markdown#docs/guide.md:setup`. Why that shape, and
+   what makes it work, is §9 "Section links".
 6. **Error screens** — `GithubErrorHandling` turns `Github::NotFound` into a
    friendly 404 that says GitHub answers the same way for a missing and a
    private repository, `Github::Forbidden` into an org-approval explanation, and
@@ -758,6 +763,7 @@ behavior; these styles already exist and should not be re-cut.
 | `.md-child` + `.md-add--child` | A list item a reviewer can comment on alone. The block-level hover is **cancelled** for children and re-granted only to the child under the pointer, so hovering a list does not light up every item at once. Inside a nested list the "+" moves into that list's own indent channel, at any depth. |
 | `.md-child-table` + `.md-add--row` | A table row's "+". A table is `overflow-x-auto`, so the button cannot hang outside it — the first cell gets `pl-9` and the button sits inside. The reserve is scoped to `tr:not(.md-thread-row)`, because the continuation row that carries the conversation is a first cell too and has no "+" to make room for. |
 | `.md-thread-row` | The extra `<tr>` carrying a table row's threads and composer. Drops the rule above it, so it reads as a continuation of its row, and gives up its cell padding. The conversation inside it gets §8's channel like any other, pinned to `100cqw` and `sticky left-0` so a wide, scrolling table cannot take it sideways — see §8, "One left edge for every conversation". |
+| `.md-heading-link` | A heading's own link, after its text (§9, "Section links"). `opacity-0` until the heading is hovered or the link is focused, like `.md-add`; always visible on a touch screen and below 640px, the same call the "+" makes. Never before the heading: the space left of a block is the "+"'s. |
 | `.md-removed-strip` / `.md-removed-summary` / `.md-removed-body` | The collapsed strip for content this PR deleted, shown where it used to be. Expanded content is struck through and at 75% opacity. |
 
 Rules for workstream D:
@@ -1377,6 +1383,55 @@ exists only where there is something to toggle to.
   the diagram's own stylesheet to match — for the reason `Markdown::Sanitizer`
   namespaces the document's.
 
+**Section links** — every heading gets a link to itself, and the links an
+author writes between their own sections (a table of contents, "see
+[Setup](#setup)") keep working. `Markdown::Anchors` does the Ruby half, after
+sanitizing like every rewrite here; `controllers/fragments` and
+`controllers/reveal` the browser half.
+
+- **The URL names the file as well as the section:**
+  `…/pulls/42/markdown#docs/guide.md:setup`. GitHub's `#setup` is not enough
+  on this screen, because it holds every Markdown file in the pull request,
+  and two READMEs that both say `## Overview` would make `#overview` mean
+  whichever came first — today, and something else after the next push adds
+  a file above it. The path rather than the file's hex key, because a link is
+  read before it is clicked. The colon cannot be confused with either side: a
+  slug never contains one, and the path is matched against the files on the
+  page rather than split. Characters a fragment cannot carry are
+  percent-encoded once; the address bar shows them decoded.
+- **GitHub's forms still land.** `#setup` and `#user-content-setup` go to the
+  first file on the page with that section, which on a one-file pull request
+  is exactly GitHub's behaviour. A `path:` link to a section that has since
+  been renamed lands on its file rather than nowhere.
+- **Ids stay namespaced, and are scoped per file.** A heading's id is
+  `user-content-<file key>-setup`: still `user-content-`, so
+  `Markdown::Sanitizer`'s guarantee that no repository can reach an app id is
+  untouched, and scoped to a fixed-length file key so two files' ids differ
+  in their first 26 characters. Footnotes and an author's own raw-HTML ids are
+  scoped the same way. The base side of a modified file, which only appears in
+  removed strips, has its own `b-` scope, so a deleted `## Setup` and the kept
+  one beside it never share an id; its headings get no link, because nobody
+  shares a struck-through section.
+- **Duplicates are numbered the way GitHub numbers them** — `setup`,
+  `setup-1`, `setup-2` — across the whole document. comrak would do this
+  itself, but the renderer turns one node at a time into HTML and comrak's
+  count lives for one call, so `Markdown::Anchors::Pass` keeps it instead.
+- **The landing clears all three bars.** `.file-section [id^="user-content-"]`
+  carries a `scroll-margin-top` of the top bar, the file bar and that file's
+  own `.filehead` plus 1rem; `file_nav_controller` measures each file
+  heading into `--filehead-height` on its own section, because a long path
+  wraps at phone width. The browser's fragment scroll and Prism's own obey the
+  same rule. A target inside anything folded — a run, a collapsed file, a
+  removed strip, an author's `<details>` — is opened first, and the target is
+  held in place for a few seconds while images and diagrams above it find
+  their height, until the reader scrolls.
+- **Same-page links are native, and Back stays on the page.** Every
+  same-document link carries `data-turbo="false"`, as the file switcher's
+  rows do, because Turbo 8 treats a link to the current page as a full visit.
+  Turbo also turns Back between two places on one page into a restoration
+  visit that re-renders the body; `reveal_controller` declines that one visit
+  so an open composer survives, and the `hashchange` does the scrolling.
+
 **Code highlighting** — one Rouge theme is defined at the end of
 `application.css` against `.md-prose .highlight`. Comments recede to
 `ink-faint` italic, keywords take the violet end, strings the green, numbers the
@@ -1431,4 +1486,5 @@ Non-negotiable on every screen.
   `pull-request-list`, `pull-request-row`, `next-page`, `pr-state`,
   `review-decision`, `pr-body`, `markdown-count`, `markdown-files`,
   `markdown-file`, `other-files`, `reviews`, `pending-review`,
-  `open-on-github`, `labels`, `comment`, `rate-limit-banner`.
+  `open-on-github`, `labels`, `comment`, `rate-limit-banner`,
+  `heading-link`.
