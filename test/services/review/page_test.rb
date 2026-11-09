@@ -315,6 +315,45 @@ module Review
       assert_predicate with_strip.first, :modified?
     end
 
+    # The head and the base of one file are two documents with mostly the same
+    # headings, and a `## Setup` the pull request deletes sits in a strip a few
+    # blocks from the `## Setup` it kept. Each side has its own scope, so the
+    # two never share an id, and only the side the reviewer reads is linkable.
+    test "the head side is scoped to the file key and the removed strips to their own" do
+      head = "# Title\n\n## Setup\n\nKept.\n"
+      base = "# Title\n\n## Setup\n\nGone.\n\n## Setup\n\nKept.\n"
+      patch = "@@ -1,9 +1,5 @@\n # Title\n \n-## Setup\n-\n-Gone.\n-\n ## Setup\n \n Kept."
+
+      stub_pull_request(files: [ file_json("docs/setup.md", status: "modified", patch: patch) ])
+      stub_contents("docs/setup.md", HEAD_SHA, head)
+      stub_contents("docs/setup.md", BASE_SHA, base)
+      stub_threads(threads: [])
+
+      page = load(path: "docs/setup.md")
+      key = page.file_key
+      head_ids = ids(page.result.blocks.map(&:block))
+      strip_ids = ids(page.result.removed_strips)
+
+      assert_includes head_ids, "user-content-#{key}-setup"
+      assert strip_ids.any?, "the deleted heading is in a strip"
+      assert strip_ids.all? { |id| id.start_with?("user-content-#{key.sub("f-", "b-")}-") }, strip_ids.inspect
+      assert_empty head_ids & strip_ids
+      assert page.result.removed_strips.none? { |block| block.html.include?("md-heading-link") },
+             "a deleted heading has no link to share"
+    end
+
+    test "a removed file is read from its base side, so that side is the linkable one" do
+      stub_pull_request
+      stub_contents("docs/legacy.md", BASE_SHA, "# Legacy\n\nThis page is gone.\n")
+      stub_threads
+
+      page = load(path: "docs/legacy.md")
+      heading = page.result.blocks.first.block.html
+
+      assert_includes heading, %(id="user-content-#{page.file_key}-legacy")
+      assert_includes heading, 'href="#docs/legacy.md:legacy"'
+    end
+
     # ------------------------------------------------------------- linking --
 
     test "the permalink base is the head blob, which is what a file comment quotes" do
@@ -326,6 +365,10 @@ module Review
     end
 
     private
+
+    def ids(blocks)
+      blocks.flat_map { |block| Nokogiri::HTML5.fragment(block.html).css("[id]").map { |node| node["id"] } }
+    end
 
     def load(path:)
       Page.load(github: @github, owner: OWNER, repo: REPO, number: NUMBER, path: path)

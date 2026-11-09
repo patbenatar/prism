@@ -80,6 +80,25 @@ class Review::ParsedSourceTest < ActiveSupport::TestCase
     end
   end
 
+  # Every id in a document is scoped to its file, so the same bytes at two
+  # paths are two documents. Sharing an entry would hand the second file the
+  # first one's ids, and with them its section links.
+  test "the file an anchor is scoped to is part of the key" do
+    source = "# Overview\n"
+
+    with_memory_cache do |cache|
+      one = Markdown::Anchors.new(scope: "f-0000000001", path: "a.md")
+      two = Markdown::Anchors.new(scope: "f-0000000002", path: "b.md")
+
+      first = Review::ParsedSource.blocks(source, user_id: 1, anchors: one)
+      second = Review::ParsedSource.blocks(source, user_id: 1, anchors: two)
+
+      assert_includes first.first.html, 'id="user-content-f-0000000001-overview"'
+      assert_includes second.first.html, 'id="user-content-f-0000000002-overview"'
+      assert cache.read(key_for(source, 1, nil, one.cache_key)).present?
+    end
+  end
+
   private
 
   def images(path)
@@ -88,8 +107,9 @@ class Review::ParsedSourceTest < ActiveSupport::TestCase
   end
 
   # The nil slot is the image resolver's: a document with no repository to
-  # resolve against is cached under the same key it always was.
-  def key_for(text, user_id, images_key = nil)
-    [ "markdown-blocks", user_id, images_key, Digest::SHA256.hexdigest(text) ]
+  # resolve against is cached under the same key it always was. The slot after
+  # it is the anchors' scope, which is unscoped unless a test says otherwise.
+  def key_for(text, user_id, images_key = nil, anchors_key = Markdown::Anchors.new.cache_key)
+    [ "markdown-blocks", user_id, images_key, anchors_key, Digest::SHA256.hexdigest(text) ]
   end
 end

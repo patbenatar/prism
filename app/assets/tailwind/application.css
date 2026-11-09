@@ -697,6 +697,20 @@
     scroll-margin-top: calc(var(--topbar-height) + var(--filebar-height, 2.5rem));
   }
 
+  /* Where a section link lands: under all three bars — the top bar, the
+     page's file bar, and this file's own sticky heading — with a little air,
+     so the heading reads as the top of what you are looking at rather than
+     something just escaping from under a bar. `--filehead-height` is measured
+     per section by `file_nav_controller`, for the reason `--filebar-height`
+     is measured; the 2.5rem fallback under-shoots on purpose, as that one
+     does. Every repository id is `user-content-…` (Markdown::Sanitizer), so
+     this covers a heading, a footnote and an author's own anchor alike, and
+     both the browser's fragment scroll and `controllers/reveal`'s obey it. */
+  .file-section [id^="user-content-"] {
+    scroll-margin-top: calc(var(--topbar-height) + var(--filebar-height, 2.5rem)
+                            + var(--filehead-height, 2.5rem) + 1rem);
+  }
+
   /* ── Folding a file away ───────────────────────────────────────────────
      The chevron in the file heading. Collapsing leaves the heading — path,
      status pill, diffstat — so a pull request with a dozen files reads as an
@@ -1562,6 +1576,46 @@
   .md-prose > h2 + *,
   .md-prose > h3 + * {
     @apply mt-3;
+  }
+
+  /* A heading's own link, after its text. Markdown::Anchors fills comrak's
+     empty `a.anchor` with an icon and points it at `#<path>:<slug>`.
+
+     After the text, not before it the way GitHub does it, because the
+     space before a heading is the gutter's: the block's "+" sits there, and
+     two affordances side by side in one margin would make each a guess.
+     Hidden until the heading is hovered or the link has focus, like the
+     "+", so a page at rest is just the document; a real link the whole time,
+     so it is in the tab order and takes a right-click or a middle-click.
+
+     Not underlined and not brand-coloured at rest, which is what `.md-prose a`
+     would make it: it is page furniture, not a link the author wrote. */
+  .md-prose .md-heading-link {
+    @apply ml-1.5 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle
+           text-ink-faint no-underline opacity-0 transition
+           hover:bg-sunk hover:text-brand focus-visible:opacity-100;
+  }
+
+  .md-prose .md-heading-link svg {
+    @apply h-4 w-4;
+  }
+
+  .md-prose :is(h1, h2, h3, h4, h5, h6):hover > .md-heading-link {
+    @apply opacity-100;
+  }
+
+  /* No hover on a touch screen, so the link stays visible there — the same
+     call DESIGN.md §7 makes for the "+" below 640px, and for the same reason.
+     Muted rather than hidden: a reviewer on a phone shares a link to a
+     section as often as one at a desk. Either condition, because neither is
+     enough alone: the "+" goes by width, and a tablet is wider than 640px
+     with no pointer to hover with either. `pointer: coarse` rather than
+     `hover: none` on its own, which is also true of a device with no pointer
+     at all — headless Chromium among them — where there is nothing to tap. */
+  @media (hover: none) and (pointer: coarse), (max-width: 640px) {
+    .md-prose .md-heading-link {
+      @apply opacity-100;
+    }
   }
 
   /* h1/h2 carry a hairline, the way a document's own sections do. */

@@ -2,6 +2,22 @@
 
 Newest first. Written for people using Prism, not for how it is built.
 
+## 2026-11-09
+
+- **Link to a section.** Hover any heading in a rendered file and a link
+  appears after it; click it, or copy it, to share that exact section. The
+  link reads like `…/markdown#docs/guide.md:setup` — the file and the
+  heading — because a pull request page can hold several files with the same
+  heading. Opening one scrolls straight to the section, clear of the bars at
+  the top, and opens whatever was folded around it first. On a phone the link
+  is always showing.
+- **Tables of contents work.** A link inside a document to one of its own
+  headings, like `[Setup](#setup)`, now scrolls to that heading in that file
+  instead of to the first file that happens to share it, and Back takes you
+  to where you were. A heading written twice is numbered `setup`, `setup-1`
+  the way GitHub numbers it, so a contents list written for GitHub links to
+  the right one here too.
+
 ## 2026-09-26
 
 - **The page no longer jumps when a comment saves.** A comment appeared in a
