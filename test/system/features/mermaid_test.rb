@@ -557,6 +557,66 @@ class MermaidTest < ApplicationSystemTestCase
     end
   end
 
+  # The bug in production on 2026-11-11: Chrome 156 on Windows keeps the first
+  # computed value an element gave. Prism read every theme token through one
+  # probe, so every colour came out as the first token's — the page
+  # background — and a diagram drew canvas on canvas. Headless Chromium has
+  # no such quirk, so the test gives it one: any element read twice answers
+  # with its first colour.
+  test "a browser that keeps an element's first colour still gets every token" do
+    with_browser_quirk(<<~JS) do
+      const real = window.getComputedStyle
+      const first = new WeakMap()
+      window.getComputedStyle = function (element, pseudo) {
+        const live = real.call(window, element, pseudo)
+        if (pseudo || !element.classList?.contains("md-mermaid-stage")) return live
+        if (!first.has(element)) first.set(element, live.getPropertyValue("color"))
+        return new Proxy(live, {
+          get: (target, name) => name === "getPropertyValue"
+            ? (property) => property === "color" ? first.get(element) : target.getPropertyValue(property)
+            : Reflect.get(target, name)
+        })
+      }
+    JS
+      open_rich
+      assert_painted(:light)
+    end
+  end
+
+  # The same Chrome measured mermaid's drawing before it had finished moving
+  # parts into place, and mermaid sized its viewBox from that: the second
+  # subgraph of a two-subgraph flowchart fell outside the box and was cut off.
+  # Here mermaid's own measurement of its root comes back half height.
+  test "a drawing mermaid measured short is still shown whole" do
+    with_browser_quirk(<<~JS) do
+      const real = SVGGraphicsElement.prototype.getBBox
+      SVGGraphicsElement.prototype.getBBox = function (...args) {
+        const box = real.apply(this, args)
+        if (!(this instanceof SVGSVGElement && this.id.startsWith("prism-mermaid-"))) return box
+        return new DOMRect(box.x, box.y, box.width, box.height / 2)
+      }
+    JS
+      open_rich
+      assert_selector "[data-testid=mermaid-figure] svg", count: 3, wait: 30
+
+      spills = page.evaluate_script(<<~JS)
+        [...document.querySelectorAll("[data-testid=mermaid-figure] svg")].map((svg) => {
+          const box = svg.viewBox.baseVal, content = svg.getBBox()
+          return { id: svg.id, viewBox: [box.x, box.y, box.width, box.height], content: [content.x, content.y, content.width, content.height],
+                   height: Number(svg.getAttribute("height")),
+                   fits: content.y + content.height <= box.y + box.height + 1 && content.x + content.width <= box.x + box.width + 1 }
+        })
+      JS
+
+      spills.each do |diagram|
+        assert diagram["fits"], "#{diagram["id"]} is cut off: content #{diagram["content"].inspect} " \
+                                "outside viewBox #{diagram["viewBox"].inspect}"
+        assert_in_delta diagram["viewBox"][3], diagram["height"], 0.5,
+                        "#{diagram["id"]} should be drawn at its box's own height"
+      end
+    end
+  end
+
   # ── It follows the colour scheme ─────────────────────────────────────────
 
   test "the diagram is drawn in the active colour scheme and survives a switch" do
@@ -751,6 +811,16 @@ class MermaidTest < ApplicationSystemTestCase
   # navigation. This is how every reviewer moves through the app.
   def turbo_visit(path)
     page.execute_script("window.Turbo.visit(arguments[0])", path)
+  end
+
+  # Runs `source` in every document the browser opens until the block ends —
+  # a stand-in for a browser bug headless Chromium doesn't have. Removed
+  # afterwards, because the suite shares one browser.
+  def with_browser_quirk(source)
+    script = send_cdp("Page.addScriptToEvaluateOnNewDocument", source: source)
+    yield
+  ensure
+    send_cdp("Page.removeScriptToEvaluateOnNewDocument", identifier: script["identifier"]) if script
   end
 
   def stub_rich

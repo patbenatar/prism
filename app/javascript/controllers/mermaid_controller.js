@@ -304,6 +304,46 @@ const SAFE_URL = /^(?:https?:\/\/|mailto:|#)/i
 const VIEW_BOX = /^\s*[\d.eE+-]+[\s,]+[\d.eE+-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*$/
 const MAX_WIDTH = /max-width:\s*([\d.]+)px/i
 
+// Mermaid's viewBox is its own measurement of the drawing, taken in the stage
+// while it is still moving parts into place — and the same Chrome that keeps a
+// probe's first colour (see `resolved`) keeps an element's first geometry, so
+// it measured the second subgraph before it had moved and cut it off. The
+// adopted copy is all new elements, which measure true. So it is measured once
+// more, in a throwaway stage of its own (the shared one may be mid-render), and
+// a drawing that spills out of its declared box gets a box that holds it. One
+// that fits keeps mermaid's box exactly. Returns the new size, or nothing.
+const FIT_PADDING = 8
+
+function fitToContent(svg) {
+  const declared = svg.viewBox.baseVal
+  const stage = document.createElement("div")
+  stage.className = "md-mermaid-stage"
+  stage.setAttribute("aria-hidden", "true")
+  document.body.appendChild(stage)
+  stage.appendChild(svg)
+  let content = null
+  try {
+    content = svg.getBBox()
+  } catch {
+    // Not measurable here; mermaid's box is all there is.
+  }
+  stage.remove()
+  svg.remove()
+
+  if (!content || content.width === 0 || content.height === 0) return null
+  const contains =
+    content.x >= declared.x - 1 &&
+    content.y >= declared.y - 1 &&
+    content.x + content.width <= declared.x + declared.width + 1 &&
+    content.y + content.height <= declared.y + declared.height + 1
+  if (contains) return null
+
+  const width = content.width + FIT_PADDING * 2
+  const height = content.height + FIT_PADDING * 2
+  svg.setAttribute("viewBox", [content.x - FIT_PADDING, content.y - FIT_PADDING, width, height].join(" "))
+  return { width, height }
+}
+
 function sanitize(element) {
   for (const child of Array.from(element.children)) {
     if (!ALLOWED_ELEMENTS.has(child.localName.toLowerCase())) {
@@ -402,18 +442,21 @@ function namespaceIds(svg) {
 // dark mode. A token is a `light-dark()` pair, and `getPropertyValue` hands back
 // the pair rather than the side that won, so each one is painted onto a probe
 // and read back as a used value — the same trick DarkModeTest uses.
-let probe = null
-
+//
+// A fresh probe for every read, never one probe re-pointed at the next token.
+// Chrome 156 on Windows keeps the first answer an element gave: point the same
+// span at `--color-ink` after `--color-canvas` and it still reads canvas, so
+// every colour in the theme came out as the page background (2026-11-11).
 function resolved(property, token) {
-  if (!probe?.isConnected) {
-    // Offscreen for the same reason the stage is, and laid out for the same
-    // reason: a token has to be painted before it resolves.
-    probe = document.createElement("span")
-    probe.className = "md-mermaid-stage"
-    document.body.appendChild(probe)
-  }
+  // Offscreen for the same reason the stage is, and laid out for the same
+  // reason: a token has to be painted before it resolves.
+  const probe = document.createElement("span")
+  probe.className = "md-mermaid-stage"
   probe.style.setProperty(property, `var(${token})`)
-  return getComputedStyle(probe).getPropertyValue(property)
+  document.body.appendChild(probe)
+  const value = getComputedStyle(probe).getPropertyValue(property)
+  probe.remove()
+  return value
 }
 
 function color(token) {
@@ -775,8 +818,9 @@ export default class extends Controller {
     }
 
     if (box) {
-      adopted.setAttribute("width", Number(box[1]))
-      adopted.setAttribute("height", Number(box[2]))
+      const fitted = fitToContent(adopted)
+      adopted.setAttribute("width", fitted?.width ?? Number(box[1]))
+      adopted.setAttribute("height", fitted?.height ?? Number(box[2]))
     } else if (fallbackWidth) {
       // Through CSSOM rather than as a style attribute, and from a number this
       // side matched against `[\d.]+`, so no repository string is ever parsed
