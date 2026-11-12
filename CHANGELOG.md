@@ -2,6 +2,14 @@
 
 Newest first. Written for people using Prism, not for how it is built.
 
+## 2026-11-11
+
+- **Diagrams draw properly in Chrome on Windows again.** In some Chrome
+  builds every diagram came out washed out — boxes, text and lines all in
+  the page's background colour — and larger ones were cut off at the right
+  and bottom. Both are fixed: diagrams take the page's colours and are shown
+  whole.
+
 ## 2026-11-09
 
 - **Link to a section.** Hover any heading in a rendered file and a link
